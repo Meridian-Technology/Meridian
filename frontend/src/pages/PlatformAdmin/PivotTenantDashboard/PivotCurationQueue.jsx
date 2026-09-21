@@ -10,15 +10,41 @@ import PivotImportThumb from '../PivotLab/PivotImportThumb';
 import PivotTagMultiSelect from '../PivotLab/PivotTagMultiSelect';
 import { isTypingTarget } from '../PivotLab/PivotManualImportModal';
 import { curationPublicEventUrl } from './curationPublicEventUrl';
-import { dragRangeSelection, nextSelection } from './curationQueueSelection';
+import { dragRangeSelection, nextSelection, reconcileCatalogAnchor, sameIdSet } from './curationQueueSelection';
 import useCurationImmersiveScroll from './useCurationImmersiveScroll';
 import { eventMatchesCatalogSearch } from './curationCatalogFilters';
-import { locationReviewBlock, locationReviewHref } from './curationPublishFeedback';
-import Popup from '../../../components/Popup/Popup';
+import { locationReviewBlock, locationReviewHref, coverImageBlock, eventPublishBlock, publishReviewBlock } from './curationPublishFeedback';
+import PivotCurationPortalPopup from './PivotCurationPortalPopup';
+import KeybindTooltip from '../../../components/Interface/KeybindTooltip/KeybindTooltip';
 import './PivotCurationQueue.scss';
 
 const HOST_CREATED_SOURCE = 'justgo';
 const DRAG_SELECT_THRESHOLD_PX = 5;
+const CURATION_INSPECT_POPUP_MQ = '(max-width: 720px)';
+
+function useCurationInspectPopup() {
+  const [inspectAsPopup, setInspectAsPopup] = useState(() => {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') {
+      return false;
+    }
+    return window.matchMedia(CURATION_INSPECT_POPUP_MQ).matches;
+  });
+
+  useEffect(() => {
+    if (typeof window.matchMedia !== 'function') return undefined;
+    const media = window.matchMedia(CURATION_INSPECT_POPUP_MQ);
+    const update = () => setInspectAsPopup(media.matches);
+    update();
+    if (typeof media.addEventListener === 'function') {
+      media.addEventListener('change', update);
+      return () => media.removeEventListener('change', update);
+    }
+    media.addListener(update);
+    return () => media.removeListener(update);
+  }, []);
+
+  return inspectAsPopup;
+}
 const EDITORIAL_TIERS = [
   { value: 'hidden', label: 'Hidden', help: 'Exclude from Drop and Explore.' },
   { value: 'demote', label: 'Demote', help: 'Lower its rank; strong relevance can recover.' },
@@ -33,10 +59,11 @@ function editorialTierLabel(event) {
   return EDITORIAL_TIERS.find((option) => option.value === tier)?.label || null;
 }
 
-function EditorialWeightControl({ event, busy, onSave }) {
+function EditorialWeightControl({ event, busy, onSave, hotkeys = false, onCancel }) {
   const saved = event.rankingOverride || {};
   const [tier, setTier] = useState(saved.tier || 'standard');
   const [audience, setAudience] = useState(saved.audience || 'everyone');
+  const sliderRef = useRef(null);
 
   useEffect(() => {
     setTier(saved.tier || 'standard');
@@ -58,8 +85,68 @@ function EditorialWeightControl({ event, busy, onSave }) {
     }
   };
 
+  const commit = useCallback(() => {
+    if (busy) return false;
+    if (!hasChanges) {
+      onCancel?.();
+      return false;
+    }
+    onSave(event, tier === 'standard' ? null : { tier, audience });
+    onCancel?.();
+    return true;
+  }, [audience, busy, event, hasChanges, onCancel, onSave, tier]);
+
+  useEffect(() => {
+    if (!hotkeys) return undefined;
+    const frame = requestAnimationFrame(() => sliderRef.current?.focus());
+    return () => cancelAnimationFrame(frame);
+  }, [hotkeys, event._id]);
+
+  useEffect(() => {
+    if (!hotkeys) return undefined;
+    const onKey = (nativeEvent) => {
+      if (nativeEvent.metaKey || nativeEvent.ctrlKey || nativeEvent.altKey) return;
+      const key = String(nativeEvent.key || '');
+      const lower = key.toLowerCase();
+      if (key === 'Escape') {
+        nativeEvent.preventDefault();
+        nativeEvent.stopPropagation();
+        onCancel?.();
+        return;
+      }
+      if (key === 'Enter') {
+        nativeEvent.preventDefault();
+        nativeEvent.stopPropagation();
+        commit();
+        return;
+      }
+      if (lower === 'i') {
+        nativeEvent.preventDefault();
+        nativeEvent.stopPropagation();
+        setAudience((current) => (current === 'matching_interests' ? 'everyone' : 'matching_interests'));
+        return;
+      }
+      if (key === 'ArrowRight' || key === 'ArrowUp' || lower === 'k') {
+        nativeEvent.preventDefault();
+        nativeEvent.stopPropagation();
+        selectTierAt(Math.min(EDITORIAL_TIERS.length - 1, activeIndex + 1));
+        return;
+      }
+      if (key === 'ArrowLeft' || key === 'ArrowDown' || lower === 'j') {
+        nativeEvent.preventDefault();
+        nativeEvent.stopPropagation();
+        selectTierAt(Math.max(0, activeIndex - 1));
+      }
+    };
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
+  }, [activeIndex, commit, hotkeys, onCancel]);
+
   return (
-    <section className="pivot-curation-editorial" aria-labelledby={`editorial-${event._id}`}>
+    <section
+      className={`pivot-curation-editorial${hotkeys ? ' pivot-curation-editorial--hotkeys' : ''}`}
+      aria-labelledby={`editorial-${event._id}`}
+    >
       <div className="pivot-curation-editorial__slider-card">
         <div className="pivot-curation-editorial__slider-head">
           <div className="pivot-curation-editorial__current">
@@ -93,6 +180,7 @@ function EditorialWeightControl({ event, busy, onSave }) {
           </div>
           <span className="pivot-curation-editorial__thumb" aria-hidden="true" />
           <input
+            ref={sliderRef}
             type="range"
             min="0"
             max={EDITORIAL_TIERS.length - 1}
@@ -104,28 +192,66 @@ function EditorialWeightControl({ event, busy, onSave }) {
           />
         </div>
       </div>
-      {promotion ? (
-        <label className="pivot-curation-editorial__field">
-          <span>Apply promotion to</span>
-          <select value={audience} onChange={(e) => setAudience(e.target.value)}>
-            <option value="everyone">Everyone</option>
-            <option value="matching_interests">People with matching interests</option>
-          </select>
-        </label>
+      {hotkeys || promotion ? (
+        hotkeys ? (
+          <div className="pivot-curation-editorial__audience">
+            <span>Apply to</span>
+            <div className="pivot-curation-editorial__audience-toggle" role="group" aria-label="Promotion audience">
+              <button
+                type="button"
+                aria-pressed={audience === 'everyone'}
+                onClick={() => setAudience('everyone')}
+              >
+                Everyone
+              </button>
+              <button
+                type="button"
+                aria-pressed={audience === 'matching_interests'}
+                onClick={() => setAudience('matching_interests')}
+              >
+                Matching interests
+              </button>
+            </div>
+            <span aria-hidden="true"><KeybindTooltip label="Toggle audience" keybind="I" /></span>
+          </div>
+        ) : (
+          <label className="pivot-curation-editorial__field">
+            <span>Apply promotion to</span>
+            <select value={audience} onChange={(e) => setAudience(e.target.value)}>
+              <option value="everyone">Everyone</option>
+              <option value="matching_interests">People with matching interests</option>
+            </select>
+          </label>
+        )
       ) : null}
       <div className="pivot-curation-editorial__save-slot">
         {hasChanges ? (
           <button
             type="button"
-            className="linear-btn linear-btn--primary linear-btn--sm"
+            className="linear-btn linear-btn--primary linear-btn--sm pivot-curation-sheet__key-btn"
             disabled={busy}
-            onClick={() => onSave(event, tier === 'standard' ? null : { tier, audience })}
+            onClick={() => commit()}
           >
             {busy ? 'Saving…' : 'Save weight'}
+            {busy || !hotkeys ? null : (
+              <span aria-hidden="true"><KeybindTooltip label="Save" keybind="↵" /></span>
+            )}
           </button>
         ) : null}
       </div>
-      <p className="pivot-curation-editorial__foot">Opened decks remain unchanged.</p>
+      <p className="pivot-curation-editorial__foot">
+        {hotkeys ? (
+          <>
+            <kbd>J</kbd><kbd>K</kbd> or <kbd>←</kbd><kbd>→</kbd> slide
+            {' · '}
+            <kbd>↑</kbd><kbd>↓</kbd> also
+            {' · '}
+            <kbd>I</kbd> audience · <kbd>↵</kbd> save · <kbd>Esc</kbd> cancel. Opened decks remain unchanged.
+          </>
+        ) : (
+          'Opened decks remain unchanged.'
+        )}
+      </p>
     </section>
   );
 }
@@ -233,6 +359,7 @@ const CatalogRow = React.memo(function CatalogRow({
   focused,
   showPerformance,
   performanceById,
+  imageBroken,
 }) {
   const perf = eventPerf(event, performanceById);
   const tags = Array.isArray(event.tags) ? event.tags : [];
@@ -260,10 +387,10 @@ const CatalogRow = React.memo(function CatalogRow({
             title="Open source listing"
             onPointerDown={(nativeEvent) => nativeEvent.stopPropagation()}
           >
-            <PivotImportThumb src={event.image} alt={event.name} />
+            <PivotImportThumb src={event.image} alt={event.name} broken={imageBroken} />
           </a>
         ) : (
-          <PivotImportThumb src={event.image} alt={event.name} />
+          <PivotImportThumb src={event.image} alt={event.name} broken={imageBroken} />
         )}
       </td>
       <td>
@@ -293,6 +420,14 @@ const CatalogRow = React.memo(function CatalogRow({
             title={locationReviewBlock(event).detail}
           >
             Location review
+          </span>
+        ) : null}
+        {imageBroken ? (
+          <span
+            className="pivot-curation-sheet__broken-flag"
+            title="This event has an image URL, but the file did not load"
+          >
+            Broken image
           </span>
         ) : null}
         {editorialTierLabel(event) ? (
@@ -353,9 +488,13 @@ function QueueInspector({
   perf,
   showPerformance,
   onClose,
+  onOpenDossier,
   onEdit,
   onPublish,
+  onRequestPublish,
   onUnpublish,
+  onStage,
+  onDraft,
   onDelete,
   onToggleFeatured,
   onEditorialChange,
@@ -364,7 +503,14 @@ function QueueInspector({
   releaseBlockReason,
   tenantKey,
   batchWeek,
+  imageBroken = false,
+  layout = 'pane',
+  showWeight = true,
 }) {
+  const [mediaFailed, setMediaFailed] = useState(false);
+  useEffect(() => {
+    setMediaFailed(false);
+  }, [event?._id, event?.image]);
   if (!event) return null;
   const sourceHref = event.externalLink || event.sourceUrl;
   const publicHref = curationPublicEventUrl(event);
@@ -373,19 +519,34 @@ function QueueInspector({
   const publishing = busyKey === `release-${event._id}`;
   const deleting = busyKey === `delete-${event._id}`;
   const featuring = busyKey === `feature-${event._id}`;
+  const drafting = busyKey === 'bulk-draft' || busyKey === `draft-${event._id}`;
   const editorialSaving = busyKey === `editorial-${event._id}`;
   const reviewBlock = locationReviewBlock(event);
   const reviewHref = locationReviewHref(tenantKey, batchWeek);
-  const publishBlocked = Boolean(reviewBlock);
+  const coverBlock = coverImageBlock(event, { broken: imageBroken || mediaFailed });
+  const publishBlocked = Boolean(reviewBlock || coverBlock);
+  const coverBroken = imageBroken || mediaFailed;
+  const dossier = layout === 'dossier';
+  const showCover = Boolean(event.image) && !coverBroken;
   const publishTitle = reviewBlock
     ? `${reviewBlock.title}. Approve the location before publishing.`
-    : releaseBlockReason || 'Publish this staged event';
+    : coverBlock
+      ? `${coverBlock.title}. ${coverBlock.detail}`
+      : releaseBlockReason || 'Publish this staged event';
 
   return (
-    <aside className="pivot-curation-sheet__inspect" aria-label={`${event.name} details`}>
+    <aside
+      className={`pivot-curation-sheet__inspect pivot-curation-sheet__inspect--${layout}`}
+      aria-label={`${event.name} ${dossier ? 'dossier' : 'details'}`}
+    >
       <div className="pivot-curation-sheet__inspect-media">
-        {event.image ? (
-          <img src={event.image} alt="" />
+        {showCover ? (
+          <img
+            src={event.image}
+            alt=""
+            referrerPolicy="no-referrer"
+            onError={() => setMediaFailed(true)}
+          />
         ) : (
           <div className="pivot-curation-sheet__inspect-fallback" aria-hidden="true">
             {(event.name || '?').slice(0, 1).toUpperCase()}
@@ -395,13 +556,24 @@ function QueueInspector({
       <div className="pivot-curation-sheet__inspect-body">
         <div className="pivot-curation-sheet__inspect-head">
           <h3 className="pivot-curation-sheet__inspect-title">{event.name || 'Untitled'}</h3>
-          <button
-            type="button"
-            className="linear-btn linear-btn--ghost pivot-curation-sheet__inspect-close"
-            onClick={onClose}
-          >
-            Close
-          </button>
+          {dossier ? (
+            <button
+              type="button"
+              className="linear-btn linear-btn--ghost pivot-curation-sheet__inspect-close"
+              onClick={onClose}
+            >
+              Close
+            </button>
+          ) : (
+            <button
+              type="button"
+              className="linear-btn linear-btn--ghost linear-btn--sm pivot-curation-sheet__key-btn"
+              onClick={() => onOpenDossier?.(event)}
+            >
+              Details
+              <span aria-hidden="true"><KeybindTooltip label="Open details" keybind="↵" /></span>
+            </button>
+          )}
         </div>
         <p className="pivot-curation-sheet__inspect-meta">
           {event.organizerName || 'No host'}
@@ -423,6 +595,12 @@ function QueueInspector({
             ) : null}
           </div>
         ) : null}
+        {coverBlock ? (
+          <div className="pivot-curation-sheet__review-callout" role="status">
+            <strong>{coverBlock.title}</strong>
+            <p>{coverBlock.detail}</p>
+          </div>
+        ) : null}
         <div className="pivot-curation-sheet__inspect-status">
           <PivotOpsStatus tone={ingestTone(event.ingestStatus)}>
             {event.ingestStatus || 'unknown'}
@@ -436,6 +614,9 @@ function QueueInspector({
           ) : null}
           {richDataFlag(event) ? (
             <span className="pivot-curation-sheet__rich-flag">{richDataFlag(event)}</span>
+          ) : null}
+          {coverBroken ? (
+            <span className="pivot-curation-sheet__broken-flag">Broken image</span>
           ) : null}
         </div>
         {showPerformance && perf ? (
@@ -470,7 +651,9 @@ function QueueInspector({
           <p className="pivot-curation-sheet__muted">No tags</p>
         )}
         {event.description ? (
-          <p className="pivot-curation-sheet__inspect-copy">{event.description}</p>
+          <p className={`pivot-curation-sheet__inspect-copy${dossier ? ' is-full' : ''}`}>
+            {event.description}
+          </p>
         ) : (
           <p className="pivot-curation-sheet__muted">No description</p>
         )}
@@ -481,11 +664,13 @@ function QueueInspector({
             ))}
           </ul>
         ) : null}
-        <EditorialWeightControl
-          event={event}
-          busy={editorialSaving}
-          onSave={onEditorialChange}
-        />
+        {showWeight ? (
+          <EditorialWeightControl
+            event={event}
+            busy={editorialSaving}
+            onSave={onEditorialChange}
+          />
+        ) : null}
         <div className="pivot-curation-sheet__inspect-links">
           {publicHref ? (
             <a
@@ -516,26 +701,56 @@ function QueueInspector({
           >
             Edit
           </button>
+          {event.ingestStatus === 'draft' ? (
+            <button
+              type="button"
+              className="linear-btn linear-btn--secondary pivot-curation-sheet__key-btn"
+              onClick={() => onStage?.(event)}
+            >
+              Stage
+              <span aria-hidden="true"><KeybindTooltip label="Stage" keybind="S" /></span>
+            </button>
+          ) : null}
           {event.ingestStatus === 'staged' ? (
             <button
               type="button"
-              className="linear-btn linear-btn--primary"
-              onClick={() => onPublish(event)}
+              className="linear-btn linear-btn--primary pivot-curation-sheet__key-btn"
+              onClick={() => (onRequestPublish || onPublish)?.(event)}
               disabled={releaseDisabled || publishing || publishBlocked}
               title={publishTitle}
             >
               {publishing ? 'Publishing…' : 'Publish'}
+              {publishing ? null : (
+                <span aria-hidden="true"><KeybindTooltip label="Publish" keybind="P" /></span>
+              )}
             </button>
           ) : null}
           {event.ingestStatus === 'published' ? (
             <button
               type="button"
-              className="linear-btn linear-btn--secondary"
+              className="linear-btn linear-btn--secondary pivot-curation-sheet__key-btn"
               onClick={() => onUnpublish(event)}
               disabled={unpublishing}
               title="Pull this event out of the live feed"
             >
               {unpublishing ? 'Unpublishing…' : 'Unpublish'}
+              {unpublishing ? null : (
+                <span aria-hidden="true"><KeybindTooltip label="Unpublish" keybind="U" /></span>
+              )}
+            </button>
+          ) : null}
+          {event.ingestStatus && event.ingestStatus !== 'draft' ? (
+            <button
+              type="button"
+              className="linear-btn linear-btn--ghost pivot-curation-sheet__key-btn"
+              onClick={() => onDraft?.(event)}
+              disabled={drafting}
+              title="Move this event back to draft"
+            >
+              {drafting ? 'Drafting…' : 'Draft'}
+              {drafting ? null : (
+                <span aria-hidden="true"><KeybindTooltip label="Draft" keybind="D" /></span>
+              )}
             </button>
           ) : null}
           <button
@@ -571,6 +786,108 @@ function QueueInspector({
   );
 }
 
+function PublishConfirmCard({ events, onConfirm, onCancel, busy, brokenImageIds }) {
+  const rows = events.map((event) => ({
+    event,
+    block: publishReviewBlock(event, { brokenImageIds }),
+  }));
+  const ready = rows.filter((row) => !row.block).map((row) => row.event);
+  const blockedCount = rows.length - ready.length;
+  const canPublish = ready.length > 0;
+  const single = ready.length === 1;
+  const extra = Math.max(0, events.length - 6);
+  return (
+    <div className="pivot-curation-publish-confirm">
+      <h3 className="pivot-curation-publish-confirm__title">
+        {!canPublish
+          ? events.length === 1
+            ? 'This event is not ready'
+            : 'These events are not ready'
+          : single
+            ? 'Publish this event?'
+            : `Publish ${ready.length} event${ready.length === 1 ? '' : 's'}?`}
+      </h3>
+      <p className="pivot-curation-publish-confirm__lede">
+        {!canPublish
+          ? 'Events need tags and rich data (plus a working cover and a clear location) before they can go live from review.'
+          : blockedCount
+            ? `${ready.length} can go live. ${blockedCount} stay unpublished until tags and rich data are filled in.`
+            : single
+              ? 'It will appear in the live feed for this week.'
+              : 'They will appear in the live feed for this week.'}
+      </p>
+      <ul className="pivot-curation-publish-confirm__list">
+        {rows.slice(0, 6).map(({ event, block }) => (
+          <li
+            key={event._id}
+            className={`pivot-curation-publish-confirm__row${block ? ' is-blocked' : ''}`}
+          >
+            <PivotImportThumb src={event.image} alt={event.name} />
+            <div>
+              <strong>{event.name || 'Untitled'}</strong>
+              <span>
+                {block
+                  ? block.title
+                  : [event.organizerName, formatEventWhenWithShowtimes(event), event.location]
+                    .filter(Boolean)
+                    .join(' · ') || 'No time or place'}
+              </span>
+            </div>
+          </li>
+        ))}
+      </ul>
+      {extra ? (
+        <p className="pivot-curation-publish-confirm__more">+{extra} more</p>
+      ) : null}
+      <div className="pivot-curation-publish-confirm__actions">
+        <button type="button" className="linear-btn linear-btn--ghost" onClick={onCancel}>
+          Cancel
+        </button>
+        <button
+          type="button"
+          className="linear-btn linear-btn--primary pivot-curation-sheet__key-btn"
+          onClick={() => onConfirm(ready)}
+          disabled={busy || !canPublish}
+        >
+          {busy ? 'Publishing…' : 'Publish'}
+          {busy || !canPublish ? null : (
+            <span aria-hidden="true"><KeybindTooltip label="Skip next time" keybind="⌘P" /></span>
+          )}
+        </button>
+      </div>
+      <p className="pivot-curation-publish-confirm__hint">
+        {canPublish
+          ? (
+            <>
+              <kbd>Enter</kbd> or <kbd>P</kbd> to publish · <kbd>Esc</kbd> to cancel · <kbd>⌘P</kbd> skips this
+            </>
+          )
+          : (
+            <>
+              Add tags and rich data first · <kbd>Esc</kbd> to close
+            </>
+          )}
+      </p>
+    </div>
+  );
+}
+
+function WeightPopupCard({ event, busy, onSave, onCancel }) {
+  return (
+    <div className="pivot-curation-weight-popup__card">
+      <h3 className="pivot-curation-weight-popup__title">{event.name || 'Untitled'}</h3>
+      <p className="pivot-curation-weight-popup__lede">Set how strongly this event is ranked in new decks.</p>
+      <EditorialWeightControl
+        event={event}
+        busy={busy}
+        onSave={onSave}
+        hotkeys
+        onCancel={onCancel}
+      />
+    </div>
+  );
+}
+
 function PivotCurationQueue({
   tenantKey,
   batchWeek,
@@ -596,8 +913,11 @@ function PivotCurationQueue({
   onEdit,
   onPublish,
   onUnpublish,
+  onStage,
+  onDraft,
   onDelete,
   onBulkStage,
+  onBulkDraft,
   onBulkPublish,
   onBulkUnpublish,
   onBulkApplyTags,
@@ -612,47 +932,111 @@ function PivotCurationQueue({
   selectionPolicy,
   onSelectionPolicyChange,
   emptyLabel,
+  brokenImageIds,
+  scanningBrokenImages = false,
 }) {
   const sheetRef = useRef(null);
   const scrollerRef = useRef(null);
   const sentinelRef = useRef(null);
   const lastIndexRef = useRef(0);
+  const prevEventsRef = useRef([]);
+  const focusIdRef = useRef(null);
   const dragRef = useRef(null);
+  const layoutRef = useRef(null);
   const [focusIndex, setFocusIndex] = useState(0);
-  const [inspectingId, setInspectingId] = useState(null);
+  const [anchorActive, setAnchorActive] = useState(true);
+  const [dossierEventId, setDossierEventId] = useState(null);
+  const [publishConfirmEvents, setPublishConfirmEvents] = useState(null);
+  const [weightEventId, setWeightEventId] = useState(null);
   const [dragSelecting, setDragSelecting] = useState(false);
   const [visibleCount, setVisibleCount] = useState(LAZY_CHUNK);
   const [query, setQuery] = useState('');
+  const inspectAsPopup = useCurationInspectPopup();
   const events = useMemo(
     () => catalogEvents.filter((event) => eventMatchesCatalogSearch(event, query)),
     [catalogEvents, query],
   );
   const eventsIdentity = `${query}:${events.length}:${events[0]?._id ?? ''}:${events[events.length - 1]?._id ?? ''}`;
-  const { frameRef, slotRef, slotHeight, immersive, expanded, collapse, expand } = useCurationImmersiveScroll({
+  const { frameRef, slotRef, slotHeight, immersive, expanded, collapse } = useCurationImmersiveScroll({
     enabled: catalogEvents.length > 0,
     scrollerRef,
   });
+  const [chromeFullscreen, setChromeFullscreen] = useState(false);
+  const [chromeSlotHeight, setChromeSlotHeight] = useState(0);
 
-  const inspectingEvent = useMemo(
-    () => catalogEvents.find((event) => String(event._id) === String(inspectingId)) || null,
-    [catalogEvents, inspectingId],
+  const exitChromeFullscreen = useCallback(() => {
+    setChromeFullscreen(false);
+    document.documentElement.classList.remove('is-curation-chrome-fullscreen');
+  }, []);
+
+  const enterChromeFullscreen = useCallback(() => {
+    const frame = frameRef.current;
+    if (frame && !immersive) {
+      setChromeSlotHeight(frame.offsetHeight);
+    }
+    setChromeFullscreen(true);
+    document.documentElement.classList.add('is-curation-chrome-fullscreen');
+  }, [frameRef, immersive]);
+
+  useEffect(() => () => {
+    document.documentElement.classList.remove('is-curation-chrome-fullscreen');
+  }, []);
+
+  const focusedEvent = events[focusIndex] || null;
+  const paneEvent = !inspectAsPopup && anchorActive && focusedEvent ? focusedEvent : null;
+  const dossierEvent = useMemo(
+    () => catalogEvents.find((event) => String(event._id) === String(dossierEventId)) || null,
+    [catalogEvents, dossierEventId],
+  );
+  const weightEvent = useMemo(
+    () => catalogEvents.find((event) => String(event._id) === String(weightEventId)) || null,
+    [catalogEvents, weightEventId],
   );
 
   useEffect(() => {
-    if (inspectingId && !inspectingEvent) setInspectingId(null);
-  }, [inspectingId, inspectingEvent]);
+    if (dossierEventId && !dossierEvent) setDossierEventId(null);
+  }, [dossierEventId, dossierEvent]);
+
+  useEffect(() => {
+    if (weightEventId && !weightEvent) setWeightEventId(null);
+  }, [weightEventId, weightEvent]);
+
+  const executePublish = useCallback((staged) => {
+    if (!staged?.length) return Promise.resolve(false);
+    setPublishConfirmEvents(null);
+    return Promise.resolve(
+      staged.length === 1
+        ? onPublish?.(staged[0], { skipConfirm: true })
+        : onBulkPublish?.({ skipConfirm: true, events: staged }),
+    );
+  }, [onBulkPublish, onPublish]);
+
+  const requestPublishReview = useCallback((staged) => {
+    if (!staged?.length) return;
+    setPublishConfirmEvents(staged);
+  }, []);
 
   useEffect(() => {
     setVisibleCount(Math.min(LAZY_CHUNK, events.length || LAZY_CHUNK));
   }, [eventsIdentity, events.length]);
 
-  useEffect(() => {
-    if (!events.length) {
-      setFocusIndex(0);
-      return;
+  useLayoutEffect(() => {
+    const prevEvents = prevEventsRef.current;
+    const focusId = focusIdRef.current ?? events[focusIndex]?._id ?? null;
+    const next = reconcileCatalogAnchor({
+      prevEvents,
+      nextEvents: events,
+      focusId,
+      selectedIds,
+      anchorActive,
+    });
+    prevEventsRef.current = events;
+    focusIdRef.current = next.focusId;
+    if (next.focusIndex !== focusIndex) setFocusIndex(next.focusIndex);
+    if (anchorActive && !sameIdSet(selectedIds, next.selectedIds)) {
+      onSelectedIdsChange(next.selectedIds);
     }
-    setFocusIndex((current) => Math.max(0, Math.min(current, events.length - 1)));
-  }, [events]);
+  }, [anchorActive, events, focusIndex, onSelectedIdsChange, selectedIds]);
 
   const revealThrough = useCallback((index) => {
     if (!Number.isInteger(index) || index < 0) return;
@@ -704,6 +1088,10 @@ function PivotCurationQueue({
   );
   const selectedDraftCount = selectedEvents.filter((e) => e.ingestStatus === 'draft').length;
   const selectedStagedCount = selectedEvents.filter((e) => e.ingestStatus === 'staged').length;
+  const selectedStagedEligibleCount = selectedEvents.filter(
+    (event) => event.ingestStatus === 'staged'
+      && !eventPublishBlock(event, { brokenImageIds }),
+  ).length;
   const selectedPublishedCount = selectedEvents.filter((e) => e.ingestStatus === 'published').length;
   const selectedUnfeaturedCount = selectedEvents.filter((e) => e.featured !== true).length;
   const selectedFeaturedCount = selectedEvents.filter((e) => e.featured === true).length;
@@ -726,10 +1114,12 @@ function PivotCurationQueue({
   ].filter(Boolean).join(' · ');
 
   const previewAt = useCallback((event, index, nextIds) => {
+    setAnchorActive(true);
     if (typeof index === 'number') {
       lastIndexRef.current = index;
       setFocusIndex(index);
     }
+    if (event?._id != null) focusIdRef.current = event._id;
     if (nextIds) onSelectedIdsChange(nextIds);
   }, [onSelectedIdsChange]);
 
@@ -745,7 +1135,9 @@ function PivotCurationQueue({
         rangeFrom: range ? lastIndexRef.current : null,
       });
       if (!range) lastIndexRef.current = index;
+      setAnchorActive(true);
       setFocusIndex(index);
+      if (event?._id != null) focusIdRef.current = event._id;
       onSelectedIdsChange(nextIds);
     },
     [events, onSelectedIdsChange, selectedIds],
@@ -784,6 +1176,7 @@ function PivotCurationQueue({
           additive ? baseSelection : null,
         ),
       );
+      setAnchorActive(true);
       setFocusIndex(toIndex);
     },
     [events, onSelectedIdsChange],
@@ -796,12 +1189,21 @@ function PivotCurationQueue({
     setDragSelecting(false);
   }, []);
 
+  const dismissAnchor = useCallback(() => {
+    setAnchorActive(false);
+    if (selectedIds.size) onSelectedIdsChange(new Set());
+    setDossierEventId(null);
+  }, [onSelectedIdsChange, selectedIds]);
+
   const handlePanePointerDown = useCallback(
     (nativeEvent) => {
       if (nativeEvent.button != null && nativeEvent.button !== 0) return;
       if (isInteractiveTarget(nativeEvent.target)) return;
       const row = nativeEvent.target.closest?.('tr[data-index]');
-      if (!row) return;
+      if (!row) {
+        dismissAnchor();
+        return;
+      }
       const index = Number(row.getAttribute('data-index'));
       const event = events[index];
       if (!event || !Number.isInteger(index)) return;
@@ -846,7 +1248,7 @@ function PivotCurationQueue({
         previewAt(event, index, new Set([event._id]));
       }
     },
-    [events, previewAt, selectAt, selectedIds],
+    [dismissAnchor, events, previewAt, selectAt, selectedIds],
   );
 
   const handlePanePointerMove = useCallback(
@@ -883,48 +1285,127 @@ function PivotCurationQueue({
       if (nativeEvent.type === 'pointerup' && drag?.pointerId === nativeEvent.pointerId) {
         if (drag.touch && !drag.cancelled) {
           previewAt(drag.event, drag.index, new Set([drag.event._id]));
-          setInspectingId(drag.event._id);
-        } else if (!drag.touch && !drag.dragging && !drag.additive && drag.event?._id) {
-          setInspectingId(drag.event._id);
+          if (inspectAsPopup) setDossierEventId(drag.event._id);
         }
       }
       endDrag(nativeEvent.pointerId);
     },
-    [endDrag, previewAt],
+    [endDrag, inspectAsPopup, previewAt],
   );
 
   const handleKeyDown = useCallback(
     (nativeEvent) => {
       if (isTypingTarget(nativeEvent.target)) return;
+      if (nativeEvent.altKey) return;
+
+      const moveFocus = (delta, { extend = false } = {}) => {
+        if (!events.length) return;
+        nativeEvent.preventDefault();
+        if (!anchorActive) {
+          const focused = events[focusIndex] || events[0];
+          if (!focused) return;
+          const index = events[focusIndex] ? focusIndex : 0;
+          if (extend) selectAt(focused, index, nativeEvent);
+          else previewAt(focused, index, new Set([focused._id]));
+          return;
+        }
+        const nextIndex = Math.max(0, Math.min(events.length - 1, focusIndex + delta));
+        const focused = events[nextIndex];
+        if (!focused) return;
+        if (extend) selectAt(focused, nextIndex, nativeEvent);
+        else previewAt(focused, nextIndex, new Set([focused._id]));
+      };
+
+      const actionTargets = () => {
+        if (selectedIds.size > 0) {
+          return events.filter((event) => selectedIds.has(event._id));
+        }
+        const focused = events[focusIndex];
+        return focused ? [focused] : [];
+      };
+
+      const holdTargets = (targets) => {
+        setAnchorActive(true);
+        if (!targets?.length) return;
+        if (selectedIds.size > 0) return;
+        onSelectedIdsChange(new Set(targets.map((event) => event._id)));
+        if (targets[0]?._id != null) focusIdRef.current = targets[0]._id;
+      };
+
+      const key = String(nativeEvent.key || '').toLowerCase();
+      const withMeta = nativeEvent.metaKey || nativeEvent.ctrlKey;
+
+      if (weightEventId) return;
+
+      if (publishConfirmEvents?.length) {
+        if (nativeEvent.key === 'Escape') {
+          nativeEvent.preventDefault();
+          setPublishConfirmEvents(null);
+          return;
+        }
+        if (nativeEvent.key === 'Enter' || key === 'p') {
+          nativeEvent.preventDefault();
+          const ready = publishConfirmEvents.filter(
+            (event) => !publishReviewBlock(event, { brokenImageIds }),
+          );
+          if (!ready.length) return;
+          Promise.resolve(executePublish(ready)).then((ok) => {
+            if (ok) holdTargets(ready);
+          });
+          return;
+        }
+        nativeEvent.preventDefault();
+        return;
+      }
 
       if (nativeEvent.key === 'Escape') {
         nativeEvent.preventDefault();
-        if (inspectingId) {
-          setInspectingId(null);
+        if (dossierEventId) {
+          setDossierEventId(null);
+          return;
+        }
+        if (chromeFullscreen) {
+          exitChromeFullscreen();
           return;
         }
         if (immersive) {
           collapse();
-          return;
         }
-        onSelectedIdsChange(new Set());
+        return;
+      }
+
+      if (withMeta && key === 'a') {
+        nativeEvent.preventDefault();
+        nativeEvent.stopPropagation();
+        window.getSelection?.()?.removeAllRanges?.();
+        if (events.length) {
+          setAnchorActive(true);
+          onSelectedIdsChange(new Set(events.map((event) => event._id)));
+        }
         return;
       }
 
       if (!events.length) return;
 
-      if ((nativeEvent.metaKey || nativeEvent.ctrlKey) && nativeEvent.key.toLowerCase() === 'a') {
+      if (withMeta && key === 'p') {
         nativeEvent.preventDefault();
-        onSelectedIdsChange(new Set(events.map((event) => event._id)));
+        if (busyKey) return;
+        const staged = actionTargets().filter((event) => event.ingestStatus === 'staged');
+        if (!staged.length) return;
+        Promise.resolve(executePublish(staged)).then((ok) => {
+          if (ok) holdTargets(staged);
+        });
         return;
       }
+
+      if (withMeta) return;
 
       if (nativeEvent.key === 'Enter') {
         const focused = events[focusIndex];
         if (!focused) return;
         nativeEvent.preventDefault();
         previewAt(focused, focusIndex, new Set([focused._id]));
-        setInspectingId(focused._id);
+        setDossierEventId(focused._id);
         return;
       }
 
@@ -936,21 +1417,146 @@ function PivotCurationQueue({
         return;
       }
 
-      if (nativeEvent.key === 'ArrowDown' || nativeEvent.key === 'ArrowUp') {
-        nativeEvent.preventDefault();
-        const delta = nativeEvent.key === 'ArrowDown' ? 1 : -1;
-        const nextIndex = Math.max(0, Math.min(events.length - 1, focusIndex + delta));
-        const focused = events[nextIndex];
-        if (!focused) return;
-        if (nativeEvent.shiftKey) {
-          selectAt(focused, nextIndex, nativeEvent);
-        } else {
-          previewAt(focused, nextIndex, new Set([focused._id]));
-        }
+      if (nativeEvent.key === 'ArrowDown' || nativeEvent.key === 'k' || nativeEvent.key === 'K') {
+        moveFocus(1, { extend: nativeEvent.shiftKey });
+        return;
+      }
+
+      if (nativeEvent.key === 'ArrowUp' || nativeEvent.key === 'i' || nativeEvent.key === 'I') {
+        moveFocus(-1, { extend: nativeEvent.shiftKey });
+        return;
+      }
+
+      if (busyKey || !['s', 'p', 'u', 'd', 'w'].includes(key)) return;
+
+      const targets = actionTargets();
+      if (!targets.length) return;
+      nativeEvent.preventDefault();
+
+      if (key === 'w') {
+        setWeightEventId(targets[0]._id);
+        holdTargets(targets);
+        return;
+      }
+
+      if (key === 's') {
+        const drafts = targets.filter((event) => event.ingestStatus === 'draft');
+        if (!drafts.length) return;
+        Promise.resolve(
+          drafts.length === 1
+            ? onStage?.(drafts[0])
+            : onBulkStage?.({ events: drafts }),
+        ).then((ok) => {
+          if (ok) holdTargets(drafts);
+        });
+        return;
+      }
+
+      if (key === 'p') {
+        const staged = targets.filter((event) => event.ingestStatus === 'staged');
+        if (!staged.length) return;
+        requestPublishReview(staged);
+        holdTargets(staged);
+        return;
+      }
+
+      if (key === 'u') {
+        const published = targets.filter((event) => event.ingestStatus === 'published');
+        if (!published.length) return;
+        Promise.resolve(
+          published.length === 1
+            ? onUnpublish?.(published[0], { skipConfirm: true })
+            : onBulkUnpublish?.({ skipConfirm: true, events: published }),
+        ).then((ok) => {
+          if (ok) holdTargets(published);
+        });
+        return;
+      }
+
+      if (key === 'd') {
+        const toDraft = targets.filter((event) => event.ingestStatus && event.ingestStatus !== 'draft');
+        if (!toDraft.length) return;
+        Promise.resolve(
+          toDraft.length === 1
+            ? onDraft?.(toDraft[0])
+            : onBulkDraft?.({ events: toDraft }),
+        ).then((ok) => {
+          if (ok) holdTargets(toDraft);
+        });
       }
     },
-    [events, focusIndex, immersive, collapse, inspectingId, onSelectedIdsChange, previewAt, selectAt],
+    [
+      anchorActive,
+      busyKey,
+      chromeFullscreen,
+      collapse,
+      events,
+      executePublish,
+      exitChromeFullscreen,
+      focusIndex,
+      immersive,
+      dossierEventId,
+      onBulkStage,
+      onBulkDraft,
+      onBulkUnpublish,
+      onDraft,
+      onSelectedIdsChange,
+      onStage,
+      onUnpublish,
+      previewAt,
+      publishConfirmEvents,
+      requestPublishReview,
+      selectAt,
+      selectedIds,
+      weightEventId,
+      brokenImageIds,
+    ],
   );
+
+  useEffect(() => {
+    const onWindowKeyDown = (nativeEvent) => {
+      if (nativeEvent.defaultPrevented) return;
+      if (isTypingTarget(nativeEvent.target)) return;
+      const key = String(nativeEvent.key || '');
+      if (weightEventId) return;
+      if (publishConfirmEvents?.length) {
+        handleKeyDown(nativeEvent);
+        return;
+      }
+      if (key === 'Enter' || (key === 'Escape' && (dossierEventId || chromeFullscreen))) {
+        handleKeyDown(nativeEvent);
+        return;
+      }
+      if (!['i', 'I', 'k', 'K', 's', 'S', 'p', 'P', 'u', 'U', 'd', 'D', 'w', 'W'].includes(key)) return;
+      handleKeyDown(nativeEvent);
+    };
+    const onCaptureMeta = (nativeEvent) => {
+      if (isTypingTarget(nativeEvent.target)) return;
+      const key = String(nativeEvent.key || '').toLowerCase();
+      if (!(nativeEvent.metaKey || nativeEvent.ctrlKey) || (key !== 'p' && key !== 'a')) return;
+      nativeEvent.preventDefault();
+      nativeEvent.stopPropagation();
+      handleKeyDown(nativeEvent);
+    };
+    window.addEventListener('keydown', onWindowKeyDown);
+    window.addEventListener('keydown', onCaptureMeta, true);
+    return () => {
+      window.removeEventListener('keydown', onWindowKeyDown);
+      window.removeEventListener('keydown', onCaptureMeta, true);
+    };
+  }, [chromeFullscreen, dossierEventId, handleKeyDown, publishConfirmEvents, weightEventId]);
+
+  useEffect(() => {
+    const onPointerDown = (nativeEvent) => {
+      if (nativeEvent.button != null && nativeEvent.button !== 0) return;
+      const target = nativeEvent.target;
+      if (!(target instanceof Element)) return;
+      if (target.closest('[data-curation-anchor], .popup-overlay')) return;
+      dismissAnchor();
+    };
+    document.addEventListener('pointerdown', onPointerDown);
+    return () => document.removeEventListener('pointerdown', onPointerDown);
+  }, [dismissAnchor]);
 
   const filterActions = (
     <div className="pivot-curation-sheet__filters">
@@ -962,9 +1568,20 @@ function PivotCurationQueue({
             filter === opt.value ? ' pivot-curation-sheet__chip--active' : ''
           }`}
           aria-pressed={filter === opt.value}
+          aria-busy={opt.value === 'broken-image' ? scanningBrokenImages : undefined}
+          title={
+            opt.value === 'broken-image'
+              ? scanningBrokenImages
+                ? 'Checking cover URLs that have a link but may not load'
+                : 'Events whose cover URL did not load'
+              : undefined
+          }
           onClick={() => onFilterChange(opt.value)}
         >
           {opt.label}
+          {opt.value === 'broken-image' && brokenImageIds?.size ? (
+            <span className="pivot-curation-sheet__chip-count">{brokenImageIds.size}</span>
+          ) : null}
         </button>
       ))}
       <button
@@ -988,30 +1605,63 @@ function PivotCurationQueue({
     </div>
   );
 
+  const renderInspector = (event, layout) => (
+    <QueueInspector
+      layout={layout}
+      event={event}
+      perf={eventPerf(event, performanceById)}
+      showPerformance={showPerformance}
+      onClose={() => setDossierEventId(null)}
+      onOpenDossier={(next) => setDossierEventId(next._id)}
+      onEdit={onEdit}
+      onPublish={onPublish}
+      onRequestPublish={(next) => requestPublishReview([next])}
+      onUnpublish={onUnpublish}
+      onStage={onStage}
+      onDraft={onDraft}
+      onDelete={onDelete}
+      onToggleFeatured={onToggleFeatured}
+      onEditorialChange={onEditorialChange}
+      busyKey={busyKey}
+      releaseDisabled={releaseDisabled}
+      releaseBlockReason={releaseBlockReason}
+      tenantKey={tenantKey}
+      batchWeek={batchWeek}
+      imageBroken={brokenImageIds?.has(String(event._id))}
+      showWeight={layout === 'dossier' || !weightEvent}
+    />
+  );
+
   return (
     <div className="pivot-curation-host">
       <div
         ref={slotRef}
         className="pivot-curation-frame__slot"
-        hidden={!immersive}
+        hidden={!immersive && !chromeFullscreen}
         aria-hidden="true"
-        style={immersive ? { height: slotHeight } : undefined}
+        style={
+          immersive
+            ? { height: slotHeight }
+            : chromeFullscreen
+              ? { height: chromeSlotHeight }
+              : undefined
+        }
       />
       <div
         ref={frameRef}
         className={`pivot-curation-frame${immersive ? ' is-immersive' : ''}${
           expanded ? ' is-expanded' : ''
-        }`}
+        }${chromeFullscreen ? ' is-chrome-fullscreen' : ''}`}
       >
         <PivotOpsSection
           title={`Catalog · ${batchWeek}`}
           titleId="curation-queue"
           description={
             immersive
-              ? 'Scroll the list. Use Exit fullscreen, or scroll up past the top, to return.'
+              ? 'Scroll the list. Scroll up past the top to return, or use Fullscreen to hide the dashboard.'
               : showPerformance
-                ? 'Click a row to open it. Click and drag to select several. Interest % updates as the live batch gets swipes.'
-                : 'Click a row to open it. Click and drag to select several. Unpublished rows still need staging or location review before they can go live.'
+                ? 'The side panel follows the focused row. Press Enter for a closer look. Click and drag to select several. Interest % updates as the live batch gets swipes.'
+                : 'The side panel follows the focused row. Press Enter for a closer look. Click and drag to select several. Unpublished rows still need staging or location review before they can go live.'
           }
           actions={filterActions}
           className={`pivot-curation-sheet${immersive ? ' is-immersive' : ''}`}
@@ -1067,15 +1717,35 @@ function PivotCurationQueue({
         <button
           type="button"
           className="linear-btn linear-btn--secondary linear-btn--sm pivot-curation-sheet__fullscreen"
-          onClick={() => (expanded ? collapse() : expand())}
+          onClick={() => (chromeFullscreen ? exitChromeFullscreen() : enterChromeFullscreen())}
           disabled={!catalogEvents.length}
-          title={expanded ? 'Exit fullscreen catalog' : 'Open the catalog fullscreen'}
+          title={
+            chromeFullscreen
+              ? 'Exit fullscreen (Esc)'
+              : 'Open the catalog over the whole window, hiding the dashboard'
+          }
         >
-          {expanded ? 'Exit fullscreen' : 'Fullscreen'}
+          {chromeFullscreen ? 'Exit fullscreen' : 'Fullscreen'}
         </button>
+        <p className="pivot-curation-sheet__keys">
+          <span><kbd>I</kbd> up <kbd>K</kbd> down</span>
+          <span><kbd>↑</kbd><kbd>↓</kbd> also</span>
+          <span><kbd>S</kbd> stage</span>
+          <span><kbd>D</kbd> draft</span>
+          <span><kbd>P</kbd> review</span>
+          <span><kbd>⌘P</kbd> publish</span>
+          <span><kbd>⌘A</kbd> select all</span>
+          <span><kbd>W</kbd> weight</span>
+          <span><kbd>U</kbd> unpublish</span>
+          <span><kbd>↵</kbd> details</span>
+        </p>
       </div>
       <div
-        className="pivot-curation-sheet__layout"
+        ref={layoutRef}
+        data-curation-anchor
+        className={`pivot-curation-sheet__layout${
+          paneEvent ? ' pivot-curation-sheet__layout--split' : ''
+        }`}
       >
         <div
           ref={sheetRef}
@@ -1125,9 +1795,10 @@ function PivotCurationQueue({
                       event={event}
                       index={index}
                       selected={selectedIds.has(event._id)}
-                      focused={index === focusIndex}
+                      focused={anchorActive && index === focusIndex}
                       showPerformance={showPerformance}
                       performanceById={performanceById}
+                      imageBroken={brokenImageIds?.has(String(event._id))}
                     />
                   ))}
                 </tbody>
@@ -1226,7 +1897,7 @@ function PivotCurationQueue({
                   <button
                     type="button"
                     className="linear-btn linear-btn--secondary"
-                    onClick={onBulkStage}
+                    onClick={() => onBulkStage()}
                     disabled={busyKey === 'bulk-stage'}
                   >
                     {busyKey === 'bulk-stage' ? 'Staging…' : `Stage (${selectedDraftCount})`}
@@ -1236,20 +1907,29 @@ function PivotCurationQueue({
                   <button
                     type="button"
                     className="linear-btn linear-btn--primary"
-                    onClick={onBulkPublish}
-                    disabled={releaseDisabled || busyKey === 'bulk-release'}
-                    title={releaseBlockReason || `Publish ${selectedStagedCount} selected`}
+                    onClick={() => onBulkPublish()}
+                    disabled={
+                      releaseDisabled
+                      || busyKey === 'bulk-release'
+                      || selectedStagedEligibleCount === 0
+                    }
+                    title={
+                      selectedStagedEligibleCount === 0
+                        ? 'Selected staged events need a working cover (and location review) before they can go live'
+                        : releaseBlockReason
+                          || `Publish ${selectedStagedEligibleCount} selected`
+                    }
                   >
                     {busyKey === 'bulk-release'
                       ? 'Publishing…'
-                      : `Publish (${selectedStagedCount})`}
+                      : `Publish (${selectedStagedEligibleCount})`}
                   </button>
                 ) : null}
                 {selectedPublishedCount > 0 ? (
                   <button
                     type="button"
                     className="linear-btn linear-btn--secondary"
-                    onClick={onBulkUnpublish}
+                    onClick={() => onBulkUnpublish()}
                     disabled={busyKey === 'bulk-unrelease'}
                     title="Pull selected published events out of the live feed"
                   >
@@ -1289,30 +1969,47 @@ function PivotCurationQueue({
           ) : null}
         </div>
 
-        {inspectingEvent ? (
-          <Popup
+        {paneEvent ? renderInspector(paneEvent, 'pane') : null}
+
+        {dossierEvent ? (
+          <PivotCurationPortalPopup
             isOpen
-            onClose={() => setInspectingId(null)}
-            customClassName="pivot-curation-inspect-popup"
+            onClose={() => setDossierEventId(null)}
+            className="pivot-curation-inspect-popup"
           >
-            <QueueInspector
-              event={inspectingEvent}
-              perf={eventPerf(inspectingEvent, performanceById)}
-              showPerformance={showPerformance}
-              onClose={() => setInspectingId(null)}
-              onEdit={onEdit}
-              onPublish={onPublish}
-              onUnpublish={onUnpublish}
-              onDelete={onDelete}
-              onToggleFeatured={onToggleFeatured}
-              onEditorialChange={onEditorialChange}
-              busyKey={busyKey}
-              releaseDisabled={releaseDisabled}
-              releaseBlockReason={releaseBlockReason}
-              tenantKey={tenantKey}
-              batchWeek={batchWeek}
+            {renderInspector(dossierEvent, 'dossier')}
+          </PivotCurationPortalPopup>
+        ) : null}
+
+        {publishConfirmEvents?.length ? (
+          <PivotCurationPortalPopup
+            isOpen
+            onClose={() => setPublishConfirmEvents(null)}
+            className="pivot-curation-publish-confirm-popup"
+          >
+            <PublishConfirmCard
+              events={publishConfirmEvents}
+              busy={Boolean(busyKey && String(busyKey).includes('release'))}
+              brokenImageIds={brokenImageIds}
+              onCancel={() => setPublishConfirmEvents(null)}
+              onConfirm={(ready) => executePublish(ready)}
             />
-          </Popup>
+          </PivotCurationPortalPopup>
+        ) : null}
+
+        {weightEvent ? (
+          <PivotCurationPortalPopup
+            isOpen
+            onClose={() => setWeightEventId(null)}
+            className="pivot-curation-weight-popup"
+          >
+            <WeightPopupCard
+              event={weightEvent}
+              busy={busyKey === `editorial-${weightEvent._id}`}
+              onSave={onEditorialChange}
+              onCancel={() => setWeightEventId(null)}
+            />
+          </PivotCurationPortalPopup>
         ) : null}
       </div>
     </PivotOpsSection>

@@ -5,22 +5,23 @@
     max-width: 1100px;
   }
 
-  &__range-row {
-    display: flex;
-    align-items: flex-start;
-    gap: 6px;
-    margin: 0 0 16px;
-  }
-
   &__range {
-    margin: 0;
+    margin: 0 0 16px;
     font-size: 13px;
     color: var(--pivot-ops-ink-soft, rgba(26, 23, 20, 0.5));
+  }
+
+  &__panel-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 8px;
   }
 
   &__notes {
     position: relative;
     flex: 0 0 auto;
+    margin: -4px -4px 0 0;
   }
 
   &__notes-btn {
@@ -56,7 +57,8 @@
   &__notes-panel {
     position: absolute;
     top: calc(100% + 6px);
-    left: 0;
+    right: 0;
+    left: auto;
     z-index: 30;
     width: min(420px, calc(100vw - 48px));
     margin: 0;
@@ -92,15 +94,17 @@
   }
 
   &__panel--funnel {
+    position: relative;
     display: flex;
     flex-direction: column;
     min-height: 0;
-    overflow: hidden;
+    overflow: visible;
   }
 
   &__funnel-wrap {
     margin: 10px -16px -16px;
     flex: 1 1 auto;
     min-height: 160px;
+    overflow: hidden;
   }
 }

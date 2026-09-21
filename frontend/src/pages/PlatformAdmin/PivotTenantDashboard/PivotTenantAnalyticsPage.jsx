@@ -174,15 +174,12 @@ function PivotTenantAnalyticsPage({
 
       {data ? (
         <>
-          <div className="pivot-tenant-analytics__range-row">
-            <p className="pivot-tenant-analytics__range">
-              {data.range?.label || month}
-              {data.overall?.rate != null
-                ? ` · landing → deck ${formatRate(data.overall.rate)}`
-                : ''}
-            </p>
-            <FunnelNotesButton />
-          </div>
+          <p className="pivot-tenant-analytics__range">
+            {data.range?.label || month}
+            {data.overall?.rate != null
+              ? ` · landing → deck ${formatRate(data.overall.rate)}`
+              : ''}
+          </p>
 
           <PivotOpsMetricGrid className="pivot-tenant-analytics__metrics">
             {stages.map((stage) => (
@@ -201,7 +198,10 @@ function PivotTenantAnalyticsPage({
 
           <div className="pivot-tenant-analytics__funnel-grid">
             <PivotOpsCard className="pivot-tenant-analytics__panel pivot-tenant-analytics__panel--funnel">
-              <h2 className="pivot-ops-section__title">Acquisition</h2>
+              <div className="pivot-tenant-analytics__panel-head">
+                <h2 className="pivot-ops-section__title">Acquisition</h2>
+                <FunnelNotesButton />
+              </div>
               <p className="pivot-ops-section__description">
                 Unique counts by step this month. Deck is first swipe only.
               </p>

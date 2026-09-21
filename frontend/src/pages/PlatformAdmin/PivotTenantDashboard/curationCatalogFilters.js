@@ -7,11 +7,12 @@ export const FILTER_OPTIONS = [
   { value: 'untagged', label: 'Untagged' },
   { value: 'missing-host', label: 'Missing host' },
   { value: 'missing-rich-data', label: 'Missing rich data' },
+  { value: 'broken-image', label: 'Broken image' },
   { value: 'film', label: 'Showtimes' },
   { value: 'featured', label: 'Featured' },
 ];
 
-export function eventMatchesFilter(event, filter) {
+export function eventMatchesFilter(event, filter, { brokenImageIds } = {}) {
   if (!filter || filter === 'all') return true;
   if (filter === 'unpublished') {
     return event.ingestStatus === 'draft' || event.ingestStatus === 'staged';
@@ -27,6 +28,9 @@ export function eventMatchesFilter(event, filter) {
   }
   if (filter === 'missing-rich-data') {
     return event.needsRichData === true;
+  }
+  if (filter === 'broken-image') {
+    return Boolean(event.image?.trim?.()) && brokenImageIds?.has(String(event._id));
   }
   if (filter === 'film') {
     return Boolean(event.movie) || (Array.isArray(event.timeSlots) && event.timeSlots.length > 0);

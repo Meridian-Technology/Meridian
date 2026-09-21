@@ -2,10 +2,33 @@ import { eventMatchesCatalogSearch, eventMatchesFilter } from './curationCatalog
 import {
   locationReviewBlock,
   locationReviewHref,
+  coverImageBlock,
+  eventPublishBlock,
+  catalogCopyBlock,
+  publishReviewBlock,
   releaseOutcomeNotification,
 } from './curationPublishFeedback';
 
 describe('eventMatchesFilter', () => {
+  it('matches cover URLs that failed to load', () => {
+    const broken = new Set(['dead']);
+    expect(eventMatchesFilter(
+      { _id: 'dead', image: 'https://cdn.example/missing.jpg' },
+      'broken-image',
+      { brokenImageIds: broken },
+    )).toBe(true);
+    expect(eventMatchesFilter(
+      { _id: 'ok', image: 'https://cdn.example/ok.jpg' },
+      'broken-image',
+      { brokenImageIds: broken },
+    )).toBe(false);
+    expect(eventMatchesFilter(
+      { _id: 'dead' },
+      'broken-image',
+      { brokenImageIds: broken },
+    )).toBe(false);
+  });
+
   it('groups draft and staged as unpublished', () => {
     expect(eventMatchesFilter({ ingestStatus: 'draft' }, 'unpublished')).toBe(true);
     expect(eventMatchesFilter({ ingestStatus: 'staged' }, 'unpublished')).toBe(true);
@@ -49,6 +72,54 @@ describe('locationReviewBlock', () => {
   it('returns null when review is clear', () => {
     expect(locationReviewBlock({ locationReview: { status: 'approved' } })).toBeNull();
     expect(locationReviewBlock({})).toBeNull();
+  });
+});
+
+describe('coverImageBlock', () => {
+  it('blocks missing, invalid, and failed covers', () => {
+    expect(coverImageBlock({}).code).toBe('MISSING_IMAGE');
+    expect(coverImageBlock({ image: 'nope' }).code).toBe('BROKEN_IMAGE');
+    expect(coverImageBlock(
+      { _id: '1', image: 'https://cdn.example/a.jpg' },
+      { brokenImageIds: new Set(['1']) },
+    ).code).toBe('BROKEN_IMAGE');
+    expect(coverImageBlock({ _id: '1', image: 'https://cdn.example/a.jpg' })).toBeNull();
+  });
+
+  it('combines location and cover publish blocks', () => {
+    expect(eventPublishBlock({
+      image: 'https://cdn.example/a.jpg',
+      locationReview: { status: 'needs_review', reason: 'out_of_scope' },
+    }).code).toBeUndefined();
+    expect(eventPublishBlock({
+      image: 'https://cdn.example/a.jpg',
+      locationReview: { status: 'needs_review', reason: 'out_of_scope' },
+    }).title).toMatch(/outside the city boundary/);
+    expect(eventPublishBlock({ ingestStatus: 'staged' }).code).toBe('MISSING_IMAGE');
+  });
+});
+
+describe('catalogCopyBlock', () => {
+  const ready = {
+    image: 'https://cdn.example/a.jpg',
+    description: 'A night of records',
+    tags: ['dance'],
+  };
+
+  it('blocks missing tags and rich data for the P review', () => {
+    expect(catalogCopyBlock({ ...ready, tags: [] }).code).toBe('MISSING_TAGS');
+    expect(catalogCopyBlock({ ...ready, description: '', needsRichData: true, missingRichData: ['description'] }).code)
+      .toBe('MISSING_RICH_DATA');
+    expect(catalogCopyBlock({ ...ready, tags: [], description: '' }).title).toMatch(/tags and rich data/);
+    expect(catalogCopyBlock(ready)).toBeNull();
+  });
+
+  it('keeps cover blocks ahead of catalog copy in publish review', () => {
+    expect(publishReviewBlock({ ingestStatus: 'staged', tags: [] }).code).toBe('MISSING_IMAGE');
+    expect(publishReviewBlock({
+      ...ready,
+      tags: [],
+    }).code).toBe('MISSING_TAGS');
   });
 });
 

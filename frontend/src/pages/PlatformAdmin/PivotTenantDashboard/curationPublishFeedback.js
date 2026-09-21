@@ -62,6 +62,97 @@ export function locationReviewHref(tenantKey, batchWeek) {
   return `/platform-admin/pivot/${encodeURIComponent(tenantKey)}?${params.toString()}`;
 }
 
+export function coverImageBlock(event, { brokenImageIds, broken, scanning } = {}) {
+  const raw = String(event?.image || '').trim();
+  if (!raw) {
+    return {
+      code: 'MISSING_IMAGE',
+      title: 'No cover image',
+      detail: 'Add a working cover image before this event can go live.',
+    };
+  }
+  try {
+    const parsed = new URL(raw);
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+      return {
+        code: 'BROKEN_IMAGE',
+        title: 'Cover URL is not a web image',
+        detail: 'Use an http(s) image URL that loads in the app.',
+      };
+    }
+  } catch {
+    return {
+      code: 'BROKEN_IMAGE',
+      title: 'Cover URL is not a web image',
+      detail: 'Use an http(s) image URL that loads in the app.',
+    };
+  }
+  if (broken || brokenImageIds?.has(String(event._id))) {
+    return {
+      code: 'BROKEN_IMAGE',
+      title: 'Cover image failed to load',
+      detail: 'Replace the image URL before this event can go live.',
+    };
+  }
+  if (scanning) {
+    return {
+      code: 'CHECKING_IMAGE',
+      title: 'Cover image is still being checked',
+      detail: 'Wait for the catalog image check to finish before publishing.',
+    };
+  }
+  return null;
+}
+
+export function eventPublishBlock(event, options) {
+  return locationReviewBlock(event) || coverImageBlock(event, options);
+}
+
+function missingRichDataFields(event) {
+  if (Array.isArray(event?.missingRichData)) {
+    return event.missingRichData.map((field) => String(field || '').trim()).filter(Boolean);
+  }
+  const missing = [];
+  if (!event?.description?.trim?.()) missing.push('description');
+  if (!String(event?.image || '').trim()) missing.push('image');
+  return missing;
+}
+
+export function catalogCopyBlock(event) {
+  const tags = Array.isArray(event?.tags)
+    ? event.tags.map((tag) => String(tag || '').trim()).filter(Boolean)
+    : [];
+  const missingRich = missingRichDataFields(event);
+  const needsRich = event?.needsRichData === true || missingRich.length > 0;
+  const missingTags = tags.length === 0;
+  if (!needsRich && !missingTags) return null;
+
+  if (missingTags && needsRich) {
+    return {
+      code: 'CATALOG_INCOMPLETE',
+      title: 'Missing tags and rich data',
+      detail: 'Add tags and a description before publishing from review.',
+    };
+  }
+  if (missingTags) {
+    return {
+      code: 'MISSING_TAGS',
+      title: 'Missing tags',
+      detail: 'Add at least one tag before publishing from review.',
+    };
+  }
+  const fields = missingRich.length ? missingRich.join(' and ') : 'description';
+  return {
+    code: 'MISSING_RICH_DATA',
+    title: 'Missing rich data',
+    detail: `Add ${fields} before publishing from review.`,
+  };
+}
+
+export function publishReviewBlock(event, options) {
+  return eventPublishBlock(event, options) || catalogCopyBlock(event);
+}
+
 function extraSkipLabel(skippedCount) {
   if (skippedCount <= 1) return '';
   return ` ${skippedCount - 1} more also stayed unpublished.`;

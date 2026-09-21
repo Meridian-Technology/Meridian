@@ -3,67 +3,14 @@ import Popup from '../../../components/Popup/Popup';
 import { useNotification } from '../../../NotificationContext';
 import PivotTagMultiSelect from './PivotTagMultiSelect';
 import PivotTmdbLookup from './PivotTmdbLookup';
+import {
+  checkImageUrl,
+  imagePreviewErrorMessage,
+  normalizeImageUrl,
+} from './checkImageUrl';
 import './PivotManualImportModal.scss';
 
 const IMAGE_CHECK_DEBOUNCE_MS = 450;
-const IMAGE_CHECK_TIMEOUT_MS = 12_000;
-
-function normalizeImageUrl(raw) {
-  const trimmed = raw?.trim();
-  if (!trimmed) return null;
-  try {
-    const parsed = new URL(trimmed);
-    if (!['http:', 'https:'].includes(parsed.protocol)) return null;
-    return parsed.toString();
-  } catch {
-    return null;
-  }
-}
-
-function checkImageUrl(url) {
-  return new Promise((resolve) => {
-    const img = new Image();
-    let settled = false;
-
-    const finish = (result) => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timeoutId);
-      img.onload = null;
-      img.onerror = null;
-      resolve(result);
-    };
-
-    const timeoutId = setTimeout(() => {
-      finish({ ok: false, reason: 'timeout' });
-    }, IMAGE_CHECK_TIMEOUT_MS);
-
-    img.onload = () => {
-      if (img.naturalWidth > 0 && img.naturalHeight > 0) {
-        finish({ ok: true });
-        return;
-      }
-      finish({ ok: false, reason: 'empty' });
-    };
-
-    img.onerror = () => {
-      finish({ ok: false, reason: 'blocked' });
-    };
-
-    img.referrerPolicy = 'no-referrer';
-    img.src = url;
-  });
-}
-
-function imagePreviewErrorMessage(reason) {
-  if (reason === 'timeout') {
-    return 'Image took too long to load — check the URL or try again.';
-  }
-  if (reason === 'invalid') {
-    return 'Enter a valid http(s) image URL.';
-  }
-  return 'Could not load image — the URL may be broken, not an image, or blocked by the host.';
-}
 
 function isTypingTarget(target) {
   if (!target || !(target instanceof HTMLElement)) return false;

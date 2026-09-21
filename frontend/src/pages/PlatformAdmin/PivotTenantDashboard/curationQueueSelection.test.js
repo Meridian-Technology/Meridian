@@ -1,4 +1,4 @@
-import { dragRangeSelection, nextSelection, rangeIds } from './curationQueueSelection';
+import { dragRangeSelection, nextSelection, rangeIds, nextVisibleIndex, reconcileCatalogAnchor } from './curationQueueSelection';
 
 const events = [{ _id: 'a' }, { _id: 'b' }, { _id: 'c' }, { _id: 'd' }];
 
@@ -43,5 +43,46 @@ describe('dragRangeSelection', () => {
     expect(next.has('c')).toBe(true);
     expect(next.has('d')).toBe(true);
     expect(next.has('b')).toBe(false);
+  });
+});
+
+describe('reconcileCatalogAnchor', () => {
+  it('keeps focus on the same event after a refresh', () => {
+    const next = reconcileCatalogAnchor({
+      prevEvents: events,
+      nextEvents: events,
+      focusId: 'b',
+      selectedIds: new Set(['b']),
+    });
+    expect(next.focusIndex).toBe(1);
+    expect([...next.selectedIds]).toEqual(['b']);
+  });
+
+  it('moves to the next remaining child when the focused event leaves the filter', () => {
+    const next = reconcileCatalogAnchor({
+      prevEvents: events,
+      nextEvents: [{ _id: 'a' }, { _id: 'c' }, { _id: 'd' }],
+      focusId: 'b',
+      selectedIds: new Set(['b']),
+    });
+    expect(next.focusId).toBe('c');
+    expect([...next.selectedIds]).toEqual(['c']);
+  });
+
+  it('does not invent a selection on first load', () => {
+    const next = reconcileCatalogAnchor({
+      prevEvents: [],
+      nextEvents: events,
+      focusId: null,
+      selectedIds: new Set(),
+    });
+    expect(next.focusIndex).toBe(0);
+    expect(next.selectedIds.size).toBe(0);
+  });
+});
+
+describe('nextVisibleIndex', () => {
+  it('walks backward when nothing remains after the lost row', () => {
+    expect(nextVisibleIndex(events, [{ _id: 'a' }, { _id: 'b' }], 'd')).toBe(1);
   });
 });

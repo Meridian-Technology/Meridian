@@ -6,6 +6,8 @@ const ARROW_KEY_NAV_DEBOUNCE_MS = 140;
 /**
  * Shared keyboard nav for Pivot tenant ops pages (Overview / Journeys / Curation).
  * ← / → step batch week; R refreshes. Skips when typing in inputs.
+ * Week arrows are off while the curation catalog is fullscreen
+ * (`.is-catalog-expanded` or `html.is-curation-chrome-fullscreen`).
  *
  * @returns {{ keyboardNavActive: 'left'|'right'|null }}
  */
@@ -45,6 +47,13 @@ export function usePivotTenantWeekKeybinds({
     const handleKeyDown = (event) => {
       if (event.metaKey || event.ctrlKey || event.altKey) return;
       if (isTypingTarget(event.target)) return;
+
+      if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
+        if (
+          document.querySelector('.is-catalog-expanded')
+          || document.documentElement.classList.contains('is-curation-chrome-fullscreen')
+        ) return;
+      }
 
       if (event.key === 'ArrowLeft') {
         if (!canStepBack || !onStepWeek) return;
