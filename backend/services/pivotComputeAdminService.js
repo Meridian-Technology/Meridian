@@ -75,9 +75,9 @@ function maskLeaseToken(token) {
   return `${normalized.slice(0, 4)}…${normalized.slice(-4)}`;
 }
 
-function serializeAdminJob(job, { includeEmbeddedResult = false } = {}) {
+function serializeAdminJob(job, { includeEmbeddedResult = false, includeApplyManifest = true } = {}) {
   if (!job) return null;
-  const serialized = serializeJob(job);
+  const serialized = serializeJob(job, { includeApplyManifest });
   if (serialized.lease) {
     serialized.lease = {
       ...serialized.lease,
@@ -233,20 +233,24 @@ async function listAdminComputeJobs(req, {
     cursor,
   });
   return {
-    jobs: listed.jobs.map((job) => serializeAdminJob(job)),
+    jobs: listed.jobs.map((job) => serializeAdminJob(job, { includeApplyManifest: false })),
     nextCursor: listed.nextCursor,
   };
 }
 
-async function getAdminComputeJob(req, externalJobId, { includeAttempts = true } = {}) {
+async function getAdminComputeJob(req, externalJobId, {
+  includeAttempts = true,
+  includeApplyManifest = true,
+} = {}) {
   const job = await findJobByExternalId(req, externalJobId);
   if (!job) {
     throw serviceError('Compute job not found', 'COMPUTE_JOB_NOT_FOUND', 404);
   }
   const payload = {
     // Preview has a dedicated endpoint; avoid transferring multi-megabyte result
-    // payloads just to render operational metadata.
-    job: serializeAdminJob(job),
+    // payloads just to render operational metadata. Apply-manifest rows follow
+    // the same idea: list omits them, detail can request includeApplyManifest.
+    job: serializeAdminJob(job, { includeApplyManifest }),
   };
   if (includeAttempts) {
     payload.attempts = (await listComputeJobAttempts(req, externalJobId)).map((attempt) => ({

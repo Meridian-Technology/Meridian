@@ -33,6 +33,14 @@ function actorFromRequest(req) {
   return req.user?.email || req.user?.globalUserId || null;
 }
 
+function parseBooleanQuery(value, defaultValue) {
+  if (value == null || value === '') return defaultValue;
+  const normalized = String(value).trim().toLowerCase();
+  if (['1', 'true', 'yes'].includes(normalized)) return true;
+  if (['0', 'false', 'no'].includes(normalized)) return false;
+  return defaultValue;
+}
+
 router.get('/', verifyToken, requirePlatformAdmin, async (req, res) => {
   try {
     const payload = await listAdminComputeJobs(req, {
@@ -117,6 +125,7 @@ router.get('/:externalJobId/attempts', verifyToken, requirePlatformAdmin, async 
   try {
     const payload = await getAdminComputeJob(req, req.params.externalJobId, {
       includeAttempts: true,
+      includeApplyManifest: parseBooleanQuery(req.query.includeApplyManifest, true),
     });
     return res.json({
       job: payload.job,
@@ -204,6 +213,7 @@ router.get('/:externalJobId', verifyToken, requirePlatformAdmin, async (req, res
   try {
     const payload = await getAdminComputeJob(req, req.params.externalJobId, {
       includeAttempts: true,
+      includeApplyManifest: parseBooleanQuery(req.query.includeApplyManifest, true),
     });
     return res.json(payload);
   } catch (error) {

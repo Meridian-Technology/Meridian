@@ -119,6 +119,21 @@ function notifyEnabled(policy) {
   return policy?.notifyAdminsEmail !== false && process.env.DISABLE_PIVOT_COMPUTE_ADMIN_EMAILS !== 'true';
 }
 
+async function resolveNotifyContext({ req, job, tenant, policy } = {}) {
+  let resolvedTenant = tenant || null;
+  if (!resolvedTenant && req && job?.tenantKey) {
+    try {
+      const { getTenantByKey } = require('./tenantConfigService'); // eslint-disable-line global-require
+      resolvedTenant = await getTenantByKey(req, job.tenantKey, { exact: true });
+    } catch (_) {
+      resolvedTenant = null;
+    }
+  }
+  if (policy) return { tenant: resolvedTenant, policy };
+  const { resolvePivotComputeApplyPolicy } = require('../utilities/pivotComputeApplyPolicy'); // eslint-disable-line global-require
+  return { tenant: resolvedTenant, policy: resolvePivotComputeApplyPolicy(resolvedTenant) };
+}
+
 async function reserveNotification(req, externalJobId, type, recipientCount) {
   const { PivotComputeJob } = getGlobalModels(req, 'PivotComputeJob');
   return PivotComputeJob.findOneAndUpdate(
@@ -132,16 +147,17 @@ async function reserveNotification(req, externalJobId, type, recipientCount) {
 async function notifyAdminsOnComputeJob(req, { job: suppliedJob, tenant, policy, type } = {}) {
   try {
     if (!NOTIFICATION_TYPES.includes(type)) return { skipped: true, reason: 'invalid_type' };
-    if (!notifyEnabled(policy || tenant?.pivotComputeApply)) return { skipped: true, reason: 'notifications_disabled' };
     let job = suppliedJob;
     if (!job?.externalJobId) return { skipped: true, reason: 'missing_job' };
+    const resolved = await resolveNotifyContext({ req, job, tenant, policy });
+    if (!notifyEnabled(resolved.policy)) return { skipped: true, reason: 'notifications_disabled' };
 
     // Reserve before resolving recipients/sending. A zero-recipient reservation is
     // intentional: it prevents a later duplicate hook from emailing stale events.
     const reserved = await reserveNotification(req, job.externalJobId, type, 0);
     if (!reserved) return { skipped: true, reason: 'already_notified' };
     job = typeof reserved.toObject === 'function' ? reserved.toObject() : reserved;
-    const payload = buildNotifyPayload({ job, tenant, type });
+    const payload = buildNotifyPayload({ job, tenant: resolved.tenant, type });
     const resend = getResend();
     if (!resend) return { skipped: true, reason: 'resend_unavailable', payload };
     const recipients = await resolveAdminEmails(req);

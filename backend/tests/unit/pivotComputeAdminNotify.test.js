@@ -48,4 +48,49 @@ describe('pivotComputeAdminNotifyService', () => {
     getResend.mockReturnValue({ emails: { send: jest.fn().mockRejectedValue(new Error('down')) } });
     await expect(notifyAdminsOnComputeJob({}, { job, policy: {}, type: 'failed' })).resolves.toMatchObject({ skipped: true, reason: 'notify_error' });
   });
+
+  it('requires an explicit supported type and a job', async () => {
+    await expect(notifyAdminsOnComputeJob({}, { job, policy: {}, type: 'review-please' }))
+      .resolves.toMatchObject({ skipped: true, reason: 'invalid_type' });
+    await expect(notifyAdminsOnComputeJob({}, { policy: {}, type: 'failed' }))
+      .resolves.toMatchObject({ skipped: true, reason: 'missing_job' });
+    expect(PivotComputeJob.findOneAndUpdate).not.toHaveBeenCalled();
+  });
+
+  it('builds review-required and carousel-complete email bodies from explicit types', () => {
+    const review = buildNotifyPayload({ job, tenant: { location: 'Brooklyn' }, type: 'review-required' });
+    expect(review.subject).toContain('needs review');
+    expect(buildNotifyEmailHtml(review)).toContain('Two events need review');
+
+    const carousel = buildNotifyPayload({
+      job: { ...job, kind: 'carousel-export', status: 'completed' },
+      tenant: { location: 'Brooklyn' },
+      type: 'carousel-complete',
+    });
+    expect(carousel.subject).toContain('Carousel export complete');
+    expect(buildNotifyEmailHtml(carousel)).toContain('carousel export completed');
+  });
+
+  it('sends failed and review-required types through the same reservation path', async () => {
+    const failed = await notifyAdminsOnComputeJob({}, {
+      job: { ...job, status: 'failed', failure: { code: 'EXECUTION_FAILED', message: 'boom' } },
+      policy: { notifyAdminsEmail: true },
+      type: 'failed',
+    });
+    expect(failed.emailed).toBe(true);
+    expect(PivotComputeJob.findOneAndUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({ 'notifications.email.type': { $ne: 'failed' } }),
+      expect.any(Object),
+      expect.any(Object),
+    );
+
+    PivotComputeJob.findOneAndUpdate.mockResolvedValue({ ...job, notifications: { email: [] } });
+    const review = await notifyAdminsOnComputeJob({}, {
+      job,
+      tenant: { location: 'Brooklyn' },
+      type: 'review-required',
+    });
+    expect(review.emailed).toBe(true);
+    expect(getResend().emails.send).toHaveBeenCalledTimes(2);
+  });
 });
