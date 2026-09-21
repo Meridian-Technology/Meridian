@@ -11,6 +11,7 @@ const {
 const { PIVOT_FEED_INGEST_STATUS } = require('../utilities/pivotIngestStatus');
 const { logPivot, pivotRequestContext } = require('../utilities/pivotLogger');
 const { REVIEW_REASON_COPY } = require('./pivotLocationReviewService');
+const { explainCoverImageSkip, partitionDocsByCoverProbe } = require('../utilities/pivotCoverImage');
 
 const UNRELEASE_CONFIRM_TOKEN = 'UNRELEASE';
 const STAGED_STATUS = 'staged';
@@ -74,7 +75,7 @@ function catalogWeekBaseQuery(batchWeek) {
   };
 }
 
-const SKIP_SELECT = 'name isDeleted customFields.pivot';
+const SKIP_SELECT = 'name isDeleted image customFields.pivot';
 
 function tallySkipCodes(skipped) {
   const skippedByCode = {};
@@ -85,10 +86,6 @@ function tallySkipCodes(skipped) {
   return skippedByCode;
 }
 
-/**
- * Why a catalog event would not flip staged → published.
- * Returns null when the event matches the release query.
- */
 function explainReleaseSkip(doc, batchWeek) {
   if (!doc || doc.isDeleted) {
     return {
@@ -136,40 +133,57 @@ function explainReleaseSkip(doc, batchWeek) {
       detail: copy.detail,
     };
   }
+  const imageSkip = explainCoverImageSkip(doc.image);
+  if (imageSkip) return imageSkip;
   return null;
 }
 
-function serializeReleaseSkip(eventId, doc, batchWeek) {
-  const skip = explainReleaseSkip(doc, batchWeek);
-  if (!skip) return null;
-  return {
-    eventId: String(eventId),
-    name: doc?.name || null,
-    ...skip,
-  };
-}
-
-async function listReleaseSkips(Event, { batchWeek, eventIds }) {
+async function collectReleasePlan(Event, { batchWeek, eventIds, fetchImpl }) {
+  let rows;
   if (eventIds) {
     const docs = await Event.find({ _id: { $in: eventIds } })
       .select(SKIP_SELECT)
       .lean();
     const byId = new Map(docs.map((doc) => [String(doc._id), doc]));
-    return eventIds
-      .map((id) => serializeReleaseSkip(id, byId.get(String(id)), batchWeek))
-      .filter(Boolean);
+    rows = eventIds.map((id) => ({ eventId: id, doc: byId.get(String(id)) }));
+  } else {
+    const docs = await Event.find({
+      ...catalogWeekBaseQuery(batchWeek),
+      'customFields.pivot.ingestStatus': STAGED_STATUS,
+    })
+      .select(SKIP_SELECT)
+      .lean();
+    rows = docs.map((doc) => ({ eventId: doc._id, doc }));
   }
 
-  const blocked = await Event.find({
-    ...catalogWeekBaseQuery(batchWeek),
-    'customFields.pivot.ingestStatus': STAGED_STATUS,
-    'customFields.pivot.locationReview.status': 'needs_review',
-  })
-    .select(SKIP_SELECT)
-    .lean();
-  return blocked
-    .map((doc) => serializeReleaseSkip(doc._id, doc, batchWeek))
-    .filter(Boolean);
+  const skipped = [];
+  const probeCandidates = [];
+  for (const { eventId, doc } of rows) {
+    const skip = explainReleaseSkip(doc, batchWeek);
+    if (skip) {
+      skipped.push({
+        eventId: String(eventId),
+        name: doc?.name || null,
+        ...skip,
+      });
+    } else {
+      probeCandidates.push(doc);
+    }
+  }
+
+  const probed = await partitionDocsByCoverProbe(probeCandidates, { fetchImpl });
+  for (const { doc, skip } of probed.skipped) {
+    skipped.push({
+      eventId: String(doc._id),
+      name: doc?.name || null,
+      ...skip,
+    });
+  }
+
+  return {
+    skipped,
+    eligibleIds: probed.eligible.map((doc) => doc._id),
+  };
 }
 
 async function openTenantDb(tenantKey) {
@@ -209,26 +223,23 @@ async function releaseBatch(req, options = {}) {
   const tenantReq = await openTenantDb(tenantKey);
   const { Event, PivotBatch } = getModels(tenantReq, 'Event', 'PivotBatch');
 
-  const match = {
-    ...catalogWeekBaseQuery(batchWeek),
-    'customFields.pivot.ingestStatus': STAGED_STATUS,
-    'customFields.pivot.locationReview.status': { $ne: 'needs_review' },
-  };
-  if (idsResult.eventIds) {
-    match._id = { $in: idsResult.eventIds };
-  }
-
-  const skipped = await listReleaseSkips(Event, {
+  const plan = await collectReleasePlan(Event, {
     batchWeek,
     eventIds: idsResult.eventIds,
+    fetchImpl: options.fetchImpl,
   });
+  const skipped = plan.skipped;
   const skippedCount = skipped.length;
   const skippedByCode = tallySkipCodes(skipped);
 
-  const updateResult = await Event.updateMany(match, {
-    $set: { 'customFields.pivot.ingestStatus': PIVOT_FEED_INGEST_STATUS },
-  });
-  const releasedCount = updateResult.modifiedCount ?? updateResult.nModified ?? 0;
+  let releasedCount = 0;
+  if (plan.eligibleIds.length) {
+    const updateResult = await Event.updateMany(
+      { _id: { $in: plan.eligibleIds } },
+      { $set: { 'customFields.pivot.ingestStatus': PIVOT_FEED_INGEST_STATUS } },
+    );
+    releasedCount = updateResult.modifiedCount ?? updateResult.nModified ?? 0;
+  }
 
   await ensurePivotBatch(tenantReq, {
     batchWeek,

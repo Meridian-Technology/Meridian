@@ -737,6 +737,12 @@
     border-style: dashed;
   }
 
+  &__thumb--broken {
+    color: var(--pivot-ops-danger, #b42318);
+    border-color: rgba(180, 35, 24, 0.45);
+    background: rgba(180, 35, 24, 0.08);
+  }
+
   &__thumb-cell {
     width: 60px;
     padding-right: 4px;
