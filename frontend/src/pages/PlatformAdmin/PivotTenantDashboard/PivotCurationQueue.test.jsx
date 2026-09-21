@@ -1,5 +1,5 @@
 import React from 'react';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import PivotCurationQueue, { EditorialWeightControl } from './PivotCurationQueue';
 
 jest.mock('../PivotLab/PivotManualImportModal', () => ({
@@ -50,46 +50,55 @@ function catalogEvents() {
   ];
 }
 
+function eventRow(name) {
+  return screen.getByText(name, { selector: '.pivot-curation-sheet__name' }).closest('tr');
+}
+
+function queueProps(overrides = {}) {
+  return {
+    tenantKey: 'sf',
+    batchWeek: '2026-W38',
+    events: catalogEvents(),
+    selectedIds: new Set(),
+    onSelectedIdsChange: jest.fn(),
+    filter: 'all',
+    onFilterChange: jest.fn(),
+    filterOptions: FILTERS,
+    sourceFilter: 'all',
+    onSourceFilterChange: jest.fn(),
+    hostCreatedCount: 0,
+    catalogTags: [],
+    bulkTags: [],
+    onBulkTagsChange: jest.fn(),
+    showPerformance: false,
+    performanceById: new Map(),
+    busyKey: null,
+    releaseDisabled: false,
+    onEdit: jest.fn(),
+    onPublish: jest.fn(),
+    onUnpublish: jest.fn(),
+    onStage: jest.fn(),
+    onDraft: jest.fn(),
+    onDelete: jest.fn(),
+    onBulkStage: jest.fn(),
+    onBulkDraft: jest.fn(),
+    onBulkPublish: jest.fn(),
+    onBulkUnpublish: jest.fn(),
+    onBulkApplyTags: jest.fn(),
+    onBulkSuggestTags: jest.fn(),
+    onBulkEnrichRichData: jest.fn(),
+    onBulkCollapseShowtimes: jest.fn(),
+    onBulkFeature: jest.fn(),
+    onBulkUnfeature: jest.fn(),
+    onToggleFeatured: jest.fn(),
+    onEditorialChange: jest.fn(),
+    onBulkEditorial: jest.fn(),
+    ...overrides,
+  };
+}
+
 function renderQueue(overrides = {}) {
-  return render(
-    <PivotCurationQueue
-      tenantKey="sf"
-      batchWeek="2026-W38"
-      events={catalogEvents()}
-      selectedIds={new Set()}
-      onSelectedIdsChange={jest.fn()}
-      filter="all"
-      onFilterChange={jest.fn()}
-      filterOptions={FILTERS}
-      sourceFilter="all"
-      onSourceFilterChange={jest.fn()}
-      hostCreatedCount={0}
-      catalogTags={[]}
-      bulkTags={[]}
-      onBulkTagsChange={jest.fn()}
-      showPerformance={false}
-      performanceById={new Map()}
-      busyKey={null}
-      releaseDisabled={false}
-      onEdit={jest.fn()}
-      onPublish={jest.fn()}
-      onUnpublish={jest.fn()}
-      onDelete={jest.fn()}
-      onBulkStage={jest.fn()}
-      onBulkPublish={jest.fn()}
-      onBulkUnpublish={jest.fn()}
-      onBulkApplyTags={jest.fn()}
-      onBulkSuggestTags={jest.fn()}
-      onBulkEnrichRichData={jest.fn()}
-      onBulkCollapseShowtimes={jest.fn()}
-      onBulkFeature={jest.fn()}
-      onBulkUnfeature={jest.fn()}
-      onToggleFeatured={jest.fn()}
-      onEditorialChange={jest.fn()}
-      onBulkEditorial={jest.fn()}
-      {...overrides}
-    />,
-  );
+  return render(<PivotCurationQueue {...queueProps(overrides)} />);
 }
 
 describe('EditorialWeightControl', () => {
@@ -169,9 +178,10 @@ describe('PivotCurationQueue catalog', () => {
 
   afterEach(() => {
     delete window.matchMedia;
+    document.documentElement.classList.remove('is-curation-chrome-fullscreen');
   });
 
-  it('searches the catalog, flags location review, and opens a side inspector on desktop', () => {
+  it('follows the focused row in the side pane and opens a details popup on Enter', () => {
     mockMatchMedia(false);
     renderQueue();
 
@@ -179,21 +189,40 @@ describe('PivotCurationQueue catalog', () => {
     expect(screen.getByRole('button', { name: 'Fullscreen' })).toBeInTheDocument();
     expect(screen.getByText('Location review')).toBeInTheDocument();
     expect(screen.getByText('Mission brunch').closest('tr')).toHaveClass('is-published');
+    expect(screen.getByRole('complementary', { name: 'Oakland disco details' })).toBeInTheDocument();
 
     fireEvent.change(screen.getByRole('searchbox', { name: 'Search catalog' }), {
       target: { value: 'oakland' },
     });
-    expect(screen.getByText('Oakland disco')).toBeInTheDocument();
+    expect(screen.getAllByText('Oakland disco').length).toBeGreaterThan(0);
     expect(screen.queryByText('Mission brunch')).not.toBeInTheDocument();
-
-    fireEvent.keyDown(screen.getByRole('grid', { name: 'Curation catalog' }), { key: 'Enter' });
+    expect(screen.getByRole('complementary', { name: 'Oakland disco details' })).toBeInTheDocument();
     expect(screen.getByText(/outside the city boundary/i)).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Open location review' })).toHaveAttribute(
       'href',
       '/platform-admin/pivot/sf?page=7&batchWeek=2026-W38',
     );
     expect(document.querySelector('.popup-overlay')).not.toBeInTheDocument();
-    expect(screen.getByRole('complementary', { name: 'Oakland disco details' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Publish' })).toBeDisabled();
+    expect(screen.getByText('No cover image')).toBeInTheDocument();
+
+    fireEvent.keyDown(screen.getByRole('grid', { name: 'Curation catalog' }), { key: 'Enter' });
+    expect(document.querySelector('.popup-overlay')).toBeInTheDocument();
+    expect(document.querySelector('.pivot-curation-inspect-popup')).toBeInTheDocument();
+    expect(screen.getByRole('complementary', { name: 'Oakland disco dossier' })).toBeInTheDocument();
+  });
+
+  it('opens true fullscreen over the dashboard and exits with Escape', () => {
+    mockMatchMedia(false);
+    renderQueue();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Fullscreen' }));
+    expect(document.documentElement).toHaveClass('is-curation-chrome-fullscreen');
+    expect(screen.getByRole('button', { name: 'Exit fullscreen' })).toBeInTheDocument();
+
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(document.documentElement).not.toHaveClass('is-curation-chrome-fullscreen');
+    expect(screen.getByRole('button', { name: 'Fullscreen' })).toBeInTheDocument();
   });
 
   it('opens event details in a popup on mobile', () => {
@@ -203,6 +232,235 @@ describe('PivotCurationQueue catalog', () => {
     fireEvent.keyDown(screen.getByRole('grid', { name: 'Curation catalog' }), { key: 'Enter' });
     expect(document.querySelector('.popup-overlay')).toBeInTheDocument();
     expect(document.querySelector('.pivot-curation-inspect-popup')).toBeInTheDocument();
-    expect(screen.getByRole('complementary', { name: 'Oakland disco details' })).toBeInTheDocument();
+    expect(screen.getByRole('complementary', { name: 'Oakland disco dossier' })).toBeInTheDocument();
+  });
+
+  it('flags cover URLs that failed to load', () => {
+    mockMatchMedia(false);
+    renderQueue({
+      filterOptions: [...FILTERS, { value: 'broken-image', label: 'Broken image' }],
+      brokenImageIds: new Set(['1']),
+    });
+
+    expect(screen.getByRole('button', { name: /Broken image/ })).toHaveTextContent('1');
+    expect(eventRow('Oakland disco')).toHaveTextContent('Broken image');
+    expect(eventRow('Mission brunch')).not.toHaveTextContent('Broken image');
+  });
+
+  it('keeps the row selected after a status change, and moves to the next child if it leaves the filter', () => {
+    mockMatchMedia(false);
+    const onSelectedIdsChange = jest.fn();
+    const events = catalogEvents();
+    const { rerender } = renderQueue({
+      events,
+      selectedIds: new Set(['1']),
+      onSelectedIdsChange,
+    });
+
+    expect(eventRow('Oakland disco')).toHaveClass('is-focused');
+    expect(eventRow('Oakland disco')).toHaveClass('is-selected');
+
+    rerender(<PivotCurationQueue {...queueProps({
+      events,
+      selectedIds: new Set(['1']),
+      onSelectedIdsChange,
+    })} />);
+    expect(onSelectedIdsChange).not.toHaveBeenCalled();
+
+    rerender(<PivotCurationQueue {...queueProps({
+      events: [events[1]],
+      selectedIds: new Set(['1']),
+      onSelectedIdsChange,
+    })} />);
+    expect(onSelectedIdsChange).toHaveBeenCalledWith(new Set(['2']));
+    expect(eventRow('Mission brunch')).toHaveClass('is-focused');
+  });
+
+  it('opens a publish confirm with event details, and publishes immediately with ⌘P', async () => {
+    mockMatchMedia(false);
+    const onPublish = jest.fn().mockResolvedValue(true);
+    renderQueue({
+      onPublish,
+      events: [{
+        _id: '10',
+        name: 'Ready disco',
+        organizerName: 'Nico',
+        location: 'Oakland',
+        startDate: '2026-09-26T21:00:00.000Z',
+        ingestStatus: 'staged',
+        image: 'https://cdn.example/cover.jpg',
+        description: 'Records until late',
+        tags: ['dance'],
+      }],
+    });
+
+    fireEvent.keyDown(window, { key: 'p' });
+    expect(onPublish).not.toHaveBeenCalled();
+    expect(await screen.findByRole('heading', { name: 'Publish this event?' })).toBeInTheDocument();
+    const confirm = document.querySelector('.pivot-curation-publish-confirm');
+    expect(within(confirm).getByText('Ready disco')).toBeInTheDocument();
+    expect(within(confirm).getByText(/Nico/)).toBeInTheDocument();
+    expect(within(confirm).getByText(/Oakland/)).toBeInTheDocument();
+
+    fireEvent.keyDown(window, { key: 'Enter' });
+    expect(onPublish).toHaveBeenCalledWith(
+      expect.objectContaining({ _id: '10', ingestStatus: 'staged' }),
+      { skipConfirm: true },
+    );
+    await waitFor(() => {
+      expect(screen.queryByRole('heading', { name: 'Publish this event?' })).not.toBeInTheDocument();
+    });
+
+    onPublish.mockClear();
+    fireEvent.keyDown(window, { key: 'p', metaKey: true });
+    expect(onPublish).toHaveBeenCalledWith(
+      expect.objectContaining({ _id: '10' }),
+      { skipConfirm: true },
+    );
+    expect(screen.queryByRole('heading', { name: 'Publish this event?' })).not.toBeInTheDocument();
+  });
+
+  it('selects catalog rows with ⌘A instead of page text', () => {
+    mockMatchMedia(false);
+    const onSelectedIdsChange = jest.fn();
+    renderQueue({ onSelectedIdsChange });
+
+    const event = new KeyboardEvent('keydown', {
+      key: 'a',
+      metaKey: true,
+      bubbles: true,
+      cancelable: true,
+    });
+    const preventDefault = jest.spyOn(event, 'preventDefault');
+    window.dispatchEvent(event);
+
+    expect(preventDefault).toHaveBeenCalled();
+    expect(event.defaultPrevented).toBe(true);
+    expect(onSelectedIdsChange).toHaveBeenCalledWith(new Set(['1', '2']));
+  });
+
+  it('opens a weight popup with W and saves with arrows, I, and Enter', async () => {
+    mockMatchMedia(false);
+    const onEditorialChange = jest.fn();
+    renderQueue({ onEditorialChange });
+
+    fireEvent.keyDown(window, { key: 'w' });
+    const weightPopup = await waitFor(() => document.querySelector('.pivot-curation-weight-popup'));
+    expect(within(weightPopup).getByRole('heading', { name: 'Oakland disco' })).toBeInTheDocument();
+    const slider = screen.getByRole('slider', { name: 'Editorial weight' });
+    expect(slider).toHaveAttribute('aria-valuetext', 'Standard');
+
+    fireEvent.keyDown(window, { key: 'k' });
+    expect(slider).toHaveAttribute('aria-valuetext', 'Promote');
+
+    fireEvent.keyDown(window, { key: 'i' });
+    expect(screen.getByRole('button', { name: 'Matching interests' })).toHaveAttribute('aria-pressed', 'true');
+
+    fireEvent.keyDown(window, { key: 'Enter' });
+    expect(onEditorialChange).toHaveBeenCalledWith(
+      expect.objectContaining({ _id: '1', name: 'Oakland disco' }),
+      { tier: 'promote', audience: 'matching_interests' },
+    );
+  });
+
+  it('blocks the P review when tags or rich data are missing', async () => {
+    mockMatchMedia(false);
+    const onPublish = jest.fn().mockResolvedValue(true);
+    const { rerender } = renderQueue({
+      onPublish,
+      events: [{
+        _id: '11',
+        name: 'Untagged disco',
+        organizerName: 'Nico',
+        location: 'Oakland',
+        ingestStatus: 'staged',
+        image: 'https://cdn.example/cover.jpg',
+        description: 'Records until late',
+        tags: [],
+      }],
+    });
+
+    fireEvent.keyDown(window, { key: 'p' });
+    expect(await screen.findByRole('heading', { name: 'This event is not ready' })).toBeInTheDocument();
+    const confirm = document.querySelector('.pivot-curation-publish-confirm');
+    expect(within(confirm).getByText('Missing tags')).toBeInTheDocument();
+    expect(within(confirm).getByRole('button', { name: 'Publish' })).toBeDisabled();
+
+    fireEvent.keyDown(window, { key: 'Enter' });
+    expect(onPublish).not.toHaveBeenCalled();
+
+    fireEvent.keyDown(window, { key: 'Escape' });
+    rerender(<PivotCurationQueue {...queueProps({
+      onPublish,
+      events: [{
+        _id: '12',
+        name: 'Bare disco',
+        organizerName: 'Nico',
+        location: 'Oakland',
+        ingestStatus: 'staged',
+        image: 'https://cdn.example/cover.jpg',
+        description: '',
+        needsRichData: true,
+        missingRichData: ['description'],
+        tags: ['dance'],
+      }],
+    })} />);
+
+    fireEvent.keyDown(window, { key: 'p' });
+    expect(await screen.findByRole('heading', { name: 'This event is not ready' })).toBeInTheDocument();
+    expect(within(document.querySelector('.pivot-curation-publish-confirm')).getByText('Missing rich data'))
+      .toBeInTheDocument();
+    fireEvent.keyDown(window, { key: 'Enter' });
+    expect(onPublish).not.toHaveBeenCalled();
+  });
+
+  it('opens a P review instead of publishing a blocked staged event', async () => {
+    mockMatchMedia(false);
+    const onPublish = jest.fn().mockResolvedValue(true);
+    const onUnpublish = jest.fn().mockResolvedValue(true);
+    const onStage = jest.fn().mockResolvedValue(true);
+    renderQueue({ onPublish, onUnpublish, onStage });
+
+    expect(screen.getByText('I')).toBeInTheDocument();
+    fireEvent.keyDown(window, { key: 'p' });
+    expect(onPublish).not.toHaveBeenCalled();
+    expect(await screen.findByRole('heading', { name: 'This event is not ready' })).toBeInTheDocument();
+    fireEvent.keyDown(window, { key: 'Escape' });
+
+    fireEvent.keyDown(window, { key: 'k' });
+    fireEvent.keyDown(window, { key: 'u' });
+    expect(onUnpublish).toHaveBeenCalledWith(
+      expect.objectContaining({ _id: '2', ingestStatus: 'published' }),
+      { skipConfirm: true },
+    );
+    await waitFor(() => expect(onUnpublish).toHaveBeenCalledTimes(1));
+  });
+
+  it('stages a focused draft with S', async () => {
+    mockMatchMedia(false);
+    const onStage = jest.fn().mockResolvedValue(true);
+    renderQueue({
+      onStage,
+      events: [{
+        _id: '3',
+        name: 'Draft disco',
+        organizerName: 'Nico',
+        ingestStatus: 'draft',
+      }],
+    });
+
+    fireEvent.keyDown(window, { key: 's' });
+    expect(onStage).toHaveBeenCalledWith(expect.objectContaining({ _id: '3' }));
+    await waitFor(() => expect(onStage).toHaveBeenCalled());
+  });
+
+  it('moves a staged event to draft with D', async () => {
+    mockMatchMedia(false);
+    const onDraft = jest.fn().mockResolvedValue(true);
+    renderQueue({ onDraft });
+
+    fireEvent.keyDown(window, { key: 'd' });
+    expect(onDraft).toHaveBeenCalledWith(expect.objectContaining({ _id: '1', ingestStatus: 'staged' }));
+    await waitFor(() => expect(onDraft).toHaveBeenCalled());
   });
 });
