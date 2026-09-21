@@ -147,6 +147,17 @@ describe('EditorialWeightControl', () => {
   });
 });
 
+function mockMatchMedia(matches) {
+  window.matchMedia = jest.fn().mockImplementation((query) => ({
+    matches,
+    media: query,
+    addEventListener: jest.fn(),
+    removeEventListener: jest.fn(),
+    addListener: jest.fn(),
+    removeListener: jest.fn(),
+  }));
+}
+
 describe('PivotCurationQueue catalog', () => {
   beforeAll(() => {
     global.IntersectionObserver = class {
@@ -156,7 +167,12 @@ describe('PivotCurationQueue catalog', () => {
     };
   });
 
-  it('searches the catalog, flags location review, and opens a popup', () => {
+  afterEach(() => {
+    delete window.matchMedia;
+  });
+
+  it('searches the catalog, flags location review, and opens a side inspector on desktop', () => {
+    mockMatchMedia(false);
     renderQueue();
 
     expect(screen.getByRole('button', { name: 'Unpublished' })).toBeInTheDocument();
@@ -176,5 +192,17 @@ describe('PivotCurationQueue catalog', () => {
       'href',
       '/platform-admin/pivot/sf?page=7&batchWeek=2026-W38',
     );
+    expect(document.querySelector('.popup-overlay')).not.toBeInTheDocument();
+    expect(screen.getByRole('complementary', { name: 'Oakland disco details' })).toBeInTheDocument();
+  });
+
+  it('opens event details in a popup on mobile', () => {
+    mockMatchMedia(true);
+    renderQueue();
+
+    fireEvent.keyDown(screen.getByRole('grid', { name: 'Curation catalog' }), { key: 'Enter' });
+    expect(document.querySelector('.popup-overlay')).toBeInTheDocument();
+    expect(document.querySelector('.pivot-curation-inspect-popup')).toBeInTheDocument();
+    expect(screen.getByRole('complementary', { name: 'Oakland disco details' })).toBeInTheDocument();
   });
 });

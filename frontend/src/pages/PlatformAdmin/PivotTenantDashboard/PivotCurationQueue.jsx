@@ -19,6 +19,31 @@ import './PivotCurationQueue.scss';
 
 const HOST_CREATED_SOURCE = 'justgo';
 const DRAG_SELECT_THRESHOLD_PX = 5;
+const CURATION_INSPECT_POPUP_MQ = '(max-width: 720px)';
+
+function useCurationInspectPopup() {
+  const [inspectAsPopup, setInspectAsPopup] = useState(() => {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') {
+      return false;
+    }
+    return window.matchMedia(CURATION_INSPECT_POPUP_MQ).matches;
+  });
+
+  useEffect(() => {
+    if (typeof window.matchMedia !== 'function') return undefined;
+    const media = window.matchMedia(CURATION_INSPECT_POPUP_MQ);
+    const update = () => setInspectAsPopup(media.matches);
+    update();
+    if (typeof media.addEventListener === 'function') {
+      media.addEventListener('change', update);
+      return () => media.removeEventListener('change', update);
+    }
+    media.addListener(update);
+    return () => media.removeListener(update);
+  }, []);
+
+  return inspectAsPopup;
+}
 const EDITORIAL_TIERS = [
   { value: 'hidden', label: 'Hidden', help: 'Exclude from Drop and Explore.' },
   { value: 'demote', label: 'Demote', help: 'Lower its rank; strong relevance can recover.' },
@@ -623,6 +648,7 @@ function PivotCurationQueue({
   const [dragSelecting, setDragSelecting] = useState(false);
   const [visibleCount, setVisibleCount] = useState(LAZY_CHUNK);
   const [query, setQuery] = useState('');
+  const inspectAsPopup = useCurationInspectPopup();
   const events = useMemo(
     () => catalogEvents.filter((event) => eventMatchesCatalogSearch(event, query)),
     [catalogEvents, query],
@@ -988,6 +1014,26 @@ function PivotCurationQueue({
     </div>
   );
 
+  const inspector = inspectingEvent ? (
+    <QueueInspector
+      event={inspectingEvent}
+      perf={eventPerf(inspectingEvent, performanceById)}
+      showPerformance={showPerformance}
+      onClose={() => setInspectingId(null)}
+      onEdit={onEdit}
+      onPublish={onPublish}
+      onUnpublish={onUnpublish}
+      onDelete={onDelete}
+      onToggleFeatured={onToggleFeatured}
+      onEditorialChange={onEditorialChange}
+      busyKey={busyKey}
+      releaseDisabled={releaseDisabled}
+      releaseBlockReason={releaseBlockReason}
+      tenantKey={tenantKey}
+      batchWeek={batchWeek}
+    />
+  ) : null;
+
   return (
     <div className="pivot-curation-host">
       <div
@@ -1075,7 +1121,9 @@ function PivotCurationQueue({
         </button>
       </div>
       <div
-        className="pivot-curation-sheet__layout"
+        className={`pivot-curation-sheet__layout${
+          inspectingEvent && !inspectAsPopup ? ' pivot-curation-sheet__layout--split' : ''
+        }`}
       >
         <div
           ref={sheetRef}
@@ -1289,31 +1337,15 @@ function PivotCurationQueue({
           ) : null}
         </div>
 
-        {inspectingEvent ? (
+        {inspectAsPopup && inspector ? (
           <Popup
             isOpen
             onClose={() => setInspectingId(null)}
             customClassName="pivot-curation-inspect-popup"
           >
-            <QueueInspector
-              event={inspectingEvent}
-              perf={eventPerf(inspectingEvent, performanceById)}
-              showPerformance={showPerformance}
-              onClose={() => setInspectingId(null)}
-              onEdit={onEdit}
-              onPublish={onPublish}
-              onUnpublish={onUnpublish}
-              onDelete={onDelete}
-              onToggleFeatured={onToggleFeatured}
-              onEditorialChange={onEditorialChange}
-              busyKey={busyKey}
-              releaseDisabled={releaseDisabled}
-              releaseBlockReason={releaseBlockReason}
-              tenantKey={tenantKey}
-              batchWeek={batchWeek}
-            />
+            {inspector}
           </Popup>
-        ) : null}
+        ) : inspector}
       </div>
     </PivotOpsSection>
       </div>
