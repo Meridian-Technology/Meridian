@@ -14,6 +14,7 @@ import PivotCarouselPage from './carousel/PivotCarouselPage';
 import PivotTenantLaunchPage from './PivotTenantLaunchPage';
 import PivotWeeklyDropPage from '../PivotWeeklyDrop/PivotWeeklyDropPage';
 import PivotComputeJobs from './PivotComputeJobs';
+import PivotTenantAnalyticsPage from './PivotTenantAnalyticsPage';
 import PivotTenantLocationMigrationPage, {
   RICH_LOCATION_MIGRATION_UI_ENABLED,
 } from './PivotTenantLocationMigrationPage';
@@ -206,6 +207,19 @@ function PivotTenantDashboard() {
       icon: 'mdi:server-network-outline',
       element: (
         <PivotComputeJobs
+          key={tenantKey}
+          tenantKey={tenantKey}
+          cityDisplayName={cityDisplayName}
+        />
+      ),
+    });
+
+    /* Appended after Compute jobs so existing ?page= bookmarks stay put. */
+    items.push({
+      label: 'Analytics',
+      icon: 'mdi:chart-funnel',
+      element: (
+        <PivotTenantAnalyticsPage
           key={tenantKey}
           tenantKey={tenantKey}
           cityDisplayName={cityDisplayName}

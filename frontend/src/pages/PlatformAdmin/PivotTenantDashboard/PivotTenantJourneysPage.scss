@@ -253,4 +253,9 @@
       font-size: 12px;
     }
   }
+
+  .pivot-ops-section__title + .pivot-deck-replay,
+  .pivot-deck-replay + .pivot-ops-section__title {
+    margin-top: 4px;
+  }
 }
