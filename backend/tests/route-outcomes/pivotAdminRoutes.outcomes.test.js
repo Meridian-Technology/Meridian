@@ -60,6 +60,10 @@ jest.mock('../../services/pivotTenantJourneyService', () => ({
   wipeUserWeekIntents: jest.fn(),
 }));
 
+jest.mock('../../services/pivotAcquisitionFunnelService', () => ({
+  getAcquisitionFunnel: jest.fn(),
+}));
+
 jest.mock('../../services/pivotTenantOpsService', () => ({
   getTenantOpsBundle: jest.fn(),
 }));
@@ -203,6 +207,7 @@ const {
   getUserJourneyHistory,
   wipeUserWeekIntents,
 } = require('../../services/pivotTenantJourneyService');
+const { getAcquisitionFunnel } = require('../../services/pivotAcquisitionFunnelService');
 const { getTenantOpsBundle } = require('../../services/pivotTenantOpsService');
 const { getFleetOpsBundle } = require('../../services/pivotFleetOpsService');
 const { previewAdminDropDeck } = require('../../services/pivotAdminDropDeckService');
@@ -1659,6 +1664,70 @@ describe('pivotAdminRoutes journeys', () => {
 
     expect(response.status).toBe(403);
     expect(getJourneyFunnel).not.toHaveBeenCalled();
+  });
+});
+
+describe('pivotAdminRoutes acquisition analytics', () => {
+  beforeEach(() => {
+    getAcquisitionFunnel.mockReset();
+    requirePlatformAdmin.mockImplementation((req, res, next) => next());
+  });
+
+  it('GET /tenants/:tenantKey/analytics/acquisition returns the volume funnel', async () => {
+    getAcquisitionFunnel.mockResolvedValue({
+      data: {
+        tenantKey: 'nyc',
+        batchWeek: '2026-W28',
+        kind: 'volume',
+        stages: [{ key: 'landing', unique: 10 }],
+      },
+    });
+
+    const response = await request(buildApp()).get(
+      '/admin/pivot/tenants/nyc/analytics/acquisition?month=2026-09',
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.body.data.kind).toBe('volume');
+    expect(getAcquisitionFunnel).toHaveBeenCalledWith(
+      expect.objectContaining({ globalDb: {} }),
+      expect.objectContaining({ tenantKey: 'nyc', month: '2026-09' }),
+    );
+  });
+
+  it('GET /analytics/acquisition returns the fleet volume funnel', async () => {
+    getAcquisitionFunnel.mockResolvedValue({
+      data: {
+        tenantKey: null,
+        scope: 'fleet',
+        kind: 'volume',
+        stages: [{ key: 'landing', unique: 10 }],
+      },
+    });
+
+    const response = await request(buildApp()).get(
+      '/admin/pivot/analytics/acquisition?month=2026-09',
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.body.data.scope).toBe('fleet');
+    expect(getAcquisitionFunnel).toHaveBeenCalledWith(
+      expect.objectContaining({ globalDb: {} }),
+      expect.objectContaining({ scope: 'fleet', month: '2026-09' }),
+    );
+  });
+
+  it('GET analytics/acquisition returns 403 for non-admin', async () => {
+    requirePlatformAdmin.mockImplementation((_req, res) =>
+      res.status(403).json({ message: 'Forbidden' }),
+    );
+
+    const response = await request(buildApp()).get(
+      '/admin/pivot/tenants/nyc/analytics/acquisition',
+    );
+
+    expect(response.status).toBe(403);
+    expect(getAcquisitionFunnel).not.toHaveBeenCalled();
   });
 });
 
