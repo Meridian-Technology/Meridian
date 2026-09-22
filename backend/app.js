@@ -218,6 +218,7 @@ function createApp() {
     '/refresh-token',
     '/admin/platform',
     '/admin/pivot',
+    '/admin/meridian',
     // Renders one carousel slide for the export script. Its credential is a
     // signed, deck-scoped token, not a session on a tenant subdomain, so the
     // www path lock has nothing to lock — and a redirect here is screenshotted
@@ -325,6 +326,7 @@ function createApp() {
   const adminRoutes = require('./routes/adminRoutes.js');
   const platformTenantRoutes = require('./routes/platformTenantRoutes.js');
   const pivotWeeklyDropRoutes = require('./routes/pivotWeeklyDropRoutes.js');
+  const meridianJobAdminRoutes = require('./routes/meridianJobAdminRoutes.js');
   const eventsRoutes = require('./events/index.js');
   const notificationRoutes = require('./routes/notificationRoutes.js');
   const qrRoutes = require('./routes/qrRoutes.js');
@@ -370,6 +372,7 @@ function createApp() {
   app.use(adminRoutes);
   app.use(platformTenantRoutes);
   app.use(pivotWeeklyDropRoutes);
+  app.use(meridianJobAdminRoutes);
   app.use(formRoutes);
   app.use(publicEventRoutes);
   app.use('/notifications', notificationRoutes);

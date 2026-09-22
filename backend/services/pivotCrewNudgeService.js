@@ -1,4 +1,3 @@
-const axios = require('axios');
 const mongoose = require('mongoose');
 const { connectToDatabase } = require('../connectionsManager');
 const getModels = require('./getModelService');
@@ -16,8 +15,11 @@ const {
 } = require('../utilities/pivotRitualNudge');
 const { getMergedCopyPackOrEmpty } = require('./pivotCopyService');
 
-const EXPO_PUSH_URL = 'https://exp.host/--/api/v2/push/send';
-const EXPO_BATCH_SIZE = 100;
+const { sendExpoPushToRecipients } = require('./expoPushDeliveryService');
+const {
+  resolveRitualNotificationCopy,
+  NOTIFICATION_COPY_KEYS,
+} = require('../utilities/meridianJobCopyResolve');
 const NUDGE_PUSH_TITLE = 'just go*';
 const NUDGE_PUSH_BODY_MAX = 240;
 
@@ -67,19 +69,60 @@ function buildCrewNudgePushBody(remainingCount) {
   return trimPushBody(`${remainingCount} haven't swiped yet — finish the deck`);
 }
 
+function isPivotCrewNudgeCronDisabled(env = process.env) {
+  return env.DISABLE_PIVOT_CREW_NUDGE_CRON === 'true';
+}
+
+function recipientProduct(user) {
+  return user?.pushAppProduct === 'justgo' || user?.pushAppProduct === 'campus'
+    ? user.pushAppProduct
+    : 'legacy';
+}
+
+function zipNudgeDeliveries(recipients = [], messages = [], tickets = [], copyKey) {
+  return recipients.map((user, index) => {
+    const message = messages[index] || {};
+    const ticket = tickets[index] || null;
+    const gateBlocked = /development expo push gate/i.test(ticket?.message || '');
+    const accepted = ticket?.status === 'accepted' || ticket?.status === 'ok';
+    const deliveryStatus = gateBlocked
+      ? 'blocked_dev_gate'
+      : accepted
+        ? 'accepted'
+        : 'failed';
+    return {
+      userId: user?._id?.toString?.() || String(user?._id || ''),
+      username: user.username || null,
+      name: user.name || null,
+      product: recipientProduct(user),
+      copyKey,
+      title: message.title || NUDGE_PUSH_TITLE,
+      body: message.body || '',
+      deliveryStatus,
+      error: accepted ? null : (ticket?.message || 'Expo rejected this push ticket.'),
+    };
+  });
+}
+
 function buildCrewNudgePushMessage(pushToken, payload = {}) {
   const remainingCount = Math.max(1, Number(payload.remainingCount) || 1);
   const ritualPhase = payload.ritualPhase || 'swiping';
   const ritualNudgeType = payload.ritualNudgeType || 'quorum_waiting';
+  const ritualCopy = resolveRitualNotificationCopy(ritualNudgeType, payload.copyPack);
   const body =
     trimPushBody(payload.body) ||
+    (ritualCopy.fromOverlay ? trimPushBody(ritualCopy.body) : '') ||
     resolveRitualNudgePushBody(ritualNudgeType, payload.copyPack) ||
     buildCrewNudgePushBody(remainingCount);
+  const title =
+    trimPushBody(payload.title, 100) ||
+    (ritualCopy.fromOverlay ? trimPushBody(ritualCopy.title, 100) : '') ||
+    NUDGE_PUSH_TITLE;
 
   return {
     to: pushToken,
     sound: 'default',
-    title: NUDGE_PUSH_TITLE,
+    title,
     body,
     data: buildRitualPushData({
       batchWeek: payload.batchWeek,
@@ -91,37 +134,6 @@ function buildCrewNudgePushMessage(pushToken, payload = {}) {
     priority: 'default',
     channelId: 'default',
   };
-}
-
-async function sendExpoBatch(messages) {
-  const response = await axios.post(EXPO_PUSH_URL, messages, {
-    headers: {
-      'Content-Type': 'application/json',
-      Accept: 'application/json',
-      'Accept-Encoding': 'gzip, deflate',
-    },
-  });
-
-  const tickets = Array.isArray(response.data?.data)
-    ? response.data.data
-    : [response.data?.data].filter(Boolean);
-
-  let sent = 0;
-  let failed = 0;
-  const errors = [];
-
-  for (const ticket of tickets) {
-    if (ticket?.status === 'ok') {
-      sent += 1;
-    } else {
-      failed += 1;
-      if (ticket?.message) {
-        errors.push(ticket.message);
-      }
-    }
-  }
-
-  return { sent, failed, errors };
 }
 
 function isCrewEligibleForNudge(weekState, crewConfig) {
@@ -188,7 +200,7 @@ async function loadNonSwiperPushRecipients(req, crewId, batchWeek) {
     pushToken: { $exists: true, $nin: [null, ''] },
     pushAppEdition: 'pivot',
   })
-    .select('_id pushToken')
+    .select('_id username name pushToken pushAppProduct roles')
     .lean();
 }
 
@@ -293,6 +305,7 @@ async function sendCrewUnfinishedSwipeNudgesForTenant(req, options = {}) {
   let failed = 0;
   let crewsNudged = 0;
   const errors = [];
+  const deliveries = [];
 
   for (const weekState of eligibleStates) {
     const crewId = weekState.crewId.toString();
@@ -306,6 +319,7 @@ async function sendCrewUnfinishedSwipeNudgesForTenant(req, options = {}) {
     }
 
     const remainingCount = countUnfinishedSwipers(weekState.swipeProgress);
+    const copyKey = NOTIFICATION_COPY_KEYS.ritual.quorum_waiting.body;
     const messages = recipients.map((recipient) =>
       buildCrewNudgePushMessage(recipient.pushToken, {
         batchWeek,
@@ -318,16 +332,11 @@ async function sendCrewUnfinishedSwipeNudgesForTenant(req, options = {}) {
       }),
     );
 
-    let batchSent = 0;
-    let batchFailed = 0;
-
-    for (let index = 0; index < messages.length; index += EXPO_BATCH_SIZE) {
-      const batch = messages.slice(index, index + EXPO_BATCH_SIZE);
-      const result = await sendExpoBatch(batch);
-      batchSent += result.sent;
-      batchFailed += result.failed;
-      errors.push(...result.errors);
-    }
+    const pushResult = await sendExpoPushToRecipients(tenantKey, recipients, messages);
+    deliveries.push(...zipNudgeDeliveries(recipients, messages, pushResult.tickets, copyKey));
+    const batchSent = pushResult.sent;
+    const batchFailed = pushResult.failed;
+    errors.push(...pushResult.errors);
 
     if (batchSent > 0) {
       await recordCrewNudgeSent(req, {
@@ -353,6 +362,7 @@ async function sendCrewUnfinishedSwipeNudgesForTenant(req, options = {}) {
       crewsEligible: eligibleStates.length,
       crewsNudged,
       errors: errors.slice(0, 5),
+      deliveries,
     },
   };
 }
@@ -511,7 +521,7 @@ async function loadActiveMemberPushRecipients(req, crewId, { excludeUserId } = {
     pushToken: { $exists: true, $nin: [null, ''] },
     pushAppEdition: 'pivot',
   })
-    .select('_id pushToken')
+    .select('_id pushToken roles')
     .lean();
 }
 
@@ -549,16 +559,10 @@ async function notifyCrewConsensusPeers(
       }),
     );
 
-    let sent = 0;
-    let failed = 0;
-    for (let index = 0; index < messages.length; index += EXPO_BATCH_SIZE) {
-      const batch = messages.slice(index, index + EXPO_BATCH_SIZE);
-      const result = await sendExpoBatch(batch);
-      sent += result.sent;
-      failed += result.failed;
-    }
+    const tenantKey = req.school;
+    const pushResult = await sendExpoPushToRecipients(tenantKey, recipients, messages);
 
-    return { data: { sent, failed } };
+    return { data: { sent: pushResult.sent, failed: pushResult.failed } };
   } catch (error) {
     console.error('[pivotCrewNudge] consensus peer notify failed', {
       crewId,
@@ -591,7 +595,7 @@ async function notifyPendingConsensusConfirms(
       pushToken: { $exists: true, $nin: [null, ''] },
       pushAppEdition: 'pivot',
     })
-      .select('_id pushToken')
+      .select('_id pushToken roles')
       .lean();
 
     if (!recipients.length) {
@@ -609,16 +613,10 @@ async function notifyPendingConsensusConfirms(
       }),
     );
 
-    let sent = 0;
-    let failed = 0;
-    for (let index = 0; index < messages.length; index += EXPO_BATCH_SIZE) {
-      const batch = messages.slice(index, index + EXPO_BATCH_SIZE);
-      const result = await sendExpoBatch(batch);
-      sent += result.sent;
-      failed += result.failed;
-    }
+    const tenantKey = req.school;
+    const pushResult = await sendExpoPushToRecipients(tenantKey, recipients, messages);
 
-    return { data: { sent, failed } };
+    return { data: { sent: pushResult.sent, failed: pushResult.failed } };
   } catch (error) {
     console.error('[pivotCrewNudge] pending confirm notify failed', {
       crewId,
@@ -631,6 +629,7 @@ async function notifyPendingConsensusConfirms(
 
 module.exports = {
   NUDGE_PUSH_TITLE,
+  isPivotCrewNudgeCronDisabled,
   buildCrewNudgePushBody,
   buildCrewNudgePushMessage,
   countUnfinishedSwipers,

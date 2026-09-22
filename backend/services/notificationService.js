@@ -1,6 +1,9 @@
 const getModels = require('./getModelService');
 const mongoose = require('mongoose');
-const axios = require('axios');
+const {
+    isExpoPushAllowedForTenantUser,
+    postExpoPushBatch,
+} = require('./expoPushDeliveryService');
 
 class NotificationService {
     constructor(models = null) {
@@ -210,6 +213,14 @@ class NotificationService {
                 return Promise.resolve(); // Don't fail, just skip
             }
 
+            const pushAllowed = await isExpoPushAllowedForTenantUser(recipient);
+            if (!pushAllowed) {
+                console.warn(
+                    `[expoPush] development gate: skipped push for non-admin user ${recipient._id}`,
+                );
+                return Promise.resolve();
+            }
+
             // Strip HTML tags from message for push notification body
             const stripHtml = (html) => {
                 if (!html) return '';
@@ -257,30 +268,27 @@ class NotificationService {
                 channelId: 'default'
             };
 
-            // Send to Expo Push Notification API
-            const expoPushUrl = 'https://exp.host/--/api/v2/push/send';
-            const response = await axios.post(expoPushUrl, expoPushMessage, {
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Accept': 'application/json',
-                    'Accept-Encoding': 'gzip, deflate'
-                }
+            const membershipTenantKey =
+                notification.metadata?.tenantKey ||
+                notification.metadata?.school ||
+                null;
+            const pushResult = await postExpoPushBatch([expoPushMessage], {
+                tenantKey: membershipTenantKey,
+                recipients: [recipient],
             });
 
-            // Check response for errors
-            if (response.data && response.data.data) {
-                const result = response.data.data;
-                if (result.status === 'error') {
-                    console.error('Expo push notification error:', result.message);
-                    // Handle specific error cases
-                    if (result.message && result.message.includes('InvalidCredentials')) {
-                        console.error('Invalid Expo push token - user may need to re-register');
-                    }
-                    return Promise.resolve(); // Don't throw - allow other channels to still work
+            const ticket = pushResult.tickets?.[0];
+            if (ticket?.status === 'failed') {
+                console.error('Expo push notification error:', ticket.message);
+                if (ticket.message && ticket.message.includes('InvalidCredentials')) {
+                    console.error('Invalid Expo push token - user may need to re-register');
                 }
+                return Promise.resolve();
             }
 
-            console.log(`Push notification sent successfully to ${recipient._id}`);
+            if (pushResult.sent > 0) {
+                console.log(`Push notification sent successfully to ${recipient._id}`);
+            }
             return Promise.resolve();
         } catch (error) {
             console.error('Error sending push notification:', error);

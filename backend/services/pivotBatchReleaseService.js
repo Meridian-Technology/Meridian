@@ -298,6 +298,24 @@ async function releaseBatch(req, options = {}) {
     releasedBy,
   });
 
+  if (releasedCount > 0) {
+    try {
+      const { enqueueEventDiscoveryOnCatalogPublish } = require('./meridianJobHandlers/eventDiscoveryEnqueue');
+      await enqueueEventDiscoveryOnCatalogPublish(req, {
+        tenantKey,
+        batchWeek,
+        now,
+      });
+    } catch (error) {
+      logPivot('warn', 'event discovery enqueue on catalog publish failed', {
+        ...pivotRequestContext(req),
+        tenantKey,
+        batchWeek,
+        message: error.message,
+      });
+    }
+  }
+
   return {
     data: {
       tenantKey,

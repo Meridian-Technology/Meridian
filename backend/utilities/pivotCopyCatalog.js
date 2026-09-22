@@ -44,6 +44,8 @@ const PIVOT_COPY_REMOTE_SECTIONS = Object.freeze([
   'crew',
   // Phase 6.2 — web landing
   'landing',
+  // Meridian job notification copy (Voice overlay; Expo resolve on send)
+  'notifications',
 ]);
 
 const PIVOT_COPY_DENIED_SECTIONS = Object.freeze([

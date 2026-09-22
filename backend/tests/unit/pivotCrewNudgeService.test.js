@@ -76,6 +76,22 @@ describe('pivotCrewNudgeService', () => {
     expect(message.body).toBe('block is waiting on swipes');
   });
 
+  it('builds overlay ritual nudge body from notifications copy keys', () => {
+    const message = buildCrewNudgePushMessage('ExponentPushToken[abc]', {
+      batchWeek,
+      crewId,
+      remainingCount: 3,
+      copyPack: {
+        entries: {
+          'notifications.ritual.quorumWaiting.body': '{group.singular} still needs swipes',
+        },
+        tokens: { 'group.singular': 'block' },
+      },
+    });
+
+    expect(message.body).toBe('block still needs swipes');
+  });
+
   it('computes nudge eligibility from dropAt plus reminder hours', () => {
     const dropAtMs = resolveNudgeEligibleAtMs(
       nycTenant,

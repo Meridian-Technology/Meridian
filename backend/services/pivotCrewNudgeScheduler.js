@@ -1,6 +1,9 @@
 const cron = require('node-cron');
 const { connectToGlobalDatabase } = require('../connectionsManager');
-const { runAllCrewUnfinishedSwipeNudges } = require('./pivotCrewNudgeService');
+const {
+  runAllCrewUnfinishedSwipeNudges,
+  isPivotCrewNudgeCronDisabled,
+} = require('./pivotCrewNudgeService');
 
 let scheduledTask = null;
 let nudgeInFlight = false;
@@ -32,7 +35,7 @@ function startPivotCrewNudgeScheduler() {
   if (process.env.NODE_ENV === 'test') {
     return null;
   }
-  if (process.env.DISABLE_PIVOT_CREW_NUDGE_CRON === 'true') {
+  if (isPivotCrewNudgeCronDisabled()) {
     return null;
   }
   if (scheduledTask) {
@@ -43,7 +46,7 @@ function startPivotCrewNudgeScheduler() {
     runScheduledCrewNudges();
   });
 
-  console.log('[pivotCrewNudge] scheduled send every 30 minutes');
+  console.log('[pivotCrewNudge] scheduler retained for emergency start; production uses ritual_crew_scan via meridian job worker');
   return scheduledTask;
 }
 

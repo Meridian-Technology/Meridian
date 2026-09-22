@@ -24,8 +24,16 @@ function computeJobInspectorHref(tenantKey, externalJobId) {
   return `/platform-admin/pivot/${encodeURIComponent(tenantKey)}?${params.toString()}`;
 }
 
+function notificationJobRunHref(tenantKey, runId, batchWeek) {
+  const params = new URLSearchParams({ page: '9' });
+  if (runId) params.set('jobRunId', String(runId));
+  if (batchWeek) params.set('batchWeek', String(batchWeek));
+  return `/platform-admin/pivot/${encodeURIComponent(tenantKey)}?${params.toString()}`;
+}
+
 module.exports = {
   curationHref,
   journeysHref,
   computeJobInspectorHref,
+  notificationJobRunHref,
 };

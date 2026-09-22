@@ -15,12 +15,18 @@ jest.mock('../../services/pivotBatchService', () => ({
   serializePivotBatch: jest.requireActual('../../services/pivotBatchService').serializePivotBatch,
   DEFAULT_TARGET_EVENT_COUNT: 40,
 }));
+jest.mock('../../services/meridianJobHandlers/eventDiscoveryEnqueue', () => ({
+  enqueueEventDiscoveryOnCatalogPublish: jest.fn().mockResolvedValue({ skipped: 'test', enqueued: [] }),
+}));
 
 const getModels = require('../../services/getModelService');
 const { connectToDatabase } = require('../../connectionsManager');
 const { resolvePivotTenant } = require('../../services/pivotIngestPublishService');
 const { rebuildWeeklySnapshot } = require('../../services/pivotWeeklySnapshotService');
 const { ensurePivotBatch } = require('../../services/pivotBatchService');
+const {
+  enqueueEventDiscoveryOnCatalogPublish,
+} = require('../../services/meridianJobHandlers/eventDiscoveryEnqueue');
 const {
   releaseBatch,
   unreleaseBatch,
@@ -90,6 +96,8 @@ describe('releaseBatch', () => {
     resolvePivotTenant.mockReset();
     rebuildWeeklySnapshot.mockReset();
     ensurePivotBatch.mockReset();
+    enqueueEventDiscoveryOnCatalogPublish.mockReset();
+    enqueueEventDiscoveryOnCatalogPublish.mockResolvedValue({ skipped: 'test', enqueued: [] });
 
     connectToDatabase.mockResolvedValue({});
     resolvePivotTenant.mockResolvedValue({ tenant: TENANT });
@@ -194,6 +202,10 @@ describe('releaseBatch', () => {
     expect(rebuildWeeklySnapshot).toHaveBeenCalledWith(
       expect.objectContaining({ globalDb: {} }),
       expect.objectContaining({ batchWeek: BATCH_WEEK }),
+    );
+    expect(enqueueEventDiscoveryOnCatalogPublish).toHaveBeenCalledWith(
+      expect.objectContaining({ globalDb: {} }),
+      expect.objectContaining({ tenantKey: 'nyc', batchWeek: BATCH_WEEK, now: NOW }),
     );
   });
 

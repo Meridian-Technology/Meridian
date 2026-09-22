@@ -20,6 +20,9 @@ const {
   normalizePivotDropOverrides,
 } = require('../constants/defaultTenants');
 const {
+  normalizeMeridianNotificationOverrides,
+} = require('../utilities/meridianNotificationOverrides');
+const {
   validatePivotCrewConfigPatch,
 } = require('../utilities/pivotCrewConfig');
 const {
@@ -404,6 +407,10 @@ router.put('/admin/platform/tenants/:tenantKey', verifyToken, requirePlatformAdm
     normalizePivotDropFields(req.body, dropPatch);
     if (req.body.pivotDropOverrides !== undefined) {
       dropPatch.pivotDropOverrides = normalizePivotDropOverrides(req.body.pivotDropOverrides) || [];
+    }
+    if (req.body.meridianNotificationOverrides !== undefined) {
+      dropPatch.meridianNotificationOverrides =
+        normalizeMeridianNotificationOverrides(req.body.meridianNotificationOverrides) || [];
     }
     Object.assign(updated, dropPatch);
 

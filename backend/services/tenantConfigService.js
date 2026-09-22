@@ -27,6 +27,9 @@ const {
   validateRichLocationControls,
 } = require('../utilities/justGoRichLocationControls');
 const {
+  validateMeridianNotificationOverridesPatch,
+} = require('../utilities/meridianNotificationOverrides');
+const {
   connectToDatabase,
   setTenantUriCache,
   deriveMongoUriForTenant,
@@ -110,6 +113,7 @@ function toStoredTenantRow(tenant) {
     pivotDropPushTitle: tenant.pivotDropPushTitle,
     pivotDropPushBody: tenant.pivotDropPushBody,
     pivotDropOverrides: tenant.pivotDropOverrides,
+    meridianNotificationOverrides: tenant.meridianNotificationOverrides,
     creatorPublish: tenant.creatorPublish,
     pivotDiscovery: tenant.pivotDiscovery,
     pivotComputeApply: tenant.pivotComputeApply,
@@ -438,6 +442,13 @@ function validateTenantMetadataUpdate(body = {}) {
   if (body.richLocationControls !== undefined && body.richLocationControls !== null) {
     const controlsValidation = validateRichLocationControls(body.richLocationControls);
     if (controlsValidation.error) return { error: controlsValidation.error };
+  }
+
+  if (body.meridianNotificationOverrides !== undefined) {
+    const notificationValidation = validateMeridianNotificationOverridesPatch(
+      body.meridianNotificationOverrides,
+    );
+    if (notificationValidation.error) return { error: notificationValidation.error };
   }
 
   return { ok: true };

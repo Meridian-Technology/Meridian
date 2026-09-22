@@ -37,6 +37,7 @@ describe('pivotCopyCatalog (Task 2.2)', () => {
   it('allows consumer leaves and first-class tokens', () => {
     expect(isRemoteCopyKey('ticker.week')).toBe(true);
     expect(isRemoteCopyKey('crew.createTitle')).toBe(true);
+    expect(isRemoteCopyKey('notifications.weeklyDrop.title')).toBe(true);
     expect(isRemoteCopyKey('brand.name')).toBe(true);
     expect(isCopyTokenName('brand.name')).toBe(true);
     expect(isCopyTokenName('group.singular')).toBe(true);
@@ -71,6 +72,10 @@ describe('pivotCopyDefaults catalog (Task 4.1)', () => {
     expect(isCatalogCopyKey('crew.push.weeklyDrop.decideBody')).toBe(true);
     expect(isCatalogCopyKey('crew.push.ritual.quorumWaitingBody')).toBe(true);
     expect(isCatalogCopyKey('landing.web.cta')).toBe(true);
+    expect(isCatalogCopyKey('notifications.weeklyDrop.title')).toBe(true);
+    expect(isCatalogCopyKey('notifications.weeklyDrop.body')).toBe(true);
+    expect(isCatalogCopyKey('notifications.ritual.swipe.body')).toBe(true);
+    expect(isCatalogCopyKey('notifications.definition.body')).toBe(true);
     expect(isCatalogCopyKey('landing.web.story.grafs')).toBe(true);
     expect(isCopyTokenName('group.singular')).toBe(true);
 
@@ -205,6 +210,7 @@ describe('pivotCopyService (Task 2.2)', () => {
         entries: {
           'ticker.week': 'this week',
           'landing.web.story.grafs': 'first graf\n\nsecond graf',
+          'notifications.weeklyDrop.body': 'this week. just go',
         },
         tokens: { 'group.singular': 'crew' },
       });
@@ -212,6 +218,9 @@ describe('pivotCopyService (Task 2.2)', () => {
       expect(result.entries['ticker.week']).toBe('this week');
       expect(result.entries['landing.web.story.grafs']).toBe(
         'first graf\n\nsecond graf',
+      );
+      expect(result.entries['notifications.weeklyDrop.body']).toBe(
+        'this week. just go',
       );
       expect(result.tokens['group.singular']).toBe('crew');
     });

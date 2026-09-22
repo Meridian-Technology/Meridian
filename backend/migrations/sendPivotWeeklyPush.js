@@ -11,7 +11,6 @@
 require('./ensureBackendNodeModules');
 require('dotenv').config();
 
-const axios = require('axios');
 const mongoose = require('mongoose');
 const { connectToGlobalDatabase, connectToDatabase } = require('../connectionsManager');
 const tenantConfigSchema = require('../schemas/tenantConfig');
@@ -28,10 +27,12 @@ const {
   buildWeeklyDropPushMessage,
   resolveWeeklyDropPushCopy,
 } = require('../services/pivotWeeklyDropService');
+const {
+  filterTenantUsersForExpoPushDelivery,
+  sendExpoPushToRecipients,
+} = require('../services/expoPushDeliveryService');
 
 const CONFIG_KEY = 'default';
-const EXPO_PUSH_URL = 'https://exp.host/--/api/v2/push/send';
-const EXPO_BATCH_SIZE = 100;
 const DROP_WINDOW_MS = 30 * 60 * 1000;
 
 function readArg(prefix) {
@@ -57,51 +58,8 @@ async function loadPivotPushRecipients(req) {
     pushToken: { $exists: true, $nin: [null, ''] },
     pushAppEdition: 'pivot',
   })
-    .select('_id pushToken')
+    .select('_id pushToken roles')
     .lean();
-}
-
-async function sendExpoBatch(messages) {
-  const response = await axios.post(EXPO_PUSH_URL, messages, {
-    headers: {
-      'Content-Type': 'application/json',
-      Accept: 'application/json',
-      'Accept-Encoding': 'gzip, deflate',
-    },
-  });
-
-  const tickets = Array.isArray(response.data?.data)
-    ? response.data.data
-    : [response.data?.data].filter(Boolean);
-
-  let ok = 0;
-  let errors = 0;
-  for (const ticket of tickets) {
-    if (ticket?.status === 'ok') {
-      ok += 1;
-    } else {
-      errors += 1;
-      if (ticket?.message) {
-        console.warn(`[send:pivot-weekly-push] Expo ticket error: ${ticket.message}`);
-      }
-    }
-  }
-
-  return { ok, errors, tickets };
-}
-
-async function sendAllMessages(messages) {
-  let sent = 0;
-  let failed = 0;
-
-  for (let index = 0; index < messages.length; index += EXPO_BATCH_SIZE) {
-    const batch = messages.slice(index, index + EXPO_BATCH_SIZE);
-    const result = await sendExpoBatch(batch);
-    sent += result.ok;
-    failed += result.errors;
-  }
-
-  return { sent, failed };
 }
 
 async function run() {
@@ -172,10 +130,17 @@ async function run() {
     }
   }
 
-  const recipients = await loadPivotPushRecipients(tenantReq);
+  const allRecipients = await loadPivotPushRecipients(tenantReq);
+  const devPushFilter = await filterTenantUsersForExpoPushDelivery(tenantKey, allRecipients);
+  const recipients = devPushFilter.users;
   console.log(
-    `[send:pivot-weekly-push] Pivot push recipients (pushAppEdition=pivot): ${recipients.length}`
+    `[send:pivot-weekly-push] Pivot push recipients (pushAppEdition=pivot): ${allRecipients.length}`
   );
+  if (devPushFilter.gateActive && devPushFilter.blockedCount > 0) {
+    console.warn(
+      `[send:pivot-weekly-push] Development expo push gate excluded ${devPushFilter.blockedCount} non-admin recipient(s).`
+    );
+  }
 
   if (recipients.length === 0) {
     console.warn('[send:pivot-weekly-push] No pivot push tokens found — nothing to send.');
@@ -204,7 +169,7 @@ async function run() {
     return;
   }
 
-  const { sent, failed } = await sendAllMessages(messages);
+  const { sent, failed } = await sendExpoPushToRecipients(tenantKey, recipients, messages);
   console.log(`[send:pivot-weekly-push] sent=${sent} failed=${failed}`);
 
   // Freeze this week's Lab metrics now that the drop went out (best-effort).
