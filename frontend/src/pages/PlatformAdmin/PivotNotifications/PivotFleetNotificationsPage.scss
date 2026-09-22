@@ -1,0 +1,76 @@
+.pivot-fleet-notifications {
+  .pivot-tenant-page__body {
+    max-width: 1280px;
+  }
+
+  &__empty {
+    margin: 0;
+    font-size: 13px;
+    color: var(--pivot-ops-ink-muted, rgba(26, 23, 20, 0.72));
+  }
+
+  &__table-wrap {
+    max-height: 420px;
+    overflow: auto;
+    border: 1px solid var(--pivot-ops-border, rgba(26, 23, 20, 0.12));
+    border-radius: var(--pivot-ops-radius-control, 10px);
+  }
+
+  &__table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+    color: var(--pivot-ops-ink-muted, rgba(26, 23, 20, 0.72));
+
+    th,
+    td {
+      padding: 10px 12px;
+      text-align: left;
+      border-bottom: 1px solid var(--pivot-ops-border, rgba(26, 23, 20, 0.12));
+      vertical-align: top;
+    }
+
+    th {
+      position: sticky;
+      top: 0;
+      z-index: 1;
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: var(--pivot-ops-ink-soft, rgba(26, 23, 20, 0.5));
+      background: var(--pivot-ops-surface-subtle, #f7f6f4);
+    }
+
+    td:first-child strong,
+    code {
+      color: var(--pivot-ops-ink, #1a1714);
+    }
+
+    code {
+      font-size: 12px;
+      word-break: break-all;
+    }
+  }
+
+  &__enqueue {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: 12px;
+
+    .linear-field {
+      min-width: 180px;
+    }
+
+    .linear-field--checkbox {
+      flex-direction: row;
+      align-items: center;
+      gap: 8px;
+      min-width: unset;
+      padding-bottom: 8px;
+      font-size: 13px;
+      color: var(--pivot-ops-ink-muted, rgba(26, 23, 20, 0.72));
+    }
+  }
+}

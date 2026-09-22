@@ -12,7 +12,7 @@ import PivotTenantCatalogPage from './PivotTenantCatalogPage';
 import PivotVoicePage from './PivotVoicePage';
 import PivotCarouselPage from './carousel/PivotCarouselPage';
 import PivotTenantLaunchPage from './PivotTenantLaunchPage';
-import PivotWeeklyDropPage from '../PivotWeeklyDrop/PivotWeeklyDropPage';
+import PivotNotificationsPage from '../PivotNotifications/PivotNotificationsPage';
 import PivotComputeJobs from './PivotComputeJobs';
 import PivotTenantAnalyticsPage from './PivotTenantAnalyticsPage';
 import PivotTenantLocationMigrationPage, {
@@ -51,7 +51,8 @@ function PivotTenantGate({ title, body, onBack }) {
  * Per-tenant Just Go ops shell.
  * Route: /platform-admin/pivot/:tenantKey?page=0|1|2|3|4|5|6|7
  * Catalog is page=4; Voice is page=5; Launch is page=6; migration is page=7.
- * New pages are appended so existing bookmarks remain stable.
+ * Notifications is page=9 (renamed from Weekly drop). New pages are appended
+ * so existing bookmarks remain stable.
  */
 function PivotTenantDashboard() {
   const navigate = useNavigate();
@@ -191,10 +192,10 @@ function PivotTenantDashboard() {
     });
 
     items.push({
-      label: 'Weekly drop',
+      label: 'Notifications',
       icon: 'mdi:bell-ring-outline',
       element: (
-        <PivotWeeklyDropPage
+        <PivotNotificationsPage
           key={tenantKey}
           tenantKey={tenantKey}
           tenant={tenant}

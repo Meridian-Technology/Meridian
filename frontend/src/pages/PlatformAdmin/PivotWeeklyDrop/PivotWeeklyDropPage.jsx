@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { Icon } from '@iconify-icon/react';
 import { useFetch, authenticatedRequest } from '../../../hooks/useFetch';
 import { useNotification } from '../../../NotificationContext';
@@ -6,6 +7,11 @@ import { toIsoWeek, isValidIsoWeek } from '../../../utils/pivotIsoWeek';
 import { isPivotTenant } from '../TenantManagement/tenantPivotUtils';
 import PivotTenantPage from '../PivotTenantDashboard/PivotTenantPage';
 import { PivotOpsSection, PivotOpsStack, PivotOpsStatus } from '../../../components/PivotOps';
+import {
+  mapMeridianDeliveriesToRecipients,
+  mergeWeeklyDropHistory,
+} from '../PivotNotifications/mergeWeeklyDropHistory';
+import { notificationJobRunHref } from '../PivotNotifications/notificationJobRoutes';
 import '../TenantManagement/TenantManagementPage.scss';
 import './PivotWeeklyDropPage.scss';
 
@@ -83,7 +89,95 @@ function formatDateTime(value) {
   });
 }
 
-function PivotWeeklyDropPage({ tenantKey: fixedTenantKey = '', tenant: fixedTenant = null }) {
+function recipientProductLabel(product) {
+  if (product === 'justgo') return 'Just Go';
+  if (product === 'campus') return 'Meridian';
+  return 'Legacy unknown';
+}
+
+function recipientProductTone(product) {
+  if (product === 'justgo') return 'info';
+  if (product === 'campus') return 'muted';
+  return 'warn';
+}
+
+function deliveryStatusLabel(status) {
+  if (status === 'accepted') return 'Accepted';
+  if (status === 'skipped') return 'Skipped';
+  if (status === 'blocked_dev_gate') return 'Dev gate';
+  return 'Failed';
+}
+
+function deliveryStatusTone(status) {
+  if (status === 'accepted') return 'ok';
+  if (status === 'skipped') return 'muted';
+  if (status === 'blocked_dev_gate') return 'warn';
+  return 'danger';
+}
+
+function WeeklyDropRunRecipients({ run }) {
+  const recipients = Array.isArray(run?.recipients) ? run.recipients : [];
+  const overflow = Number(run?.recipientOverflowCount) || 0;
+
+  if (!recipients.length) {
+    return (
+      <p className="pivot-weekly-drop__empty pivot-weekly-drop__run-recipients-empty">
+        Recipient names were not recorded for this send. New sends include a per-user list.
+      </p>
+    );
+  }
+
+  return (
+    <>
+      {overflow > 0 ? (
+        <p className="pivot-weekly-drop__data-note">
+          Showing {recipients.length} of {recipients.length + overflow} recipients.
+        </p>
+      ) : null}
+      <div className="pivot-weekly-drop__table-wrap pivot-weekly-drop__table-wrap--compact">
+        <table className="pivot-weekly-drop__table">
+          <thead>
+            <tr>
+              <th>User</th>
+              <th>App</th>
+              <th>Expo</th>
+            </tr>
+          </thead>
+          <tbody>
+            {recipients.map((row) => (
+              <tr key={row.userId}>
+                <td>
+                  <strong>{row.name || row.username || 'Unnamed user'}</strong>
+                  {row.name && row.username ? <span>@{row.username}</span> : null}
+                  {!row.name && row.username ? <span>@{row.username}</span> : null}
+                </td>
+                <td>
+                  <PivotOpsStatus tone={recipientProductTone(row.product)}>
+                    {recipientProductLabel(row.product)}
+                  </PivotOpsStatus>
+                </td>
+                <td>
+                  <PivotOpsStatus tone={deliveryStatusTone(row.deliveryStatus)}>
+                    {deliveryStatusLabel(row.deliveryStatus)}
+                  </PivotOpsStatus>
+                  {row.error ? (
+                    <span className="pivot-weekly-drop__run-recipient-error">{row.error}</span>
+                  ) : null}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </>
+  );
+}
+
+function PivotWeeklyDropPage({
+  tenantKey: fixedTenantKey = '',
+  tenant: fixedTenant = null,
+  notificationsPanel = false,
+}) {
   const { addNotification } = useNotification();
   const [batchWeek, setBatchWeek] = useState(() => toIsoWeek());
   const [selectedTenantKey, setSelectedTenantKey] = useState(fixedTenantKey);
@@ -91,6 +185,8 @@ function PivotWeeklyDropPage({ tenantKey: fixedTenantKey = '', tenant: fixedTena
   const [pushCopy, setPushCopy] = useState(DEFAULT_PUSH_COPY);
   const [saving, setSaving] = useState(false);
   const [sending, setSending] = useState(false);
+  const [expandedRunId, setExpandedRunId] = useState(null);
+  const [meridianRecipientsByRunId, setMeridianRecipientsByRunId] = useState({});
 
   const { data: tenantsResponse, loading: tenantsLoading } = useFetch(fixedTenantKey ? null : '/admin/platform/tenants', {
     cache: { enabled: true, ttlMs: 15000 },
@@ -128,11 +224,36 @@ function PivotWeeklyDropPage({ tenantKey: fixedTenantKey = '', tenant: fixedTena
   const status = statusResponse?.success ? statusResponse.data : null;
   const dropSchedule = status?.dropSchedule;
   const audience = status?.audience;
-  const recentRuns = status?.recentRuns || [];
   const selectedTenant = useMemo(
     () => pivotTenants.find((row) => row.tenantKey === selectedTenantKey) || null,
     [pivotTenants, selectedTenantKey]
   );
+
+  const jobsUrl = selectedTenantKey
+    ? `/admin/platform/tenants/${selectedTenantKey}/meridian/jobs/runs?type=weekly_drop&limit=50`
+    : null;
+  const {
+    data: jobsResponse,
+    error: jobsError,
+    refetch: refetchJobs,
+  } = useFetch(jobsUrl, {
+    cache: { enabled: false },
+  });
+  const recentRuns = useMemo(
+    () =>
+      mergeWeeklyDropHistory({
+        meridianRuns: !jobsError && jobsResponse?.success
+          ? jobsResponse.data?.runs || []
+          : [],
+        legacyRuns: status?.recentRuns || [],
+      }),
+    [jobsError, jobsResponse, status?.recentRuns],
+  );
+
+  const refetchPanel = useCallback(() => {
+    refetchStatus();
+    refetchJobs();
+  }, [refetchJobs, refetchStatus]);
 
   useEffect(() => {
     if (selectedTenant) {
@@ -236,9 +357,9 @@ function PivotWeeklyDropPage({ tenantKey: fixedTenantKey = '', tenant: fixedTena
       if (res.data?.tenant) {
         setForm(tenantToDropForm(res.data.tenant));
       }
-      refetchStatus();
+      refetchPanel();
     },
-    [addNotification, batchWeek, form, refetchStatus, selectedTenantKey]
+    [addNotification, batchWeek, form, refetchPanel, selectedTenantKey]
   );
 
   const handleSend = useCallback(
@@ -300,17 +421,52 @@ function PivotWeeklyDropPage({ tenantKey: fixedTenantKey = '', tenant: fixedTena
           type: 'success',
         });
       }
-      refetchStatus();
+      refetchPanel();
     },
     [
       addNotification,
       batchWeek,
       pushCopy.body,
       pushCopy.title,
-      refetchStatus,
+      refetchPanel,
       selectedTenantKey,
       status?.pivotPushRecipientCount,
     ]
+  );
+
+  const handleInspectRun = useCallback(
+    async (run) => {
+      const runKey = run.historyId || run._id;
+      if (expandedRunId === runKey) {
+        setExpandedRunId(null);
+        return;
+      }
+      setExpandedRunId(runKey);
+
+      if (run.source !== 'meridian' || !run.meridianJobRunId || !selectedTenantKey) return;
+      if (meridianRecipientsByRunId[run.meridianJobRunId]) return;
+
+      const { data: res, error: reqError } = await authenticatedRequest(
+        `/admin/platform/tenants/${selectedTenantKey}/meridian/jobs/runs/${run.meridianJobRunId}`,
+      );
+      if (reqError || !res?.success) {
+        setMeridianRecipientsByRunId((prev) => ({
+          ...prev,
+          [run.meridianJobRunId]: { error: res?.message || reqError || 'Unable to load recipients' },
+        }));
+        return;
+      }
+      const deliveries = res.data?.deliveries || [];
+      const overflow = Number(res.data?.run?.summary?.recipientOverflowCount) || 0;
+      setMeridianRecipientsByRunId((prev) => ({
+        ...prev,
+        [run.meridianJobRunId]: {
+          recipients: mapMeridianDeliveriesToRecipients(deliveries),
+          recipientOverflowCount: overflow,
+        },
+      }));
+    },
+    [expandedRunId, meridianRecipientsByRunId, selectedTenantKey],
   );
 
   const content = (
@@ -320,10 +476,11 @@ function PivotWeeklyDropPage({ tenantKey: fixedTenantKey = '', tenant: fixedTena
           <p className="pivot-weekly-drop__eyebrow">
             Internal · Just Go pilot{fixedTenantKey ? ` · ${selectedTenant?.location || selectedTenant?.name || fixedTenantKey}` : ''}
           </p>
-          <h1>Weekly drop</h1>
+          <h1>{notificationsPanel ? 'Notifications' : 'Weekly drop'}</h1>
           <p className="pivot-weekly-drop__subtitle">
-            Configure each city&apos;s drop schedule and send the manual deck push at the resolved local
-            instant. Publish catalog events in Pivot Lab first.
+            {notificationsPanel
+              ? "Configure this city's weekly drop, dry-run or send, and inspect job history. Older sends without a job run still appear from the legacy push log."
+              : "Configure each city's drop schedule and send the manual deck push at the resolved local instant. Publish catalog events in Pivot Lab first."}
           </p>
         </div>
         <div className="pivot-weekly-drop__controls">
@@ -356,7 +513,7 @@ function PivotWeeklyDropPage({ tenantKey: fixedTenantKey = '', tenant: fixedTena
           <button
             type="button"
             className="linear-btn linear-btn--ghost"
-            onClick={() => refetchStatus()}
+            onClick={() => refetchPanel()}
             disabled={statusLoading || !selectedTenantKey}
           >
             {statusLoading ? 'Loading…' : 'Refresh'}
@@ -536,32 +693,98 @@ function PivotWeeklyDropPage({ tenantKey: fixedTenantKey = '', tenant: fixedTena
 
           <PivotOpsSection
             title="Recent sends"
-            description="Expo acceptance history for this city. Acceptance is not the same as device delivery."
+            description="Meridian job runs for this city, with older PivotDropPushRun history when a send was never dual-written. Expo acceptance is not the same as device delivery."
             className="pivot-weekly-drop__runs"
           >
             {recentRuns.length ? (
               <div className="pivot-weekly-drop__run-list">
-                {recentRuns.map((run) => (
-                  <article className="pivot-weekly-drop__run" key={run._id || `${run.batchWeek}-${run.createdAt}`}>
-                    <div className="pivot-weekly-drop__run-detail">
-                      <strong>{run.batchWeek} · {run.title || 'Weekly drop'}</strong>
-                      <span>{formatDateTime(run.createdAt)} · {run.attempted ?? 0} attempted</span>
-                      <span>
-                        Just Go {run.audience?.justgo || 0} · Meridian {run.audience?.campus || 0}
-                        {run.audience?.legacy ? ` · Legacy ${run.audience.legacy}` : ''}
-                      </span>
-                      {run.errors?.length ? (
-                        <span className="pivot-weekly-drop__run-error">{run.errors[0]}</span>
+                {recentRuns.map((run) => {
+                  const runKey = run.historyId || run._id || `${run.batchWeek}-${run.createdAt}`;
+                  const expanded = expandedRunId === runKey;
+                  const meridianLoaded = run.meridianJobRunId
+                    ? meridianRecipientsByRunId[run.meridianJobRunId]
+                    : null;
+                  const inspectRun = run.source === 'meridian'
+                    ? {
+                        ...run,
+                        recipients: meridianLoaded?.recipients || [],
+                        recipientOverflowCount:
+                          meridianLoaded?.recipientOverflowCount ?? run.recipientOverflowCount ?? 0,
+                      }
+                    : run;
+                  const recipientCount = Array.isArray(inspectRun.recipients) && inspectRun.recipients.length
+                    ? inspectRun.recipients.length + (Number(inspectRun.recipientOverflowCount) || 0)
+                    : (run.attempted ?? 0);
+                  return (
+                    <article
+                      className={`pivot-weekly-drop__run${expanded ? ' is-expanded' : ''}`}
+                      key={runKey}
+                    >
+                      <div className="pivot-weekly-drop__run-summary">
+                        <div className="pivot-weekly-drop__run-detail">
+                          <strong>{run.batchWeek || 'Job run'} · {run.title || 'Weekly drop'}</strong>
+                          <span>{formatDateTime(run.createdAt)} · {run.attempted ?? 0} attempted</span>
+                          <span>
+                            {run.source === 'meridian' ? (
+                              <>
+                                Job run · {run.status || 'unknown'}
+                                {run.skipped ? ` · ${run.skipped} skipped` : ''}
+                              </>
+                            ) : (
+                              <>
+                                Legacy send · Just Go {run.audience?.justgo || 0} · Meridian {run.audience?.campus || 0}
+                                {run.audience?.legacy ? ` · Legacy ${run.audience.legacy}` : ''}
+                              </>
+                            )}
+                          </span>
+                          {run.errors?.length ? (
+                            <span className="pivot-weekly-drop__run-error">{run.errors[0]}</span>
+                          ) : null}
+                        </div>
+                        <div className="pivot-weekly-drop__run-actions">
+                          <div className="pivot-weekly-drop__run-counts">
+                            <PivotOpsStatus tone={run.failed ? 'warn' : 'ok'}>
+                              {run.accepted ?? 0} accepted
+                            </PivotOpsStatus>
+                            {run.failed ? (
+                              <PivotOpsStatus tone="danger">{run.failed} failed</PivotOpsStatus>
+                            ) : null}
+                          </div>
+                          {run.source === 'meridian' && notificationsPanel ? (
+                            <Link
+                              className="linear-button linear-button--ghost pivot-weekly-drop__run-inspect"
+                              to={notificationJobRunHref({
+                                tenantKey: selectedTenantKey,
+                                runId: run.meridianJobRunId,
+                                batchWeek: run.batchWeek,
+                              })}
+                            >
+                              Open run
+                            </Link>
+                          ) : (
+                            <button
+                              type="button"
+                              className="linear-button linear-button--ghost pivot-weekly-drop__run-inspect"
+                              onClick={() => handleInspectRun(run)}
+                              aria-expanded={expanded}
+                            >
+                              {expanded ? 'Hide recipients' : `Inspect ${recipientCount} users`}
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                      {expanded ? (
+                        <div className="pivot-weekly-drop__run-recipients">
+                          {meridianLoaded?.error ? (
+                            <p className="pivot-weekly-drop__error">{meridianLoaded.error}</p>
+                          ) : (
+                            <WeeklyDropRunRecipients run={inspectRun} />
+                          )}
+                        </div>
                       ) : null}
-                    </div>
-                    <div className="pivot-weekly-drop__run-counts">
-                      <PivotOpsStatus tone={run.failed ? 'warn' : 'ok'}>
-                        {run.accepted ?? 0} accepted
-                      </PivotOpsStatus>
-                      {run.failed ? <PivotOpsStatus tone="danger">{run.failed} failed</PivotOpsStatus> : null}
-                    </div>
-                  </article>
-                ))}
+                    </article>
+                  );
+                })}
               </div>
             ) : (
               <p className="pivot-weekly-drop__empty">No sends have been recorded for this city yet.</p>
@@ -808,10 +1031,14 @@ function PivotWeeklyDropPage({ tenantKey: fixedTenantKey = '', tenant: fixedTena
   if (fixedTenantKey) {
     return (
       <PivotTenantPage
-        title="Weekly drop"
+        title={notificationsPanel ? 'Notifications' : 'Weekly drop'}
         tenantKey={fixedTenantKey}
         cityDisplayName={selectedTenant?.location || selectedTenant?.name || fixedTenantKey}
-        subtitle="Review the live audience, notification history, schedule, and release this city's weekly deck."
+        subtitle={
+          notificationsPanel
+            ? "Review the live audience, send or dry-run the weekly drop, and inspect this city's notification job history."
+            : "Review the live audience, notification history, schedule, and release this city's weekly deck."
+        }
         actions={(
           <div className="pivot-weekly-drop__tenant-actions">
             <label className="linear-field">
@@ -826,7 +1053,7 @@ function PivotWeeklyDropPage({ tenantKey: fixedTenantKey = '', tenant: fixedTena
             <button
               type="button"
               className="linear-btn linear-btn--secondary"
-              onClick={() => refetchStatus()}
+              onClick={() => refetchPanel()}
               disabled={statusLoading}
             >
               {statusLoading ? 'Refreshing…' : 'Refresh data'}

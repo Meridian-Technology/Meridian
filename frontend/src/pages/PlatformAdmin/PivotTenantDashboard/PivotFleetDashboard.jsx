@@ -9,6 +9,7 @@ import PivotVoicePage from './PivotVoicePage';
 import PivotFleetLaunchPage from './PivotFleetLaunchPage';
 import PivotComputeJobs, { PIVOT_FLEET_COMPUTE_JOBS_PAGE } from './PivotComputeJobs';
 import PivotTenantAnalyticsPage from './PivotTenantAnalyticsPage';
+import PivotFleetNotificationsPage from '../PivotNotifications/PivotFleetNotificationsPage';
 import PivotTenantDropdown from './PivotTenantDropdown';
 import PivotJustGoLogo from './PivotJustGoLogo';
 import '../../Admin/Admin.scss';
@@ -20,8 +21,9 @@ const NO_FETCH_CACHE = { enabled: false };
 
 /**
  * Fleet Just Go ops shell.
- * Route: /platform-admin/pivot?page=0|1|2|3|4
- * Voice is page=1; Launch is page=2; Compute jobs is page=3; Analytics is page=4 (appended).
+ * Route: /platform-admin/pivot?page=0|1|2|3|4|5
+ * Voice is page=1; Launch is page=2; Compute jobs is page=3; Analytics is page=4;
+ * Notifications is page=5 (appended).
  */
 function PivotFleetDashboard() {
   const navigate = useNavigate();
@@ -77,6 +79,11 @@ function PivotFleetDashboard() {
         label: 'Analytics',
         icon: 'mdi:chart-funnel',
         element: <PivotTenantAnalyticsPage scope="fleet" cityDisplayName="All cities" />,
+      },
+      {
+        label: 'Notifications',
+        icon: 'mdi:bell-ring-outline',
+        element: <PivotFleetNotificationsPage tenants={pivotTenants} />,
       },
     ],
     [pivotTenants, tenants, loading, mobileEnvOverrides, refetch],

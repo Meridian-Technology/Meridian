@@ -112,10 +112,6 @@
   }
 
   &__run {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
     padding: 10px 0;
     border-bottom: 1px solid var(--pivot-ops-border, rgba(26, 23, 20, 0.12));
 
@@ -137,12 +133,51 @@
       font-size: 13px;
       color: var(--pivot-ops-ink, #1a1714);
     }
+  }
 
-    > div > span {
-      margin-top: 2px;
-      font-size: 11px;
-      color: var(--pivot-ops-ink-soft, rgba(26, 23, 20, 0.5));
-    }
+  &__run-summary {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+  }
+
+  &__run-actions {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 8px;
+    flex-shrink: 0;
+  }
+
+  &__run-inspect {
+    font-size: 12px;
+    white-space: nowrap;
+  }
+
+  &__run-recipients {
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px dashed var(--pivot-ops-border, rgba(26, 23, 20, 0.12));
+  }
+
+  &__run-recipients-empty {
+    margin: 0;
+  }
+
+  &__run-recipient-error {
+    display: block;
+    margin-top: 4px;
+    max-width: 28ch;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 10px;
+    color: var(--pivot-ops-danger, #b42318);
+  }
+
+  &__table-wrap--compact {
+    max-height: 240px;
   }
 
   &__run-counts {
@@ -154,6 +189,12 @@
 
   &__run-detail {
     min-width: 0;
+
+    > span {
+      margin-top: 2px;
+      font-size: 11px;
+      color: var(--pivot-ops-ink-soft, rgba(26, 23, 20, 0.5));
+    }
   }
 
   &__run-error {

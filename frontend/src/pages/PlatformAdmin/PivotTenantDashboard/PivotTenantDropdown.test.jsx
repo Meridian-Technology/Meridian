@@ -160,6 +160,14 @@ describe('PivotTenantDropdown switcher remap', () => {
     );
   });
 
+  it('lands All cities Notifications on city Notifications (page=9)', () => {
+    renderSwitcher('/platform-admin/pivot?page=5');
+    switchTo(/New York/i);
+    expect(screen.getByTestId('path').textContent).toBe(
+      '/platform-admin/pivot/nyc?page=9',
+    );
+  });
+
   it('maps Analytics between the fleet and city shells', () => {
     expect(
       remapPivotOpsSearch(new URLSearchParams('page=4'), {
@@ -173,6 +181,21 @@ describe('PivotTenantDropdown switcher remap', () => {
         to: 'fleet',
       }),
     ).toBe('?page=4');
+  });
+
+  it('maps Notifications between the fleet and city shells', () => {
+    expect(
+      remapPivotOpsSearch(new URLSearchParams('page=5'), {
+        from: 'fleet',
+        to: 'city',
+      }),
+    ).toBe('?page=9');
+    expect(
+      remapPivotOpsSearch(new URLSearchParams('page=9'), {
+        from: 'city',
+        to: 'fleet',
+      }),
+    ).toBe('?page=5');
   });
 
   it('keeps NYC Catalog → Brooklyn Catalog at page=4', () => {

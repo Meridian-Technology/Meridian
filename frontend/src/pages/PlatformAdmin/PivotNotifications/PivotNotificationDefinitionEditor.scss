@@ -1,0 +1,56 @@
+.pivot-notification-definition-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+
+  &__grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 12px;
+  }
+
+  &__copy,
+  &__trigger,
+  &__overrides {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  &__error {
+    margin: 0;
+    font-size: 13px;
+    color: var(--pivot-ops-danger, #b42318);
+  }
+
+  &__hint {
+    margin: 0;
+    font-size: 12px;
+    color: var(--pivot-ops-ink-soft, rgba(26, 23, 20, 0.5));
+  }
+
+  &__actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  &__cron {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 12px;
+  }
+
+  textarea {
+    min-height: 96px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size: 12px;
+  }
+
+  .linear-field--checkbox {
+    flex-direction: row;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+  }
+}
