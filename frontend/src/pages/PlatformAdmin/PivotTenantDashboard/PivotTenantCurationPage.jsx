@@ -125,8 +125,13 @@ function emptyJobForm() {
 function detectProviderFromUrl(url) {
   try {
     const host = new URL(url).hostname.toLowerCase();
-    if (host.includes('partiful')) return 'partiful';
-    if (host.includes('lu.ma') || host.includes('luma')) return 'luma';
+    if (host === 'partiful.com' || host.endsWith('.partiful.com')) return 'partiful';
+    if (
+      host === 'lu.ma'
+      || host.endsWith('.lu.ma')
+      || host === 'luma.com'
+      || host.endsWith('.luma.com')
+    ) return 'luma';
   } catch {
     /* ignore */
   }
@@ -208,6 +213,8 @@ function PivotTenantCurationPage({ tenantKey, cityDisplayName }) {
   const [tagSuggestLoadingKey, setTagSuggestLoadingKey] = useState(null);
   const [urlImportValue, setUrlImportValue] = useState('');
   const [urlImportLoading, setUrlImportLoading] = useState(false);
+  const [urlImportPreview, setUrlImportPreview] = useState(null);
+  const [urlImportSaving, setUrlImportSaving] = useState(false);
   /** Shown when a bulk stage lands events outside the selected review week. */
   const [stageLandHint, setStageLandHint] = useState(null);
   const [purgeOpen, setPurgeOpen] = useState(false);
@@ -544,6 +551,7 @@ function PivotTenantCurationPage({ tenantKey, cityDisplayName }) {
     batchWeekValid &&
     !manualImportOpen &&
     !editingEvent &&
+    !urlImportPreview &&
     !jobFormOpen &&
     !richEnrichmentOpen;
 
@@ -1671,6 +1679,31 @@ function PivotTenantCurationPage({ tenantKey, cityDisplayName }) {
     [addNotification, buildTagSuggestPayload, requestSuggestedTags],
   );
 
+  const suggestTagsForUrlImport = useCallback(
+    async (draft, patchDraft) => {
+      setTagSuggestLoadingKey('url-import');
+      const result = await requestSuggestedTags(
+        buildTagSuggestPayload({
+          name: draft.name,
+          description: draft.description,
+          location: draft.location,
+          organizerName: draft.organizerName,
+        }),
+      );
+      setTagSuggestLoadingKey(null);
+      if (result.error) {
+        addNotification({
+          title: 'Tag suggestion failed',
+          message: result.error,
+          type: 'error',
+        });
+        return;
+      }
+      patchDraft?.({ tags: result.tags });
+    },
+    [addNotification, buildTagSuggestPayload, requestSuggestedTags],
+  );
+
   const handlePublishManualImport = useCallback(
     async (draft) => {
       if (!tenantKey) return false;
@@ -1727,9 +1760,18 @@ function PivotTenantCurationPage({ tenantKey, cityDisplayName }) {
 
   const handleUrlImport = useCallback(async () => {
     const url = urlImportValue.trim();
-    if (!url || !tenantKey || !batchWeekValid) return;
+    if (!url || !tenantKey || !committedWeekValid || !weekSettled) return;
 
-    setBatchWeek(batchWeek, { immediate: true });
+    const provider = detectProviderFromUrl(url);
+    if (provider !== 'partiful' && provider !== 'luma') {
+      addNotification({
+        title: 'Use a Luma or Partiful link',
+        message: 'This importer is for one event on luma.com, lu.ma, or partiful.com.',
+        type: 'warning',
+      });
+      return;
+    }
+
     setUrlImportLoading(true);
     const preview = await authenticatedRequest('/admin/pivot/ingest/preview', {
       method: 'POST',
@@ -1748,60 +1790,64 @@ function PivotTenantCurationPage({ tenantKey, cityDisplayName }) {
 
     const mode = preview.data.data?.mode;
     if (mode === 'batch') {
-      // Prefer saving as a job for explore URLs.
-      const provider =
-        preview.data.data?.provider || detectProviderFromUrl(url) || 'generic-site';
-      setJobForm({
-        ...emptyJobForm(),
-        label: preview.data.data?.listLabel || `${provider} explore`,
-        url,
-        provider,
-      });
-      setJobFormOpen(true);
-      setEditingJobId(null);
       setUrlImportLoading(false);
       addNotification({
-        title: 'Explore link detected',
-        message: 'Save it as a crawl job, then Run for this week.',
-        type: 'info',
-      });
-      return;
-    }
-
-    const draft = preview.data.data?.draft || {};
-    if (!bulkTags.length) {
-      setUrlImportLoading(false);
-      addNotification({
-        title: 'Tags required',
+        title: 'Paste a single event link',
         message:
-          'Pick tags in the review bulk bar (or use Manual form), then import the URL again.',
+          'Explore and calendar links belong in Saved jobs. This import is only for one missed event.',
         type: 'warning',
       });
       return;
     }
 
+    const draft = preview.data.data?.draft || {};
+    setUrlImportLoading(false);
+    setUrlImportPreview({
+      url,
+      provider: preview.data.data?.provider || provider,
+      warnings: preview.data.data?.warnings || [],
+      event: {
+        ...draft,
+        organizerName: draft.hostName || draft.organizerName || '',
+        sourceUrl: draft.sourceUrl || url,
+        source: draft.source || provider,
+        ingestStatus: 'staged',
+        tags: Array.isArray(draft.tags) ? draft.tags : [],
+      },
+    });
+  }, [
+    addNotification,
+    committedWeekValid,
+    tenantKey,
+    urlImportValue,
+    weekSettled,
+  ]);
+
+  const handleStageUrlImport = useCallback(async (draft) => {
+    if (!tenantKey || !urlImportPreview || !committedWeekValid || !weekSettled) return false;
+
+    setUrlImportSaving(true);
+    const reviewed = catalogEditDraftToOverrides(draft);
+    const {
+      ingestStatus: _ingestStatus,
+      featured: _featured,
+      enrichment: _enrichment,
+      ...overrides
+    } = reviewed;
     const { data, error } = await authenticatedRequest('/admin/pivot/ingest', {
       method: 'POST',
       data: {
         tenantKey,
-        url,
-        batchWeek,
+        url: urlImportPreview.url,
+        batchWeek: committedWeek,
         forceBatchWeek,
         overrides: {
-          hostName: draft.hostName,
-          name: draft.name,
-          location: draft.location,
-          start_time: draft.start_time,
-          end_time: draft.end_time || undefined,
-          description: draft.description || undefined,
-          image: draft.image || undefined,
-          source: draft.source,
-          sourceUrl: draft.sourceUrl || url,
-          tags: bulkTags,
+          ...overrides,
+          source: urlImportPreview.event.source || urlImportPreview.provider,
         },
       },
     });
-    setUrlImportLoading(false);
+    setUrlImportSaving(false);
 
     if (error || !data?.success) {
       addNotification({
@@ -1809,29 +1855,30 @@ function PivotTenantCurationPage({ tenantKey, cityDisplayName }) {
         message: error || data?.message || 'Could not import event.',
         type: 'error',
       });
-      return;
+      return false;
     }
 
-    const landedWeek = data.data?.batchWeek || data.data?.event?.batchWeek || batchWeek;
+    const landedWeek = data.data?.batchWeek || data.data?.event?.batchWeek || committedWeek;
     setUrlImportValue('');
+    setUrlImportPreview(null);
     refreshAll();
     addNotification({
-      title: 'Staged',
+      title: 'Event staged',
       message: `${data.data?.event?.name || draft.name || 'Event'} added for ${landedWeek}${
         forceBatchWeek ? ' (forced)' : ''
       }.`,
       type: 'success',
     });
+    return true;
   }, [
     addNotification,
-    batchWeek,
-    batchWeekValid,
-    bulkTags,
+    committedWeek,
+    committedWeekValid,
     forceBatchWeek,
     refreshAll,
-    setBatchWeek,
     tenantKey,
-    urlImportValue,
+    urlImportPreview,
+    weekSettled,
   ]);
 
   const displayCity = overview?.cityDisplayName || cityDisplayName || tenantKey;
@@ -2566,8 +2613,9 @@ function PivotTenantCurationPage({ tenantKey, cityDisplayName }) {
               Manual add · {committedWeek}
             </h2>
             <p className="pivot-lab__section-hint">
-              Import tools for the current batch week: paste a single event URL, load a catalog JSON
-              export from another Curation panel, import agent JSON, or open the manual form.
+              Import tools for the current batch week: review a single Luma or Partiful event the
+              crawler missed, load a catalog JSON export from another Curation panel, import agent
+              JSON, or open the manual form.
               Unless “Force into review week” is on, events land in the week of their start date.
             </p>
           </div>
@@ -2584,16 +2632,21 @@ function PivotTenantCurationPage({ tenantKey, cityDisplayName }) {
             className="linear-input"
             value={urlImportValue}
             onChange={(e) => setUrlImportValue(e.target.value)}
-            placeholder="https://partiful.com/e/… or explore URL"
-            aria-label="Event or explore URL"
+            placeholder="https://partiful.com/e/… or https://luma.com/…"
+            aria-label="Luma or Partiful event URL"
           />
           <button
             type="button"
             className="linear-btn linear-btn--secondary"
             onClick={handleUrlImport}
-            disabled={!urlImportValue.trim() || urlImportLoading || !batchWeekValid}
+            disabled={
+              !urlImportValue.trim()
+              || urlImportLoading
+              || !committedWeekValid
+              || !weekSettled
+            }
           >
-            {urlImportLoading ? 'Working…' : 'Import URL'}
+            {urlImportLoading ? 'Loading preview…' : 'Review event'}
           </button>
         </div>
         <PivotJsonImportPanel
@@ -2805,6 +2858,24 @@ function PivotTenantCurationPage({ tenantKey, cityDisplayName }) {
         saving={editSaving}
         onSuggestTags={suggestTagsForEdit}
         tagSuggestLoading={tagSuggestLoadingKey === 'edit'}
+      />
+
+      <PivotCatalogEventEditModal
+        open={Boolean(urlImportPreview)}
+        event={urlImportPreview?.event}
+        onClose={() => setUrlImportPreview(null)}
+        catalogTags={catalogTags}
+        cityLabel={displayCity}
+        batchWeek={committedWeek}
+        onSave={handleStageUrlImport}
+        saving={urlImportSaving}
+        onSuggestTags={suggestTagsForUrlImport}
+        tagSuggestLoading={tagSuggestLoadingKey === 'url-import'}
+        mode="import"
+        title="Review Luma / Partiful event"
+        saveLabel="Stage event"
+        savingLabel="Staging…"
+        notices={urlImportPreview?.warnings}
       />
 
       <PivotRichDataEnrichmentPopup
