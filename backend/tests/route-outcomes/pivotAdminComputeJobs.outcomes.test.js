@@ -198,6 +198,29 @@ describe('pivotAdminComputeJobs routes outcomes', () => {
 
     expect(response.status).toBe(200);
     expect(response.body.attempts).toHaveLength(1);
+    expect(getAdminComputeJob).toHaveBeenCalledWith(
+      expect.anything(),
+      'job:discovery-iowacity-001',
+      expect.objectContaining({ includeAttempts: true, includeApplyManifest: true }),
+    );
+  });
+
+  it('honors includeApplyManifest on job detail', async () => {
+    getAdminComputeJob.mockResolvedValue({
+      job: { externalJobId: 'job:discovery-iowacity-001' },
+      attempts: [],
+    });
+
+    const response = await request(app)
+      .get('/admin/pivot/compute-jobs/job:discovery-iowacity-001')
+      .query({ includeApplyManifest: 'true' });
+
+    expect(response.status).toBe(200);
+    expect(getAdminComputeJob).toHaveBeenCalledWith(
+      expect.anything(),
+      'job:discovery-iowacity-001',
+      expect.objectContaining({ includeApplyManifest: true }),
+    );
   });
 
   it('previews a stored compute job result for platform admins', async () => {

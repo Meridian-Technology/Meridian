@@ -17,6 +17,11 @@ const {
   updateComputeJobApplyProgress,
   completeComputeJobApply,
 } = require('./pivotComputeJobStore');
+const {
+  MAX_APPLICATION_AUDIT_BUCKETS,
+  MAX_APPLICATION_AUDIT_ROWS,
+  MAX_APPLICATION_AUDIT_MANIFEST_BYTES,
+} = require('../schemas/pivotComputeJob');
 
 const MAX_PREVIEW_ROWS = 5000;
 const BACKGROUND_APPLY_ROW_THRESHOLD = 8;
@@ -31,6 +36,96 @@ function serviceError(message, code, status = 400) {
   error.code = code;
   error.status = status;
   return error;
+}
+
+function notifyComputeJobAdminsBestEffort(req, { job, type, tenant, policy } = {}) {
+  if (!job || !type) return;
+  if (process.env.NODE_ENV === 'test') return;
+  try {
+    const { notifyAdminsOnComputeJob } = require('./pivotComputeAdminNotifyService'); // eslint-disable-line global-require
+    Promise.resolve(notifyAdminsOnComputeJob(req, { job, type, tenant, policy })).catch(() => undefined);
+  } catch (_) {
+    // Email is best-effort and must never fail apply.
+  }
+}
+
+function dispositionForPreviewAction(action) {
+  if (action === 'create') return 'created';
+  if (action === 'update') return 'updated';
+  return trimString(action) || 'applied';
+}
+
+function sanitizeApplyManifestRow(row) {
+  return {
+    entityType: trimString(row?.entityType).slice(0, 64) || 'event',
+    disposition: trimString(row?.disposition).slice(0, 64) || 'applied',
+    eventId: trimString(row?.eventId).slice(0, 128) || null,
+    name: trimString(row?.name).slice(0, 512) || null,
+    sourceUrl: trimString(row?.sourceUrl).slice(0, 2048) || null,
+    batchWeek: trimString(row?.batchWeek).slice(0, 32) || null,
+    ingestStatus: trimString(row?.ingestStatus).slice(0, 64) || null,
+    curationJobId: trimString(row?.curationJobId).slice(0, 128) || null,
+    curationJobLabel: trimString(row?.curationJobLabel).slice(0, 256) || null,
+    message: trimString(row?.message).slice(0, 1000) || null,
+  };
+}
+
+function applyManifestBucketKey(row) {
+  return [row.entityType, row.disposition, row.ingestStatus || '', row.batchWeek || ''].join('\0');
+}
+
+function applyManifestByteLength(manifest) {
+  return Buffer.byteLength(JSON.stringify({
+    buckets: manifest.buckets || [],
+    rows: manifest.rows || [],
+    rowOverflowCount: manifest.rowOverflowCount || 0,
+    manifestGeneratedAt: manifest.manifestGeneratedAt || null,
+  }), 'utf8');
+}
+
+function buildBoundedApplyManifest(rawRows, now = new Date()) {
+  const sanitized = (rawRows || []).map(sanitizeApplyManifestRow);
+  const bucketMap = new Map();
+  for (const row of sanitized) {
+    const key = applyManifestBucketKey(row);
+    const existing = bucketMap.get(key);
+    if (existing) {
+      existing.count += 1;
+    } else {
+      bucketMap.set(key, {
+        entityType: row.entityType,
+        disposition: row.disposition,
+        ingestStatus: row.ingestStatus,
+        batchWeek: row.batchWeek,
+        count: 1,
+      });
+    }
+  }
+  let buckets = [...bucketMap.values()].sort((a, b) => (
+    b.count - a.count
+    || a.entityType.localeCompare(b.entityType)
+    || a.disposition.localeCompare(b.disposition)
+  ));
+  if (buckets.length > MAX_APPLICATION_AUDIT_BUCKETS) {
+    buckets = buckets.slice(0, MAX_APPLICATION_AUDIT_BUCKETS);
+  }
+
+  let rows = sanitized.slice(0, MAX_APPLICATION_AUDIT_ROWS);
+  let rowOverflowCount = Math.max(0, sanitized.length - rows.length);
+  const manifest = {
+    buckets,
+    rows,
+    rowOverflowCount,
+    manifestGeneratedAt: now,
+  };
+  while (manifest.rows.length && applyManifestByteLength(manifest) > MAX_APPLICATION_AUDIT_MANIFEST_BYTES) {
+    manifest.rows.pop();
+    manifest.rowOverflowCount += 1;
+  }
+  while (manifest.buckets.length && applyManifestByteLength(manifest) > MAX_APPLICATION_AUDIT_MANIFEST_BYTES) {
+    manifest.buckets.pop();
+  }
+  return manifest;
 }
 
 function sortedStrings(values) {
@@ -97,6 +192,15 @@ async function buildApplyRequestContext(tenantKey, actor) {
   };
 }
 
+function nativeTagsRequiredAbort(applied) {
+  const writes = (Number(applied?.summary?.creates) || 0)
+    + (Number(applied?.summary?.updates) || 0);
+  if (writes > 0) return false;
+  const skipped = applied?.skippedRows || [];
+  return skipped.length > 0
+    && skipped.every((row) => row.code === NATIVE_TAGS_REQUIRED);
+}
+
 async function finalizeStoredComputeJobApply(req, {
   externalJobId,
   actor,
@@ -106,6 +210,31 @@ async function finalizeStoredComputeJobApply(req, {
   now = new Date(),
 } = {}) {
   if (applied) {
+    if (nativeTagsRequiredAbort(applied)) {
+      const reviewedJob = await completeComputeJobApply(req, {
+        externalJobId,
+        actor,
+        idempotencyKey,
+        summary: applied.summary,
+        outcome: 'rejected',
+        errorCode: NATIVE_TAGS_REQUIRED,
+        errorMessage: 'Native Luma/Partiful rows were not published without catalog tags.',
+        previewDrift: Boolean(applied.previewDrift),
+        manifest: applied.manifest || null,
+        recordAppliedAt: false,
+        now,
+      });
+      notifyComputeJobAdminsBestEffort(req, { job: reviewedJob, type: 'review-required' });
+      return {
+        job: reviewedJob,
+        duplicate: false,
+        summary: applied.summary,
+        outcome: 'rejected',
+        skipCode: NATIVE_TAGS_REQUIRED,
+        skippedRows: applied.skippedRows || [],
+        previewDrift: Boolean(applied.previewDrift),
+      };
+    }
     const skippedCount = Number(applied.summary?.skipped) || 0;
     const outcome = skippedCount > 0 ? 'partial' : 'completed';
     const completed = await completeComputeJobApply(req, {
@@ -115,8 +244,10 @@ async function finalizeStoredComputeJobApply(req, {
       summary: applied.summary,
       outcome,
       previewDrift: Boolean(applied.previewDrift),
+      manifest: applied.manifest || null,
       now,
     });
+    notifyComputeJobAdminsBestEffort(req, { job: completed, type: 'apply-complete' });
     return {
       job: completed,
       duplicate: false,
@@ -146,7 +277,12 @@ async function finalizeStoredComputeJobApply(req, {
     outcome,
     errorCode: error?.code || null,
     errorMessage: error?.message || null,
+    manifest: error?.applyManifest || null,
     now,
+  });
+  notifyComputeJobAdminsBestEffort(req, {
+    job: reviewedJob,
+    type: outcome === 'rejected' ? 'review-required' : 'apply-complete',
   });
   const rejected = {
     outcome,
@@ -227,6 +363,10 @@ function scheduleStoredComputeJobApply(input) {
     }
   });
 }
+
+const NATIVE_AUTO_TAG_PROVIDERS = new Set(['luma', 'partiful']);
+const MAX_NATIVE_ASSIGNED_TAGS = 3;
+const NATIVE_TAGS_REQUIRED = 'NATIVE_TAGS_REQUIRED';
 
 const SKIPPABLE_EVENT_PUBLISH_CODES = new Set([
   'MISSING_REQUIRED_FIELDS',
@@ -1195,6 +1335,12 @@ async function applySourceRow(req, result, proposal) {
     rejectedReason: proposal.rejectedReason || null,
   };
   await persistOutcome(req, result.cityKey, outcome, new Date());
+  return {
+    applied: true,
+    host: proposal.host || null,
+    url: proposal.url || null,
+    label: proposal.label || null,
+  };
 }
 
 async function findCurationJobProposal(result, proposal, identities) {
@@ -1207,7 +1353,7 @@ async function applyCurationJobRow(req, result, proposal, identities) {
   const { createCurationJob, updateCurationJob } = require('./pivotCurationJobService');
   const existing = await findCurationJobProposal(result, proposal, identities);
   if (!existing) {
-    await createCurationJob(req, {
+    const created = await createCurationJob(req, {
       tenantKey: result.cityKey,
       label: proposal.label,
       url: proposal.url,
@@ -1216,7 +1362,13 @@ async function applyCurationJobRow(req, result, proposal, identities) {
       enabled: proposal.enabled !== false,
       defaultBatchWeekStrategy: 'next-drop',
     });
-    return;
+    const jobId = created?.data?.job?._id ? String(created.data.job._id) : null;
+    return {
+      created: true,
+      jobId,
+      label: proposal.label || null,
+      url: proposal.url || null,
+    };
   }
   await updateCurationJob(req, {
     tenantKey: result.cityKey,
@@ -1225,6 +1377,82 @@ async function applyCurationJobRow(req, result, proposal, identities) {
     defaultTags: proposal.defaultTags,
     enabled: proposal.enabled,
   });
+  return {
+    created: false,
+    jobId: existing.jobId || null,
+    label: existing.label || proposal.label || null,
+    url: proposal.url || existing.url || null,
+  };
+}
+
+function nonemptyTagSlugs(value) {
+  return [...new Set(
+    (Array.isArray(value) ? value : [])
+      .map((tag) => trimString(tag))
+      .filter(Boolean),
+  )];
+}
+
+function nativeEventProvider(proposal, linkedJob) {
+  return (
+    trimString(linkedJob?.provider).toLowerCase()
+    || trimString(proposal?.evidence?.provider).toLowerCase()
+  );
+}
+
+function storedEventTagSlugs(identities, sourceUrl) {
+  const eventDoc = identities?.eventDocBySourceUrl?.get(sourceUrl);
+  return nonemptyTagSlugs(eventDoc?.customFields?.pivot?.tags);
+}
+
+function tagAssignerManifestMessage(tagAssigner) {
+  const provider = trimString(tagAssigner?.provider);
+  const model = trimString(tagAssigner?.model);
+  const parts = [provider, model].filter(Boolean);
+  return parts.length ? `tagAssigner:${parts.join(':')}` : null;
+}
+
+async function resolveApplyEventTags(req, result, proposal, identities, linkedJob, defaultTags) {
+  const draft = proposal?.draft || {};
+  const draftTags = nonemptyTagSlugs(draft.tags);
+  const jobDefaultTags = nonemptyTagSlugs(defaultTags);
+  const storedTags = storedEventTagSlugs(identities, proposal?.sourceUrl);
+  const existingTags = draftTags.length ? draftTags : (storedTags.length ? storedTags : jobDefaultTags);
+  const provider = nativeEventProvider(proposal, linkedJob);
+  const needsNativeAssign = NATIVE_AUTO_TAG_PROVIDERS.has(provider)
+    && !draftTags.length
+    && !jobDefaultTags.length
+    && !storedTags.length;
+
+  if (!needsNativeAssign) {
+    return { tags: existingTags, tagAssigner: null, nativeTagsRequired: false };
+  }
+
+  const { assignTags } = require('../utilities/pivotTagAssigner');
+  const assigned = await assignTags({
+    event: draft,
+    tenantKey: result.cityKey,
+    req,
+  });
+  if (!assigned?.error && Array.isArray(assigned?.tags) && assigned.tags.length) {
+    return {
+      tags: assigned.tags.slice(0, MAX_NATIVE_ASSIGNED_TAGS),
+      tagAssigner: {
+        provider: assigned.provider || null,
+        model: assigned.model || null,
+      },
+      nativeTagsRequired: false,
+    };
+  }
+
+  return {
+    tags: existingTags,
+    tagAssigner: null,
+    nativeTagsRequired: true,
+    assignerError: trimString(assigned?.error)
+      || 'Catalog tags could not be assigned for this native listing.',
+    assignerCode: trimString(assigned?.code) || null,
+  };
 }
 
 async function applyEventRow(req, result, proposal, identities) {
@@ -1235,8 +1463,33 @@ async function applyEventRow(req, result, proposal, identities) {
     ? identities?.jobById?.get(proposal.linkedJobId)
     : null;
   const defaultTags = Array.isArray(linkedJob?.defaultTags) ? linkedJob.defaultTags : [];
-  const tags = Array.isArray(draft.tags) && draft.tags.length ? draft.tags : defaultTags;
-  const ingestStatus = pickIngestStatus(defaultTags, draft);
+  const {
+    tags,
+    tagAssigner,
+    nativeTagsRequired,
+    assignerError,
+  } = await resolveApplyEventTags(
+    req,
+    result,
+    proposal,
+    identities,
+    linkedJob,
+    defaultTags,
+  );
+  if (nativeTagsRequired && !tags.length) {
+    return {
+      skipped: true,
+      code: NATIVE_TAGS_REQUIRED,
+      message: assignerError,
+      title: trimString(draft.name) || proposal.sourceUrl || eventRowKey(proposal.sourceUrl),
+      sourceUrl: proposal.sourceUrl || null,
+      batchWeek: proposal.batchWeek || null,
+      curationJobId: linkedJob?.jobId || proposal.linkedJobId || null,
+      curationJobLabel: linkedJob?.label || null,
+      missingFields: [NATIVE_TAGS_REQUIRED],
+    };
+  }
+  const ingestStatus = pickIngestStatus(tags, draft);
 
   const published = await publishIngestEvent(req, {
     tenantKey: result.cityKey,
@@ -1278,6 +1531,9 @@ async function applyEventRow(req, result, proposal, identities) {
         message: published.error,
         title: trimString(draft.name) || proposal.sourceUrl || eventRowKey(proposal.sourceUrl),
         sourceUrl: proposal.sourceUrl || null,
+        batchWeek: proposal.batchWeek || null,
+        curationJobId: linkedJob?.jobId || proposal.linkedJobId || null,
+        curationJobLabel: linkedJob?.label || null,
         missingFields: code === 'MISSING_REQUIRED_FIELDS'
           ? requiredEventFieldsMissing(proposal)
           : [],
@@ -1286,10 +1542,17 @@ async function applyEventRow(req, result, proposal, identities) {
     throw serviceError(published.error, code, published.status || 500);
   }
 
+  const eventId = published.data?.event?._id ? String(published.data.event._id) : null;
   return {
     applied: true,
     created: !published.data?.updated,
+    eventId,
     ingestStatus: published.data?.ingestStatus || ingestStatus || null,
+    batchWeek: proposal.batchWeek || null,
+    curationJobId: linkedJob?.jobId || proposal.linkedJobId || null,
+    curationJobLabel: linkedJob?.label || null,
+    tagAssigner,
+    message: tagAssignerManifestMessage(tagAssigner),
   };
 }
 
@@ -1347,6 +1610,7 @@ async function applyComputeResult(req, {
   const identities = await loadProductionIdentities(req, result);
   const applicable = freshPreview.rows.filter(isApplyablePreviewRow);
   const skippedRows = [];
+  const manifestRows = [];
   const summary = {
     creates: 0,
     updates: 0,
@@ -1373,14 +1637,28 @@ async function applyComputeResult(req, {
         if (!proposal) continue;
         await applySourceRow(req, result, proposal);
         summary[row.action === 'create' ? 'creates' : 'updates'] += 1;
+        manifestRows.push({
+          entityType: 'source',
+          disposition: dispositionForPreviewAction(row.action),
+          name: proposal.label || proposal.host || null,
+          sourceUrl: proposal.url || null,
+        });
         await reportProgress();
         continue;
       }
       if (row.entityType === 'curationJob' && result.kind === 'city-source-discovery') {
         const proposal = (result.proposals.curationJobs || []).find((item) => curationJobRowKey(item) === row.key);
         if (!proposal) continue;
-        await applyCurationJobRow(req, result, proposal, identities);
+        const appliedJob = await applyCurationJobRow(req, result, proposal, identities);
         summary[row.action === 'create' ? 'creates' : 'updates'] += 1;
+        manifestRows.push({
+          entityType: 'curationJob',
+          disposition: dispositionForPreviewAction(row.action),
+          name: appliedJob?.label || proposal.label || null,
+          sourceUrl: appliedJob?.url || proposal.url || null,
+          curationJobId: appliedJob?.jobId || null,
+          curationJobLabel: appliedJob?.label || proposal.label || null,
+        });
         await reportProgress();
         continue;
       }
@@ -1401,10 +1679,32 @@ async function applyComputeResult(req, {
             code: outcome.code || null,
             message: outcome.message || null,
           });
+          manifestRows.push({
+            entityType: 'event',
+            disposition: 'skipped',
+            name: outcome.title || proposal.draft?.name || null,
+            sourceUrl: outcome.sourceUrl || proposal.sourceUrl || null,
+            batchWeek: outcome.batchWeek || proposal.batchWeek || null,
+            curationJobId: outcome.curationJobId || null,
+            curationJobLabel: outcome.curationJobLabel || null,
+            message: outcome.message || outcome.code || null,
+          });
           await reportProgress();
           continue;
         }
         summary[outcome?.created ? 'creates' : 'updates'] += 1;
+        manifestRows.push({
+          entityType: 'event',
+          disposition: outcome?.created ? 'created' : 'updated',
+          eventId: outcome?.eventId || null,
+          name: proposal.draft?.name || null,
+          sourceUrl: proposal.sourceUrl || null,
+          batchWeek: outcome?.batchWeek || proposal.batchWeek || null,
+          ingestStatus: outcome?.ingestStatus || null,
+          curationJobId: outcome?.curationJobId || null,
+          curationJobLabel: outcome?.curationJobLabel || null,
+          message: outcome?.message || null,
+        });
         await reportProgress();
       }
     }
@@ -1413,6 +1713,7 @@ async function applyComputeResult(req, {
     }
   } catch (error) {
     error.partialSummary = summary;
+    error.applyManifest = buildBoundedApplyManifest(manifestRows, now);
     error.failedRow = error.failedRow || (activeRow ? {
       entityType: activeRow.entityType,
       key: activeRow.key,
@@ -1426,6 +1727,7 @@ async function applyComputeResult(req, {
     preview: freshPreview,
     skippedRows: skippedRows.slice(0, 100),
     previewDrift,
+    manifest: buildBoundedApplyManifest(manifestRows, now),
   };
 }
 
@@ -1567,5 +1869,7 @@ module.exports = {
   countApplicablePreviewRows,
   applyComputeResult,
   applyStoredComputeJob,
+  buildBoundedApplyManifest,
   BACKGROUND_APPLY_ROW_THRESHOLD,
+  NATIVE_TAGS_REQUIRED,
 };

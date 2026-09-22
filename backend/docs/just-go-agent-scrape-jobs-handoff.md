@@ -71,7 +71,10 @@ Providers today (`CURATION_PROVIDERS`): `partiful` | `luma` | `manual-json` | `g
 | `services/pivotBatchService.js` | `PivotBatch` ensure/get for week lifecycle |
 | `services/pivotBatchReleaseService.js` | Release / unrelease (`staged` → `published`) |
 | `services/pivotBatchReadinessService.js` | Readiness scoring |
-| `services/pivotTagSuggestService.js` | Claude tag suggest (`/ingest/suggest-tags`) — not scraping |
+| `services/pivotTagSuggestService.js` | Claude tag suggest (`/ingest/suggest-tags`) — Lab path; Claude adapter for apply |
+| `utilities/pivotTagAssigner.js` | Compute-apply tag seam (`assignTags`). Claude default; `jev` is a reserved fail-closed stub |
+| `services/pivotComputeAutoApplyService.js` | Trusted auto-apply + boot sweep (`DISABLE_PIVOT_COMPUTE_AUTO_APPLY_STARTUP_SWEEP`) |
+| `services/pivotComputeResultApplyService.js` | Preview/apply; native auto-tag in `applyEventRow`; `NATIVE_TAGS_REQUIRED` skip |
 | `services/pivotTagCatalogService.js` | Tag catalog CRUD/seed |
 | `services/pivotCatalogPurgeService.js` | Catalog purge / cleanup |
 | `services/getGlobalModelService.js` | Registers global `PivotCurationJob` / `PivotCurationRun` |
@@ -99,6 +102,7 @@ All under `/admin/pivot` (see `pivotAdminRoutes.js`):
 - `POST /tenants/:tenantKey/batches/:batchWeek/release|unrelease`
 - `GET /tenants/:tenantKey/batches/:batchWeek/readiness`
 - `PATCH /tenants/:tenantKey/sources/discovery-config` — save flow + city slugs as tenant default
+- `PATCH /tenants/:tenantKey/compute-apply-config` — sparse trusted auto-apply policy (`trusted`, `autoApplyRefresh`, …)
 
 ---
 
@@ -296,6 +300,116 @@ npm run discover:pivot-city-sources -- --tenant=ic
 ```
 
 `--plan` is the recommended first step on any new city: it prints every query, the categories covered, and the run's `max outbound calls` ceiling before a single credit is spent.
+
+---
+
+## Compute-job apply, audit, and notification operations
+
+Compute jobs keep a human review gate by default. A city can explicitly opt into a narrowly scoped **trusted auto-apply** policy when its refresh or discovery results are safe to publish through the existing compute apply path.
+
+### Tenant policy
+
+Platform admins manage the sparse per-city override through:
+
+```text
+PATCH /admin/pivot/tenants/:tenantKey/compute-apply-config
+```
+
+The effective policy is included on tenant overview as `computeApplyPolicy` (merged defaults; omitted tenant fields are not written back). Omitted values resolve to these safe defaults:
+
+| Setting | Default | Meaning |
+|---|---:|---|
+| `trusted` | `false` | Master switch; no job can auto-apply until a city is trusted. |
+| `autoApplyRefresh` | `false` | Permit `city-curation-refresh` jobs. |
+| `autoApplyDiscovery` | `false` | Permit `city-source-discovery` jobs. |
+| `autoApplyOrigins` | `['admin', 'schedule']` | Origins eligible for auto-apply. |
+| `notifyAdminsEmail` | `true` | Send platform-admin compute job notifications. |
+| `maxNewSources` | `null` | Optional discovery-source creation ceiling. |
+| `maxEventCreates` | `null` | Optional event-creation ceiling. |
+
+`trusted` alone is not enough: the matching kind toggle and origin must also be allowed. `carousel-export` is always excluded. A `null` guardrail means no limit; `0` is a valid “do not create any” limit. Keep these overrides sparse so newly added defaults can remain safe.
+
+### Trusted auto-apply lifecycle
+
+```text
+worker stores completed result → review-required
+  → setImmediate(maybeAutoApplyComputeJob)
+      → fresh server-side preview
+          → guardrail check
+              → applyStoredComputeJob
+                  → for each luma/partiful row with no tags: assignTags
+                  → publish (or NATIVE_TAGS_REQUIRED skip)
+```
+
+The submit hook (`setImmediate` after `submitComputeJobResult`) runs only for completed results that require review. Failed/retryable submissions and `requiresReview: false` paths (including carousel export) do not enter auto-apply. The service records every decision in `job.autoApply`:
+
+- `lastAttemptAt`, `attemptCount`
+- `outcome`: `applying`, `applied`, `skipped`, or `failed`
+- `skipCode` and a concise `message`
+
+The job is atomically claimed before applying, retries transient failures up to three times in-process, and uses the idempotency key `auto:apply:{externalJobId}` with actor `system:auto-apply`. Large applies continue through the existing background-apply threshold; auto-apply does not create a second apply implementation.
+
+A blocked preview, a guardrail breach, `NATIVE_TAGS_REQUIRED`, or a terminal auto-apply error leaves the job in review-required and records its reason. This is deliberate: an operator can inspect and manually apply a current preview after correcting the policy, catalog, or Anthropic key.
+
+On process boot, `sweepPendingAutoApplyComputeJobs` rechecks review-required jobs with stored results and no `applicationAudit.appliedAt`. It makes one normal auto-apply attempt per candidate (bounded count and concurrency). Set `DISABLE_PIVOT_COMPUTE_AUTO_APPLY_STARTUP_SWEEP=true` to skip this recovery pass. There is **no periodic cron reconciliation** for auto-apply: the submit hook is the primary trigger and the one-time startup sweep covers interruptions.
+
+### Native catalog tags during apply
+
+Compute apply always goes through `applyEventRow` (auto-apply does not fork a second publish path). For **Partiful** and **Luma** rows whose draft tags, job `defaultTags`, and stored event tags are all empty, apply calls `assignTags` in `utilities/pivotTagAssigner.js` **before** `publishIngestEvent`.
+
+- Default provider is Claude (`PIVOT_TAG_ASSIGNER` unset or `claude`), which delegates to `suggestPivotEventTags` and validates 1–3 catalog slugs. Apply and auto-apply never call Anthropic themselves.
+- Assigned slugs are written on the publish overrides. Existing operator/draft/job tags are never overwritten. `generic-site` is not auto-tagged.
+- Ingest status is recomputed from the tags that will publish (`pickIngestStatus`), so a rich newly tagged native event can land `staged` instead of remaining `draft` only for missing tags.
+- Assigner `provider`/`model` is recorded on the apply-manifest row `message` (`tagAssigner:claude:…`), not as a second source of truth on the Event document.
+
+**Jev** is a **future provider** behind this seam (`PIVOT_TAG_ASSIGNER=jev`). It is reserved for Choice/Noul over catalog slugs; it does not scrape, invent tags, or replace Firecrawl. The current adapter fails closed with `TAG_ASSIGNER_UNAVAILABLE`. A real Jev adapter must return validated catalog slugs and shortlist first if the catalog has more than 255 options.
+
+Native Luma/Partiful rows **must not publish untagged**. If the assigner returns `LLM_NOT_CONFIGURED`, an empty catalog, a timeout, `TAG_ASSIGNER_UNAVAILABLE`, or otherwise leaves the row with no tags, that row is skipped with `NATIVE_TAGS_REQUIRED`. If every native create/update in the job is blocked this way and nothing else was written, the job stays `review-required` without `applicationAudit.appliedAt` (so a later apply can retry). Auto-apply records `autoApply.skipCode: NATIVE_TAGS_REQUIRED` instead of `applied`. Tagged native rows still apply. Manual apply of the same stored job retries the assigner once the key/catalog exists; it still will not publish those providers untagged.
+
+### Apply manifest
+
+Every completed or partial apply persists an `applicationAudit` manifest on the compute job after publish outcomes are known. It is the durable answer to “what did this apply actually do?”, separate from the worker result and preview.
+
+- `buckets[]`: grouped `entityType`, `disposition`, `ingestStatus`, `batchWeek`, and `count`.
+- `rows[]`: per-row `entityType`, `disposition`, `eventId`, `name`, `sourceUrl`, `batchWeek`, `ingestStatus`, `curationJobId`, `curationJobLabel`, and `message`.
+- `rowOverflowCount` indicates rows omitted by the manifest cap; `manifestGeneratedAt` records when it was built.
+- Existing audit fields continue to identify the preview, idempotency key, actor (including `system:auto-apply`), outcome, apply timestamp, drift, error, and aggregate summary.
+
+The manifest is bounded to 100 buckets, 500 rows, and 512 KiB so a large result cannot make a job document unmanageable. Admin compute-job serialization includes the audit; the job-detail endpoint can request `includeApplyManifest=true` when a list payload is trimmed. The compute inspector renders the bucket summary and a filterable row table, and marks jobs that were auto-applied or left for manual review.
+
+### Scrape learning and field locks
+
+Generic-site calendars retain operator corrections so the next scrape can use the same local knowledge:
+
+- A curation job has `extractionProfile.promptHints[]`, with `updatedAt` and `updatedBy`; a source may also carry host-level `promptHints[]`.
+- Hint text is normalized, case-insensitively deduplicated, and bounded before storage (30 hints, 600 characters per hint, 12 KiB total). Job-specific hints are passed into the generic-site extraction prompt.
+- Editing an ingest event with `rememberForCalendar` (on by default for generic-site) derives concise hints from relevant before/after changes and associates them with the source/job.
+- The editable, lockable fields are `start_time`, `end_time`, `location`, `description`, `image`, `sourceUrl`, and `hostName`. Each `ingestFieldLocks` entry stores `lockedAt` and `lockedBy`; duplicate/publish merges preserve a locked value until the operator explicitly unlocks it.
+
+Use the curation-job scrape-learning panel to review, edit, or clear hints. Use “Remember for this calendar” only for stable source conventions, not one-off event exceptions; use the per-field unlock control when the source has genuinely changed.
+
+### Platform-admin email notifications
+
+Compute job email is best-effort and never changes job state. Notifications go to the current platform-admin recipients and are controlled per tenant by `pivotComputeApply.notifyAdminsEmail`; set `DISABLE_PIVOT_COMPUTE_ADMIN_EMAILS=true` for an environment-wide stop.
+
+The supported notification types are:
+
+| Event | Email type | Contents |
+|---|---|---|
+| Result remains reviewable after submit/auto-apply | `review-required` | Stored-result summary and inspector link. |
+| Apply completes (including background completion) | `apply-complete` | Bucket table and up to 15 manifest rows. |
+| Refresh or discovery job reaches terminal failure | `failed` | Failure code and message. |
+| Carousel export completes without review | `carousel-complete` | Completion notice and inspector link. |
+
+Before sending, the notifier reserves `{ type, sentAt, recipientCount }` in `notifications.email[]` on the job. That reservation is the dedupe record, so repeated hooks, retries, and restarts cannot send the same notification type twice. Failures to resolve recipients or deliver through email are logged and swallowed; they must not make a compute job fail.
+
+Every email links to the compute inspector at:
+
+```text
+/platform-admin/pivot/:tenantKey?page=10&computeJobId=:externalJobId
+```
+
+The URL is generated by `computeJobInspectorHref`, so tenant keys and job ids are encoded consistently. Use that inspector—not an email summary alone—for full manifests, skipped-auto-apply reasons, and manual review/apply actions.
 
 ### Still open
 

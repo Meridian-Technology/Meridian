@@ -8,8 +8,10 @@ const {
   previewStoredComputeJob,
   applyComputeResult,
   applyStoredComputeJob,
+  buildBoundedApplyManifest,
   countApplicablePreviewRows,
   BACKGROUND_APPLY_ROW_THRESHOLD,
+  NATIVE_TAGS_REQUIRED,
 } = require('../../services/pivotComputeResultApplyService');
 const {
   createComputeJob,
@@ -31,6 +33,10 @@ const offloadedDiscoveryContextService = require('../../services/pivotOffloadedD
 jest.mock('../../services/pivotIngestPublishService', () => ({
   resolvePivotTenant: jest.fn(),
   publishIngestEvent: jest.fn(),
+}));
+
+jest.mock('../../utilities/pivotTagAssigner', () => ({
+  assignTags: jest.fn(),
 }));
 
 jest.mock('../../services/pivotSourceDiscoveryService', () => ({
@@ -65,8 +71,13 @@ jest.mock('../../services/pivotOffloadedCurationRefreshContextService', () => ({
 }));
 
 const { resolvePivotTenant, publishIngestEvent } = require('../../services/pivotIngestPublishService');
+const { assignTags } = require('../../utilities/pivotTagAssigner');
 const { persistOutcome } = require('../../services/pivotSourceDiscoveryService');
 const { createCurationJob, updateCurationJob } = require('../../services/pivotCurationJobService');
+const {
+  MAX_APPLICATION_AUDIT_ROWS,
+  MAX_APPLICATION_AUDIT_BUCKETS,
+} = require('../../schemas/pivotComputeJob');
 
 function tenantConfigRow(cityKey = 'iowacity') {
   return {
@@ -99,6 +110,12 @@ describe('pivotComputeResultApplyService', () => {
     resolvePivotTenant.mockResolvedValue({ tenant: tenantConfigRow() });
     publishIngestEvent.mockReset();
     publishIngestEvent.mockResolvedValue({ data: { event: { _id: 'event-1' }, updated: false } });
+    assignTags.mockReset();
+    assignTags.mockResolvedValue({
+      tags: ['nightlife'],
+      provider: 'claude',
+      model: 'claude-sonnet-4-6',
+    });
     persistOutcome.mockResolvedValue({});
     createCurationJob.mockResolvedValue({ data: { job: { _id: 'job-1' } } });
     updateCurationJob.mockResolvedValue({ data: { job: { _id: 'job-1' } } });
@@ -523,6 +540,14 @@ describe('pivotComputeResultApplyService', () => {
       expect(persistOutcome).toHaveBeenCalled();
       expect(createCurationJob).toHaveBeenCalled();
       expect(publishIngestEvent).toHaveBeenCalled();
+      expect(applied.manifest.manifestGeneratedAt).toBeInstanceOf(Date);
+      expect(applied.manifest.buckets).toEqual(expect.arrayContaining([
+        expect.objectContaining({ entityType: 'source', disposition: 'created', count: 1 }),
+        expect.objectContaining({ entityType: 'event', disposition: 'created' }),
+      ]));
+      expect(applied.manifest.rows).toEqual(expect.arrayContaining([
+        expect.objectContaining({ entityType: 'event', name: 'Jazz Night', eventId: 'event-1' }),
+      ]));
     });
 
     it('applies from a refreshed server preview when the browser preview drifted but apply is still allowed', async () => {
@@ -664,6 +689,11 @@ describe('pivotComputeResultApplyService', () => {
         actor: 'admin@example.com',
       });
       expect(first.job.status).toBe('completed');
+      expect(first.job.applicationAudit.manifestGeneratedAt).toBeTruthy();
+      expect(first.job.applicationAudit.rows).toEqual(expect.arrayContaining([
+        expect.objectContaining({ entityType: 'event', disposition: 'created' }),
+      ]));
+      expect(first.job.applicationAudit.buckets.length).toBeGreaterThan(0);
 
       const second = await applyStoredComputeJob(req, externalJobId, {
         tenantKey: 'iowacity',
@@ -674,6 +704,222 @@ describe('pivotComputeResultApplyService', () => {
       expect(second.duplicate).toBe(true);
       expect(second.job.status).toBe('completed');
       expect(await findJobByExternalId(req, externalJobId)).toMatchObject({ status: 'completed' });
+    });
+
+    it('assigns catalog tags before publishing an untagged luma create', async () => {
+      const result = loadFixture('result-refresh-valid-completed.json');
+      result.proposals.events[0].draft.tags = [];
+      result.proposals.events[0].draft.description = 'A community meetup downtown.';
+      result.proposals.events[0].draft.image = 'https://luma.com/iowa-city/event-abc.jpg';
+      result.proposals.events[0].basedOnEventVersion = null;
+      const preview = await previewComputeResult(req, result, {
+        currentContextVersion: result.basedOnContextVersion,
+      });
+
+      const applied = await applyComputeResult(req, {
+        result,
+        preview,
+        idempotencyKey: 'apply:native-untagged-luma',
+        actor: 'admin@example.com',
+      });
+
+      expect(assignTags).toHaveBeenCalledTimes(1);
+      expect(assignTags).toHaveBeenCalledWith(expect.objectContaining({
+        tenantKey: 'iowacity',
+        req,
+        event: expect.objectContaining({ name: 'Community Meetup' }),
+      }));
+      expect(publishIngestEvent).toHaveBeenCalledWith(req, expect.objectContaining({
+        overrides: expect.objectContaining({
+          tags: ['nightlife'],
+          ingestStatus: 'staged',
+        }),
+      }));
+      expect(applied.manifest.rows).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          entityType: 'event',
+          name: 'Community Meetup',
+          ingestStatus: 'staged',
+          message: 'tagAssigner:claude:claude-sonnet-4-6',
+        }),
+      ]));
+    });
+
+    it('does not replace tags that are already on a luma draft', async () => {
+      const result = loadFixture('result-refresh-valid-completed.json');
+      const preview = await previewComputeResult(req, result, {
+        currentContextVersion: result.basedOnContextVersion,
+      });
+
+      await applyComputeResult(req, {
+        result,
+        preview,
+        idempotencyKey: 'apply:native-already-tagged',
+        actor: 'admin@example.com',
+      });
+
+      expect(assignTags).not.toHaveBeenCalled();
+      expect(publishIngestEvent).toHaveBeenCalledWith(req, expect.objectContaining({
+        overrides: expect.objectContaining({
+          tags: ['community'],
+        }),
+      }));
+    });
+
+    it('applies untagged generic-site events without calling the tag assigner', async () => {
+      const result = loadFixture('result-discovery-valid-completed.json');
+      result.proposals.events[0].draft.tags = [];
+      result.proposals.curationJobs[0].defaultTags = [];
+      const preview = await previewComputeResult(req, result, {
+        currentContextVersion: result.basedOnContextVersion,
+      });
+
+      const applied = await applyComputeResult(req, {
+        result,
+        preview,
+        idempotencyKey: 'apply:generic-untagged',
+        actor: 'admin@example.com',
+      });
+
+      expect(assignTags).not.toHaveBeenCalled();
+      expect(publishIngestEvent).toHaveBeenCalledWith(req, expect.objectContaining({
+        overrides: expect.objectContaining({
+          tags: [],
+        }),
+      }));
+      expect(applied.summary.creates).toBeGreaterThan(0);
+    });
+
+    it('does not publish untagged luma rows when the tag assigner is down', async () => {
+      assignTags.mockResolvedValue({
+        error: 'Anthropic API key is not configured.',
+        status: 503,
+        code: 'LLM_NOT_CONFIGURED',
+      });
+      const result = loadFixture('result-refresh-valid-completed.json');
+      result.proposals.events[0].draft.tags = [];
+      result.proposals.events[0].basedOnEventVersion = null;
+      const preview = await previewComputeResult(req, result, {
+        currentContextVersion: result.basedOnContextVersion,
+      });
+
+      const applied = await applyComputeResult(req, {
+        result,
+        preview,
+        idempotencyKey: 'apply:native-assigner-down',
+        actor: 'admin@example.com',
+      });
+
+      expect(publishIngestEvent).not.toHaveBeenCalled();
+      expect(applied.summary.skipped).toBe(1);
+      expect(applied.summary.creates + applied.summary.updates).toBe(0);
+      expect(applied.skippedRows).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          code: NATIVE_TAGS_REQUIRED,
+          message: expect.stringContaining('Anthropic'),
+        }),
+      ]));
+    });
+
+    it('still applies tagged luma rows when the tag assigner is down', async () => {
+      assignTags.mockResolvedValue({
+        error: 'Anthropic API key is not configured.',
+        status: 503,
+        code: 'LLM_NOT_CONFIGURED',
+      });
+      const result = loadFixture('result-refresh-valid-completed.json');
+      const preview = await previewComputeResult(req, result, {
+        currentContextVersion: result.basedOnContextVersion,
+      });
+
+      await applyComputeResult(req, {
+        result,
+        preview,
+        idempotencyKey: 'apply:native-tagged-assigner-down',
+        actor: 'admin@example.com',
+      });
+
+      expect(assignTags).not.toHaveBeenCalled();
+      expect(publishIngestEvent).toHaveBeenCalledWith(req, expect.objectContaining({
+        overrides: expect.objectContaining({
+          tags: ['community'],
+        }),
+      }));
+    });
+
+    it('leaves a stored job review-required when every native row needs tags', async () => {
+      assignTags.mockResolvedValue({
+        error: 'Anthropic API key is not configured.',
+        status: 503,
+        code: 'LLM_NOT_CONFIGURED',
+      });
+      const externalJobId = 'job:refresh-native-tags-required';
+      const result = loadFixture('result-refresh-valid-completed.json');
+      result.jobId = externalJobId;
+      result.proposals.events[0].draft.tags = [];
+      result.proposals.events[0].basedOnEventVersion = null;
+      await createComputeJob(req, {
+        externalJobId,
+        kind: 'city-curation-refresh',
+        cityKey: 'iowacity',
+        contractVersion: '1',
+        contextVersion: result.basedOnContextVersion,
+        createIdempotencyKey: 'idem:create-native-tags-required',
+        requestedAt: new Date().toISOString(),
+        origin: { type: 'admin' },
+        options: {},
+      });
+      const claim = await claimNextPendingJob(req, {
+        kind: 'city-curation-refresh',
+        workerId: 'worker-1',
+        now: new Date(),
+      });
+      await startComputeJob(req, {
+        externalJobId,
+        leaseToken: claim.job.lease.token,
+        workerId: 'worker-1',
+        now: new Date(),
+      });
+      await submitComputeJobResult(req, {
+        externalJobId,
+        leaseToken: claim.job.lease.token,
+        workerId: 'worker-1',
+        result,
+        now: new Date(),
+      });
+      const preview = await previewComputeResult(req, result, {
+        currentContextVersion: result.basedOnContextVersion,
+      });
+
+      const applied = await applyStoredComputeJob(req, externalJobId, {
+        tenantKey: 'iowacity',
+        idempotencyKey: 'apply:native-tags-required',
+        preview,
+        actor: 'admin@example.com',
+      });
+
+      expect(applied.skipCode).toBe(NATIVE_TAGS_REQUIRED);
+      expect(applied.job.status).toBe('review-required');
+      expect(applied.job.applicationAudit.appliedAt).toBeFalsy();
+      expect(applied.job.applicationAudit.errorCode).toBe(NATIVE_TAGS_REQUIRED);
+      expect(publishIngestEvent).not.toHaveBeenCalled();
+      expect(await findJobByExternalId(req, externalJobId)).toMatchObject({
+        status: 'review-required',
+      });
+    });
+
+    it('bounds apply-manifest rows and buckets to schema caps', () => {
+      const overflow = buildBoundedApplyManifest(
+        Array.from({ length: MAX_APPLICATION_AUDIT_ROWS + 12 }, (_, index) => ({
+          entityType: 'event',
+          disposition: 'created',
+          name: `Event ${index}`,
+        })),
+      );
+      expect(overflow.rows).toHaveLength(MAX_APPLICATION_AUDIT_ROWS);
+      expect(overflow.rowOverflowCount).toBe(12);
+      expect(overflow.buckets.length).toBeLessThanOrEqual(MAX_APPLICATION_AUDIT_BUCKETS);
+      expect(overflow.manifestGeneratedAt).toBeInstanceOf(Date);
     });
   });
 });

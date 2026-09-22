@@ -98,6 +98,23 @@ const pivotDiscoveryConfigSchema = new mongoose.Schema(
   { _id: false }
 );
 
+/** Per-city trusted compute-job apply controls (sparse overrides). */
+const pivotComputeApplySchema = new mongoose.Schema(
+  {
+    trusted: { type: Boolean, default: false },
+    autoApplyRefresh: { type: Boolean, default: false },
+    autoApplyDiscovery: { type: Boolean, default: false },
+    autoApplyOrigins: {
+      type: [{ type: String, enum: ['admin', 'schedule'] }],
+      default: () => ['admin', 'schedule'],
+    },
+    notifyAdminsEmail: { type: Boolean, default: true },
+    maxNewSources: { type: Number, default: null, min: 0 },
+    maxEventCreates: { type: Number, default: null, min: 0 },
+  },
+  { _id: false }
+);
+
 /** Just Go Creator Console publish knobs (sparse overrides; defaults in pivotCreatorPublishConfig). */
 const creatorPublishConfigSchema = new mongoose.Schema(
   {
@@ -194,6 +211,7 @@ const tenantEntrySchema = new mongoose.Schema(
     pivotMobileConfig: { type: pivotMobileConfigSchema, default: undefined },
     creatorPublish: { type: creatorPublishConfigSchema, default: undefined },
     pivotDiscovery: { type: pivotDiscoveryConfigSchema, default: undefined },
+    pivotComputeApply: { type: pivotComputeApplySchema, default: undefined },
     richLocationConstraints: { type: richLocationConstraintsSchema, default: undefined },
     richLocationControls: { type: richLocationControlsSchema, default: undefined },
     provisioningConfirmations: {

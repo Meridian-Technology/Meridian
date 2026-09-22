@@ -197,6 +197,7 @@ describe('pivotAdminOverviewService', () => {
         calendarAdds: 3,
         inviteShares: 1,
         interestsSaved: 2,
+        computeApplyPolicy: expect.objectContaining({ trusted: false }),
       });
       expect(result.data.snapshotGeneratedAt).toEqual(new Date('2026-06-26T10:00:00.000Z'));
     });
@@ -448,6 +449,11 @@ describe('pivotAdminOverviewService', () => {
         }),
       );
       expect(result.data.dropSchedule.batchWeek).toBe('2026-W26');
+      expect(result.data.computeApplyPolicy).toEqual(expect.objectContaining({
+        trusted: false,
+        autoApplyRefresh: false,
+        autoApplyDiscovery: false,
+      }));
       expect(result.data.vsPrevWeek).toBeTruthy();
       expect(resolvePivotTenant).toHaveBeenCalledWith(
         expect.objectContaining({ globalDb: {} }),
@@ -479,6 +485,29 @@ describe('pivotAdminOverviewService', () => {
       expect(result.data.kpis.hostDraft).toBe(4);
       expect(result.data.hostLiveWeekAlert.active).toBe(false);
       expect(result.data.hostLiveWeekAlert.isLiveWeek).toBe(false);
+    });
+
+    it('echoes merged computeApplyPolicy without persisting tenant defaults', async () => {
+      resolvePivotTenant.mockResolvedValue({
+        tenant: {
+          tenantKey: 'nyc',
+          tenantType: 'pivot',
+          location: 'New York City',
+          pivotComputeApply: { trusted: true, autoApplyRefresh: true },
+        },
+      });
+      mockTenantModels();
+
+      const result = await getTenantOverview(
+        { globalDb: {} },
+        { tenantKey: 'nyc', batchWeek: '2026-W26' },
+      );
+
+      expect(result.data.computeApplyPolicy.trusted).toBe(true);
+      expect(result.data.computeApplyPolicy.autoApplyRefresh).toBe(true);
+      expect(result.data.computeApplyPolicy.autoApplyDiscovery).toBe(false);
+      expect(result.data.computeApplyPolicy.notifyAdminsEmail).toBe(true);
+      expect(result.data).not.toHaveProperty('pivotComputeApply');
     });
 
     it('returns TENANT_NOT_FOUND for unknown pivot tenant', async () => {

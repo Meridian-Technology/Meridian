@@ -122,6 +122,40 @@ describe('pivotComputeAdminService', () => {
     expect(detail.job.lease).toBeNull();
   });
 
+  it('omits apply-manifest rows from list payloads and includes them when includeApplyManifest is true', async () => {
+    const jobRequest = loadFixture('job-request-discovery-valid.json');
+    await createAdminComputeJob(req, { request: jobRequest, actor: 'admin@example.com' });
+    const generatedAt = new Date('2026-09-21T00:00:00.000Z');
+    const { PivotComputeJob } = require('../../services/getGlobalModelService')(req, 'PivotComputeJob');
+    await PivotComputeJob.updateOne(
+      { externalJobId: jobRequest.jobId },
+      {
+        $set: {
+          applicationAudit: {
+            outcome: 'completed',
+            buckets: [{ entityType: 'event', disposition: 'created', count: 1 }],
+            rows: [{ entityType: 'event', disposition: 'created', name: 'Jazz Night' }],
+            rowOverflowCount: 0,
+            manifestGeneratedAt: generatedAt,
+          },
+        },
+      },
+    );
+
+    const listed = await listAdminComputeJobs(req, { cityKey: 'iowacity' });
+    expect(listed.jobs[0].applicationAudit.buckets).toHaveLength(1);
+    expect(listed.jobs[0].applicationAudit.rows).toBeUndefined();
+    expect(listed.jobs[0].applicationAudit.manifestGeneratedAt).toEqual(generatedAt);
+
+    const trimmed = await getAdminComputeJob(req, jobRequest.jobId, { includeApplyManifest: false });
+    expect(trimmed.job.applicationAudit.rows).toBeUndefined();
+
+    const detailed = await getAdminComputeJob(req, jobRequest.jobId, { includeApplyManifest: true });
+    expect(detailed.job.applicationAudit.rows).toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: 'Jazz Night' }),
+    ]));
+  });
+
   it('cancels pending jobs and retries retryable failures', async () => {
     const jobRequest = loadFixture('job-request-discovery-valid.json');
     await createAdminComputeJob(req, { request: jobRequest, actor: 'admin@example.com' });

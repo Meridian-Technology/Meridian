@@ -56,6 +56,7 @@ const {
   JUST_GO_LOCATION_POLICY_REASONS,
 } = require('../utilities/justGoLocationPolicy');
 const { mergePivotDeckConfig } = require('../utilities/pivotDeckConfig');
+const { normalizeIngestFieldLocks } = require('../utilities/pivotExtractionHints');
 const {
   actorFromReq,
   normalizeRankingOverride,
@@ -379,6 +380,9 @@ function buildPivotMetadata(merged, { batchWeek, sourceUrl, importedBy, tags, in
           },
         }
       : merged.locationReview ? { locationReview: merged.locationReview } : {}),
+    ...(merged.ingestFieldLocks
+      ? { ingestFieldLocks: normalizeIngestFieldLocks(merged.ingestFieldLocks) }
+      : {}),
     ingestStatus: ingestStatus || DEFAULT_INGEST_STATUS,
     importedAt: new Date().toISOString(),
     importedBy,
