@@ -73,14 +73,30 @@ describe('pivotContactMatchService', () => {
       expect(result.status).toBe(401);
     });
 
-    it('rejects oversized hash batches', async () => {
+    it('limits oversized hash batches instead of rejecting them', async () => {
       const hashes = Array.from({ length: MAX_HASHES_PER_REQUEST + 1 }, (_, index) => ({
         type: 'email',
         hash: hashContactEmail(`user${index}@example.com`),
       }));
 
+      GlobalUser.findById.mockReturnValue({
+        select: jest.fn().mockReturnThis(),
+        lean: jest.fn().mockResolvedValue({ email: 'me@example.com' }),
+      });
+      PivotContactHash.find.mockReturnValue({
+        select: jest.fn().mockReturnThis(),
+        lean: jest.fn().mockResolvedValue([]),
+      });
+
       const result = await matchPivotContacts(req, { hashes });
-      expect(result.code).toBe('TOO_MANY_HASHES');
+
+      expect(result.data).toEqual({
+        users: [],
+        matchedHashCount: 0,
+        submittedHashCount: MAX_HASHES_PER_REQUEST,
+      });
+      const [query] = PivotContactHash.find.mock.calls[0];
+      expect(query.$or).toHaveLength(MAX_HASHES_PER_REQUEST);
     });
 
     it('returns matched tenant users excluding existing friends', async () => {
