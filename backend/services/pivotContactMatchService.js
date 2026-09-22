@@ -113,17 +113,9 @@ async function matchPivotContacts(req, body = {}) {
     return { data: { users: [], matchedHashCount: 0, submittedHashCount: 0 } };
   }
 
-  const submittedHashes = Array.isArray(body.hashes)
+  const submittedHashes = (Array.isArray(body.hashes)
     ? dedupeHashes(body.hashes)
-    : hashContactIdentifiers(body.identifiers);
-
-  if (submittedHashes.length > MAX_HASHES_PER_REQUEST) {
-    return {
-      error: `At most ${MAX_HASHES_PER_REQUEST} contact hashes may be submitted per request.`,
-      status: 400,
-      code: 'TOO_MANY_HASHES',
-    };
-  }
+    : hashContactIdentifiers(body.identifiers)).slice(0, MAX_HASHES_PER_REQUEST);
 
   await syncUserContactHashes(req);
 
