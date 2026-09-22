@@ -159,6 +159,11 @@ function PivotCatalogEventEditModal({
   saving,
   onSuggestTags,
   tagSuggestLoading,
+  mode = 'edit',
+  title,
+  saveLabel,
+  savingLabel,
+  notices = [],
 }) {
   const [draft, setDraft] = useState(null);
   const [formError, setFormError] = useState('');
@@ -282,6 +287,8 @@ function PivotCatalogEventEditModal({
     return null;
   }
 
+  const isImport = mode === 'import';
+
   return (
     <Popup
       isOpen={open}
@@ -299,7 +306,7 @@ function PivotCatalogEventEditModal({
         <header className="pivot-manual-import__head">
           <div>
             <h2 id="pivot-catalog-edit-title" className="pivot-manual-import__title">
-              Edit catalog event
+              {title || (isImport ? 'Review imported event' : 'Edit catalog event')}
             </h2>
             <p className="pivot-manual-import__meta">
               {cityLabel || 'No city'} · {batchWeek}
@@ -311,6 +318,14 @@ function PivotCatalogEventEditModal({
             </p>
           </div>
         </header>
+
+        {notices.length ? (
+          <ul className="pivot-lab__import-warnings" aria-label="Import warnings">
+            {notices.map((notice) => (
+              <li key={notice}>{notice}</li>
+            ))}
+          </ul>
+        ) : null}
 
         <div className="pivot-catalog-edit__layout">
           <div className="pivot-manual-import__form pivot-catalog-edit__form">
@@ -553,34 +568,42 @@ function PivotCatalogEventEditModal({
             <section className="pivot-manual-import__section" aria-label="Catalog settings">
               <h3 className="pivot-manual-import__section-title">Catalog</h3>
               <div className="pivot-manual-import__row">
-                <label className="pivot-manual-import__field">
-                  <span className="pivot-manual-import__label">Ingest status</span>
-                  <select
-                    className="linear-input pivot-manual-import__input"
-                    value={draft.ingestStatus}
-                    onChange={(e) => patchDraft({ ingestStatus: e.target.value })}
-                  >
-                    <option value="draft">Draft</option>
-                    <option value="staged">Staged</option>
-                    <option value="published">Published (live feed)</option>
-                  </select>
-                </label>
-                <label className="pivot-manual-import__field pivot-manual-import__check">
-                  <span className="pivot-manual-import__label">Featured</span>
-                  <input
-                    type="checkbox"
-                    checked={draft.featured === true}
-                    onChange={(e) => patchDraft({ featured: e.target.checked })}
-                  />
-                  <span className="pivot-manual-import__hint">
-                    Internal. Published featured events are the only cards on the public landing deck.
-                  </span>
-                </label>
-                {event?.ingestStatus === 'staged' && draft.ingestStatus === 'published' ? (
+                {!isImport ? (
+                  <>
+                    <label className="pivot-manual-import__field">
+                      <span className="pivot-manual-import__label">Ingest status</span>
+                      <select
+                        className="linear-input pivot-manual-import__input"
+                        value={draft.ingestStatus}
+                        onChange={(e) => patchDraft({ ingestStatus: e.target.value })}
+                      >
+                        <option value="draft">Draft</option>
+                        <option value="staged">Staged</option>
+                        <option value="published">Published (live feed)</option>
+                      </select>
+                    </label>
+                    <label className="pivot-manual-import__field pivot-manual-import__check">
+                      <span className="pivot-manual-import__label">Featured</span>
+                      <input
+                        type="checkbox"
+                        checked={draft.featured === true}
+                        onChange={(e) => patchDraft({ featured: e.target.checked })}
+                      />
+                      <span className="pivot-manual-import__hint">
+                        Internal. Published featured events are the only cards on the public landing deck.
+                      </span>
+                    </label>
+                    {event?.ingestStatus === 'staged' && draft.ingestStatus === 'published' ? (
+                      <p className="pivot-manual-import__hint" role="status">
+                        Saving as Published runs the release step so the event appears in the app feed.
+                      </p>
+                    ) : null}
+                  </>
+                ) : (
                   <p className="pivot-manual-import__hint" role="status">
-                    Saving as Published runs the release step so the event appears in the app feed.
+                    This event will be staged for review and will stay off the live feed.
                   </p>
-                ) : null}
+                )}
                 <label className="pivot-manual-import__field">
                   <span className="pivot-manual-import__label">Listing URL</span>
                   <input
@@ -594,6 +617,7 @@ function PivotCatalogEventEditModal({
               </div>
             </section>
 
+            {!isImport ? (
             <section className="pivot-manual-import__section" aria-label="Enrichment">
               <h3 className="pivot-manual-import__section-title">Enrichment</h3>
               <p className="pivot-manual-import__hint">
@@ -679,6 +703,7 @@ function PivotCatalogEventEditModal({
                 />
               </label>
             </section>
+            ) : null}
 
             <section className="pivot-manual-import__section" aria-label="Tags">
               <h3 className="pivot-manual-import__section-title">Tags</h3>
@@ -722,7 +747,9 @@ function PivotCatalogEventEditModal({
               onClick={handleSave}
               disabled={saving}
             >
-              {saving ? 'Saving…' : 'Save changes'}
+              {saving
+                ? (savingLabel || 'Saving…')
+                : (saveLabel || (isImport ? 'Stage event' : 'Save changes'))}
             </button>
             <button type="button" className="linear-btn linear-btn--ghost" onClick={onClose}>
               Cancel
