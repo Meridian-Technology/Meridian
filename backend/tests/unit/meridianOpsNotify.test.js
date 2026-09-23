@@ -52,6 +52,7 @@ describe('meridianOpsNotifyService', () => {
     getResend.mockReturnValue({ emails: { send: sendEmail } });
     MeridianJobRun = {
       findOneAndUpdate: jest.fn().mockResolvedValue({ ...failedRun }),
+      updateOne: jest.fn().mockResolvedValue({ acknowledged: true }),
     };
     TenantMembership = {
       find: jest.fn().mockReturnValue({
@@ -119,9 +120,21 @@ describe('meridianOpsNotifyService', () => {
     expect(result.email.emailed).toBe(true);
     expect(result.email.recipientCount).toBe(1);
     expect(MeridianJobRun.findOneAndUpdate).toHaveBeenCalledWith(
-      { _id: RUN_ID, status: 'failed', failureAlertSentAt: null },
-      expect.objectContaining({ $set: expect.objectContaining({ failureAlertSentAt: expect.any(Date) }) }),
+      expect.objectContaining({
+        _id: RUN_ID,
+        status: 'failed',
+        failureAlertSentAt: null,
+      }),
+      expect.objectContaining({
+        $set: expect.objectContaining({ failureAlertClaimedAt: expect.any(Date) }),
+      }),
       { new: true },
+    );
+    expect(MeridianJobRun.updateOne).toHaveBeenCalledWith(
+      { _id: RUN_ID, failureAlertSentAt: null },
+      expect.objectContaining({
+        $set: expect.objectContaining({ failureAlertSentAt: expect.any(Date) }),
+      }),
     );
     expect(sendEmail).toHaveBeenCalledWith(expect.objectContaining({
       to: ['ops@example.com'],
@@ -163,6 +176,21 @@ describe('meridianOpsNotifyService', () => {
     expect(result.skipped).toBe(false);
     expect(result.email.reason).toBe('send_error');
     expect(sendExpoPushToRecipients).toHaveBeenCalled();
+  });
+
+  it('releases the alert claim when both channels fail so a later tick can retry', async () => {
+    getResend.mockReturnValue(null);
+    listPlatformAdmins.mockResolvedValue({ admins: [] });
+    sendExpoPushToRecipients.mockResolvedValue({ sent: 0, failed: 0 });
+
+    const result = await notifyMeridianJobTerminalFailure({ globalDb: {} }, { runId: RUN_ID });
+
+    expect(result.skipped).toBe(false);
+    expect(result.delivered).toBe(false);
+    expect(MeridianJobRun.updateOne).toHaveBeenCalledWith(
+      { _id: RUN_ID, failureAlertSentAt: null },
+      { $set: { failureAlertClaimedAt: null } },
+    );
   });
 
   it('never throws when reservation fails', async () => {

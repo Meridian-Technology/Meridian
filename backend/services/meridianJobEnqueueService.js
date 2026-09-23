@@ -3,6 +3,7 @@ const getGlobalModels = require('./getGlobalModelService');
 const { MAX_ATTEMPTS } = require('../schemas/meridianJobRun');
 const { getMeridianJobHandler } = require('./meridianJobRegistry');
 const { ensureMeridianJobHandlersLoaded } = require('./meridianJobHandlers');
+const { ensureMeridianJobIndexes } = require('./ensureMeridianJobIndexes');
 
 async function resolveJobReq(req) {
   if (req?.globalDb) return req;
@@ -26,6 +27,7 @@ async function enqueueMeridianJob(req, {
   }
 
   const jobReq = await resolveJobReq(req);
+  await ensureMeridianJobIndexes(jobReq);
   const { MeridianJobRun } = getGlobalModels(jobReq, 'MeridianJobRun');
   const scheduled = scheduledFor ? new Date(scheduledFor) : new Date();
   const runKey = handler.buildRunKey({ tenantKey, payload, scheduledFor: scheduled });

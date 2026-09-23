@@ -83,6 +83,7 @@ const meridianJobRunSchema = new mongoose.Schema(
     summary: { type: summarySchema, default: null },
     lastError: { type: String, default: null, trim: true, maxlength: 1000 },
     failureAlertSentAt: { type: Date, default: null },
+    failureAlertClaimedAt: { type: Date, default: null },
     pivotDropPushRunId: {
       type: mongoose.Schema.Types.ObjectId,
       default: null,

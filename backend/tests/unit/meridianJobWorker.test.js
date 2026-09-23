@@ -163,7 +163,7 @@ describe('meridianJobWorker', () => {
     const run = await MeridianJobRun.findOne({ type: 'flaky' }).lean();
     expect(run.status).toBe('failed');
     expect(run.attemptCount).toBe(3);
-    expect(run.failureAlertSentAt).toBeTruthy();
+    expect(run.failureAlertSentAt || null).toBeNull();
     expect(await MeridianJobAttempt.countDocuments({ runId: run._id })).toBe(3);
   });
 
@@ -259,6 +259,161 @@ describe('meridianJobWorker', () => {
     expect(run.summary.message).toBe('dry-run');
     expect(run.summary.attempted).toBe(2);
   });
+
+  it('defers an outside-window weekly drop without consuming the week or an attempt', async () => {
+    sendWeeklyDropPush.mockResolvedValue({
+      status: 409,
+      code: 'OUTSIDE_DROP_WINDOW',
+      error: 'Outside drop window. Pass force=true to send anyway.',
+    });
+
+    const enqueued = await enqueueMeridianJob(req, {
+      handlerKey: 'weekly_drop',
+      tenantKey: 'sf',
+      payload: { batchWeek: '2026-W12' },
+      scheduledFor: new Date('2026-03-21T17:00:00.000Z'),
+    });
+    const now = new Date('2026-03-21T17:00:00.000Z');
+    const tick = await tickMeridianJobWorker(req, { now });
+    expect(tick.outcome.status).toBe('deferred');
+    expect(sendWeeklyDropPush).toHaveBeenCalledTimes(1);
+
+    const { MeridianJobRun, MeridianJobAttempt } = getGlobalModels(
+      req,
+      'MeridianJobRun',
+      'MeridianJobAttempt',
+    );
+    const run = await MeridianJobRun.findById(enqueued.run._id).lean();
+    expect(run.status).toBe('pending');
+    expect(run.attemptCount).toBe(0);
+    expect(run.runKey).toBe('weekly_drop:sf:2026-W12');
+    expect(run.nextAttemptAt.toISOString()).toBe(
+      new Date(now.getTime() + 30 * 60 * 1000).toISOString(),
+    );
+    expect(run.failureAlertSentAt || null).toBeNull();
+    expect(await MeridianJobAttempt.countDocuments({ runId: run._id })).toBe(0);
+
+    const tooSoon = await tickMeridianJobWorker(req, {
+      now: new Date(now.getTime() + 60 * 1000),
+    });
+    expect(tooSoon.claimed).toBe(false);
+    expect(sendWeeklyDropPush).toHaveBeenCalledTimes(1);
+  });
+
+  it('reclaims a running job after the lease and does not steal a fresh claim', async () => {
+    const executed = [];
+    registerMeridianJobHandler('probe', {
+      category: 'notification',
+      buildRunKey: ({ tenantKey, payload }) => `probe:${tenantKey}:${payload.n}`,
+      execute: async ({ run }) => {
+        executed.push(run.runKey);
+        return { terminalStatus: 'succeeded', summary: { attempted: 0 } };
+      },
+    });
+
+    const { MeridianJobRun } = getGlobalModels(req, 'MeridianJobRun');
+    const staleAt = new Date('2026-03-21T16:00:00.000Z');
+    const now = new Date('2026-03-21T16:20:00.000Z');
+    await MeridianJobRun.create({
+      runKey: 'probe:sf:stale',
+      category: 'notification',
+      type: 'probe',
+      tenantKey: 'sf',
+      status: 'running',
+      scheduledFor: staleAt,
+      nextAttemptAt: staleAt,
+      attemptCount: 1,
+      claimedAt: staleAt,
+      payload: { n: 'stale' },
+    });
+    const fresh = await MeridianJobRun.create({
+      runKey: 'probe:sf:fresh',
+      category: 'notification',
+      type: 'probe',
+      tenantKey: 'sf',
+      status: 'running',
+      scheduledFor: now,
+      nextAttemptAt: now,
+      attemptCount: 1,
+      claimedAt: now,
+      payload: { n: 'fresh' },
+    });
+
+    const tick = await tickMeridianJobWorker(req, { now });
+    expect(executed).toEqual(['probe:sf:stale']);
+    expect(tick.outcome.status).toBe('succeeded');
+
+    const stale = await MeridianJobRun.findOne({ runKey: 'probe:sf:stale' }).lean();
+    const untouched = await MeridianJobRun.findById(fresh._id).lean();
+    expect(stale.status).toBe('succeeded');
+    expect(stale.attemptCount).toBe(2);
+    expect(untouched.status).toBe('running');
+    expect(untouched.attemptCount).toBe(1);
+  });
+
+  it('drains multiple due jobs in one tick', async () => {
+    registerMeridianJobHandler('probe', {
+      category: 'notification',
+      buildRunKey: ({ tenantKey, payload }) => `probe:${tenantKey}:${payload.n}`,
+      execute: async () => ({ terminalStatus: 'succeeded', summary: { attempted: 0 } }),
+    });
+    const when = new Date('2026-03-21T17:00:00.000Z');
+    await enqueueMeridianJob(req, {
+      handlerKey: 'probe', tenantKey: 'sf', payload: { n: 1 }, scheduledFor: when,
+    });
+    await enqueueMeridianJob(req, {
+      handlerKey: 'probe', tenantKey: 'sf', payload: { n: 2 }, scheduledFor: when,
+    });
+    await enqueueMeridianJob(req, {
+      handlerKey: 'probe', tenantKey: 'sf', payload: { n: 3 }, scheduledFor: when,
+    });
+
+    const tick = await tickMeridianJobWorker(req, { now: when, maxPerTick: 3 });
+    expect(tick.outcomes).toHaveLength(3);
+    expect(tick.outcomes.every((row) => row.outcome.status === 'succeeded')).toBe(true);
+
+    const { MeridianJobRun } = getGlobalModels(req, 'MeridianJobRun');
+    expect(await MeridianJobRun.countDocuments({ type: 'probe', status: 'succeeded' })).toBe(3);
+  });
+
+  it('does not call Expo again when a weekly drop retry finds a send already started', async () => {
+    sendWeeklyDropPush.mockResolvedValue({
+      sent: 2,
+      failed: 0,
+      pivotPushRecipientCount: 2,
+    });
+    const enqueued = await enqueueMeridianJob(req, {
+      handlerKey: 'weekly_drop',
+      tenantKey: 'nyc',
+      payload: { batchWeek: '2026-W23', force: true },
+      scheduledFor: new Date('2026-06-04T22:00:00.000Z'),
+    });
+    const now = new Date('2026-06-04T22:00:00.000Z');
+    const first = await tickMeridianJobWorker(req, { now });
+    expect(first.outcome.status).toBe('succeeded');
+    expect(sendWeeklyDropPush).toHaveBeenCalledTimes(1);
+
+    const { MeridianJobRun } = getGlobalModels(req, 'MeridianJobRun');
+    await MeridianJobRun.updateOne(
+      { _id: enqueued.run._id },
+      {
+        $set: {
+          status: 'retry_wait',
+          attemptCount: 1,
+          nextAttemptAt: now,
+          finishedAt: null,
+          claimedAt: null,
+        },
+      },
+    );
+    sendWeeklyDropPush.mockClear();
+
+    const second = await tickMeridianJobWorker(req, { now });
+    expect(second.outcome.status).toBe('succeeded');
+    expect(sendWeeklyDropPush).not.toHaveBeenCalled();
+    const run = await MeridianJobRun.findById(enqueued.run._id).lean();
+    expect(run.summary.message).toBe('skipped duplicate expo send');
+  });
 });
 
 describe('meridianJobWorker boot guards', () => {
@@ -282,7 +437,11 @@ describe('meridianJobWorker boot guards', () => {
   });
 
   it('starts when tests opt in with force=true', () => {
-    const timer = startMeridianJobWorkerLoop({ force: true, pollMs: 60000 });
+    const timer = startMeridianJobWorkerLoop({
+      force: true,
+      pollMs: 60000,
+      getReq: async () => null,
+    });
     expect(timer).toBeTruthy();
   });
 

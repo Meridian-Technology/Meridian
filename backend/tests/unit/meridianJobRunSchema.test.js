@@ -213,6 +213,46 @@ describe('Meridian job global registration and indexes', () => {
     ).rejects.toThrow(/duplicate key|E11000/i);
   });
 
+  it('quarantines duplicate runKeys so the unique index can build', async () => {
+    await dropMeridianJobIndexes(req);
+    const { MeridianJobRun: Run } = getGlobalModels(req, 'MeridianJobRun');
+    const runKey = 'solo_swipe_reminder:ic:none:2026-09-22T14:30';
+    const kept = await Run.create(baseRun({
+      runKey,
+      type: 'solo_swipe_reminder',
+      tenantKey: 'ic',
+      status: 'succeeded',
+    }));
+    await Run.collection.insertOne({
+      runKey,
+      category: 'notification',
+      type: 'solo_swipe_reminder',
+      tenantKey: 'ic',
+      status: 'pending',
+      scheduledFor: new Date('2026-09-22T21:30:00.000Z'),
+      nextAttemptAt: new Date('2026-09-22T21:30:00.000Z'),
+      attemptCount: 0,
+      payload: {},
+      summary: null,
+      createdAt: new Date(kept.createdAt.getTime() + 1000),
+      updatedAt: new Date(),
+    });
+
+    const result = await ensureMeridianJobIndexes(req, { force: true });
+    expect(result.quarantinedRunKeys).toBe(1);
+
+    const rows = await Run.find({ type: 'solo_swipe_reminder' }).sort({ createdAt: 1 }).lean();
+    expect(rows).toHaveLength(2);
+    expect(rows[0].runKey).toBe(runKey);
+    expect(rows[0].status).toBe('succeeded');
+    expect(rows[1].runKey).toMatch(new RegExp(`^${runKey}:dup:`));
+    expect(rows[1].status).toBe('preview');
+    expect(rows[1].summary.message).toBe('quarantined duplicate runKey');
+
+    const names = (await Run.collection.indexes()).map((row) => row.name);
+    expect(names).toContain('meridian_job_run_run_key_unique');
+  });
+
   it('supports reversible index migration via drop helper', async () => {
     await dropMeridianJobIndexes(req);
     const { MeridianJobRun: Run, MeridianJobDelivery: Delivery } = getGlobalModels(

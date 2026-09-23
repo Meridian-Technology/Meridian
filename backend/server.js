@@ -1,7 +1,13 @@
 const { createApp } = require('./app');
 const { startPivotCrewWeekStateScheduler } = require('./services/pivotCrewWeekStateScheduler');
 const { sweepPendingAutoApplyComputeJobs } = require('./services/pivotComputeAutoApplyService');
-const { startMeridianJobWorkerLoop } = require('./services/meridianJobWorkerLoop');
+const {
+  startMeridianJobWorkerLoop,
+  stopMeridianJobWorkerLoop,
+} = require('./services/meridianJobWorkerLoop');
+
+process.once('SIGTERM', () => stopMeridianJobWorkerLoop());
+process.once('SIGINT', () => stopMeridianJobWorkerLoop());
 
 const PORT = process.env.PORT || 5001;
 

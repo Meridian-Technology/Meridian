@@ -15,7 +15,14 @@ const { notificationJobRunHref } = require('../utilities/pivotAdminHrefs');
 const { logPivot } = require('../utilities/pivotLogger');
 
 const DEFAULT_MERIDIAN_OPS_TENANT_KEY = 'sf';
+const DEFAULT_ALERT_CLAIM_MS = 2 * 60 * 1000;
 const PUSH_BODY_MAX = 240;
+
+function getMeridianJobAlertClaimMs(env = process.env) {
+  const parsed = Number(env.MERIDIAN_JOB_ALERT_CLAIM_MS);
+  if (Number.isFinite(parsed) && parsed >= 1000) return parsed;
+  return DEFAULT_ALERT_CLAIM_MS;
+}
 
 function getMeridianOpsTenantKey(env = process.env) {
   const raw = env.MERIDIAN_OPS_TENANT_KEY || DEFAULT_MERIDIAN_OPS_TENANT_KEY;
@@ -117,10 +124,36 @@ async function resolveOpsTenantReq(req, opsTenantKey) {
 
 async function reserveFailureAlert(req, runId, now = new Date()) {
   const { MeridianJobRun } = getGlobalModels(req, 'MeridianJobRun');
+  const staleBefore = new Date(now.getTime() - getMeridianJobAlertClaimMs());
   return MeridianJobRun.findOneAndUpdate(
-    { _id: runId, status: 'failed', failureAlertSentAt: null },
-    { $set: { failureAlertSentAt: now } },
+    {
+      _id: runId,
+      status: 'failed',
+      failureAlertSentAt: null,
+      $or: [
+        { failureAlertClaimedAt: null },
+        { failureAlertClaimedAt: { $exists: false } },
+        { failureAlertClaimedAt: { $lte: staleBefore } },
+      ],
+    },
+    { $set: { failureAlertClaimedAt: now } },
     { new: true },
+  );
+}
+
+async function commitFailureAlert(req, runId, now = new Date()) {
+  const { MeridianJobRun } = getGlobalModels(req, 'MeridianJobRun');
+  await MeridianJobRun.updateOne(
+    { _id: runId, failureAlertSentAt: null },
+    { $set: { failureAlertSentAt: now } },
+  );
+}
+
+async function releaseFailureAlertClaim(req, runId) {
+  const { MeridianJobRun } = getGlobalModels(req, 'MeridianJobRun');
+  await MeridianJobRun.updateOne(
+    { _id: runId, failureAlertSentAt: null },
+    { $set: { failureAlertClaimedAt: null } },
   );
 }
 
@@ -223,8 +256,16 @@ async function notifyMeridianJobTerminalFailure(req, { run: suppliedRun, runId }
       push = { pushed: false, reason: 'push_error', error: error?.message, sent: 0 };
     }
 
+    const delivered = email.emailed === true || push.pushed === true;
+    if (delivered) {
+      await commitFailureAlert(jobReq, id);
+    } else {
+      await releaseFailureAlertClaim(jobReq, id);
+    }
+
     return {
       skipped: false,
+      delivered,
       payload,
       email,
       push,
@@ -240,7 +281,9 @@ async function notifyMeridianJobTerminalFailure(req, { run: suppliedRun, runId }
 
 module.exports = {
   DEFAULT_MERIDIAN_OPS_TENANT_KEY,
+  DEFAULT_ALERT_CLAIM_MS,
   getMeridianOpsTenantKey,
+  getMeridianJobAlertClaimMs,
   buildMeridianOpsNotifyPayload,
   buildMeridianOpsNotifyEmailHtml,
   notifyMeridianJobTerminalFailure,
