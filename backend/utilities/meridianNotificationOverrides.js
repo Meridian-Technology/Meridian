@@ -48,6 +48,17 @@ function normalizeOverrideRow(row = {}) {
     if (boundedByteLength(config) > MAX_TRIGGER_CONFIG_BYTES) return null;
     out.triggerConfig = config;
   }
+  if (row.rules !== undefined) {
+    if (!Array.isArray(row.rules)) return null;
+    let rules;
+    try {
+      rules = JSON.parse(JSON.stringify(row.rules));
+    } catch {
+      return null;
+    }
+    if (!Array.isArray(rules) || boundedByteLength(rules) > MAX_TRIGGER_CONFIG_BYTES) return null;
+    out.rules = rules;
+  }
   return out;
 }
 

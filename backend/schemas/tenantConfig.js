@@ -22,6 +22,7 @@ const meridianNotificationOverrideSchema = new mongoose.Schema(
     copyTitleFallback: { type: String, default: undefined, trim: true, maxlength: 100 },
     copyBodyFallback: { type: String, default: undefined, trim: true, maxlength: 240 },
     triggerConfig: { type: mongoose.Schema.Types.Mixed, default: undefined },
+    rules: { type: mongoose.Schema.Types.Mixed, default: undefined },
   },
   { _id: false }
 );

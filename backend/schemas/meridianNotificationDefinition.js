@@ -1,5 +1,6 @@
 const mongoose = require('mongoose');
 const { validateThirtyMinuteCron } = require('../utilities/meridianNotificationCron');
+const { validateRules } = require('../utilities/meridianNotificationRules');
 
 const MERIDIAN_NOTIFICATION_DEFINITION_INDEX_NAMES = Object.freeze([
   'meridian_notification_definition_key_tenant_unique',
@@ -59,6 +60,7 @@ const meridianNotificationDefinitionSchema = new mongoose.Schema(
     copyTitleFallback: { type: String, default: null, trim: true, maxlength: 100 },
     copyBodyFallback: { type: String, default: null, trim: true, maxlength: 240 },
     triggerConfig: { type: mongoose.Schema.Types.Mixed, default: {} },
+    rules: { type: mongoose.Schema.Types.Mixed },
   },
   { timestamps: true, autoIndex: false },
 );
@@ -91,6 +93,18 @@ meridianNotificationDefinitionSchema.pre('validate', function normalizeDefinitio
 
   if (boundedByteLength(this.triggerConfig) > MAX_TRIGGER_CONFIG_BYTES) {
     this.invalidate('triggerConfig', `triggerConfig exceeds ${MAX_TRIGGER_CONFIG_BYTES} bytes`);
+  }
+
+  if (this.rules != null) {
+    const rules = validateRules(this.handlerKey, this.rules);
+    if (rules.error) {
+      this.invalidate('rules', rules.error);
+    } else {
+      this.rules = rules.rules;
+    }
+    if (boundedByteLength(this.rules) > MAX_TRIGGER_CONFIG_BYTES) {
+      this.invalidate('rules', `rules exceed ${MAX_TRIGGER_CONFIG_BYTES} bytes`);
+    }
   }
 });
 

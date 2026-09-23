@@ -1,12 +1,20 @@
 const handlers = new Map();
 
 class MeridianJobHandlerError extends Error {
-  constructor(message, { retryable = true, statusCode = null, code = null } = {}) {
+  constructor(message, {
+    retryable = true,
+    statusCode = null,
+    code = null,
+    defer = false,
+    retryAfterMs = null,
+  } = {}) {
     super(message);
     this.name = 'MeridianJobHandlerError';
     this.retryable = retryable;
     this.statusCode = statusCode;
     this.code = code;
+    this.defer = defer === true;
+    this.retryAfterMs = Number.isFinite(retryAfterMs) ? retryAfterMs : null;
   }
 }
 
