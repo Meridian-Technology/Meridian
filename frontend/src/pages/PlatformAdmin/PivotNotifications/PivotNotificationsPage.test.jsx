@@ -250,6 +250,7 @@ describe('PivotNotificationsPage tenant panel', () => {
     renderNotifications();
 
     fireEvent.click(screen.getByRole('button', { name: 'Weekly drop' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Checks' }));
 
     expect(screen.getByRole('heading', { name: 'Checks' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Found 4/ })).toHaveTextContent('Sent 3');

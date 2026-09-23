@@ -54,7 +54,11 @@ describe('meridianJobRitualScan', () => {
 
   beforeAll(async () => {
     mongo = await createMongoMemoryConnection({ withGlobalDb: true });
-    req = { globalDb: mongo.globalConnection, school: 'nyc' };
+    req = {
+      db: mongo.connection,
+      globalDb: mongo.globalConnection,
+      school: 'nyc',
+    };
     await ensureMeridianJobIndexes(req, { force: true });
   });
 
