@@ -11,11 +11,13 @@ const {
   listAdaptedComputeJobRuns,
   getAdaptedComputeJobRun,
 } = require('../services/meridianComputeJobRunAdapter');
+const { notificationRuleCatalog } = require('../utilities/meridianNotificationRules');
 const {
   listMeridianNotificationDefinitions,
   getMeridianNotificationDefinition,
   createMeridianNotificationDefinition,
   updateMeridianNotificationDefinition,
+  restoreDefaultMeridianNotificationSchedules,
   deleteMeridianNotificationDefinition,
   upsertMeridianNotificationOverride,
 } = require('../services/meridianNotificationDefinitionService');
@@ -225,6 +227,16 @@ router.get(
 );
 
 router.get(
+  '/admin/meridian/jobs/notification-rule-catalog',
+  verifyToken,
+  requirePlatformAdmin,
+  (req, res) => {
+    const handlerKey = String(req.query.handlerKey || '').trim();
+    return res.json({ success: true, data: notificationRuleCatalog(handlerKey) });
+  },
+);
+
+router.get(
   '/admin/meridian/jobs/definitions',
   verifyToken,
   requirePlatformAdmin,
@@ -234,6 +246,20 @@ router.get(
         tenantKey: req.query.tenantKey,
         includeDisabled: req.query.includeDisabled !== 'false',
       });
+      return res.json({ success: true, data });
+    } catch (error) {
+      return handleMeridianJobAdminError(res, error);
+    }
+  },
+);
+
+router.post(
+  '/admin/meridian/jobs/definitions/restore-defaults',
+  verifyToken,
+  requirePlatformAdmin,
+  async (req, res) => {
+    try {
+      const data = await restoreDefaultMeridianNotificationSchedules(req);
       return res.json({ success: true, data });
     } catch (error) {
       return handleMeridianJobAdminError(res, error);

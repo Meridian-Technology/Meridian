@@ -285,7 +285,6 @@ async function persistWeeklyDropMeridianAudit(req, {
   ticketOutcomes = [],
   pivotDropPushRunId = null,
 } = {}) {
-  const sentAt = dryRun ? null : new Date();
   const jobReq = await resolveGlobalJobReq(req);
   const ensured = await ensureWeeklyDropMeridianRun(jobReq, {
     tenantKey,
@@ -299,6 +298,47 @@ async function persistWeeklyDropMeridianAudit(req, {
     throw new Error('Failed to resolve meridian job run for weekly drop audit');
   }
 
+  try {
+    return await writeWeeklyDropMeridianAudit(jobReq, ensured, {
+      tenantKey,
+      dryRun,
+      sentAt: dryRun ? null : new Date(),
+      pushCopy,
+      allowedRecipients,
+      blockedRecipients,
+      messages,
+      ticketOutcomes,
+      pivotDropPushRunId,
+    });
+  } catch (error) {
+    if (ensured.created && ensured.run?._id) {
+      const { MeridianJobRun } = getGlobalModels(jobReq, 'MeridianJobRun');
+      await MeridianJobRun.updateOne(
+        { _id: ensured.run._id, status: 'running' },
+        {
+          $set: {
+            status: dryRun ? 'preview' : 'succeeded',
+            finishedAt: new Date(),
+            lastError: String(error?.message || 'audit persist failed').slice(0, 1000),
+          },
+        },
+      ).catch(() => {});
+    }
+    throw error;
+  }
+}
+
+async function writeWeeklyDropMeridianAudit(jobReq, ensured, {
+  tenantKey,
+  dryRun,
+  sentAt,
+  pushCopy,
+  allowedRecipients,
+  blockedRecipients,
+  messages,
+  ticketOutcomes,
+  pivotDropPushRunId,
+}) {
   const { MeridianJobRun, MeridianJobAttempt } = ensured;
   const { MeridianJobDelivery } = getGlobalModels(jobReq, 'MeridianJobDelivery');
 

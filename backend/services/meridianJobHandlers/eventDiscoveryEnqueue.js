@@ -21,10 +21,24 @@ const {
   NOTIFICATION_COPY_KEYS,
   resolveDefinitionNotificationCopy,
 } = require('../../utilities/meridianJobCopyResolve');
+const {
+  claimMeridianJobExpoSend,
+  releaseMeridianJobExpoSend,
+  duplicateExpoSendResult,
+} = require('../meridianJobSendClaim');
+
+const { alignDaytimeCheckCron, DAYTIME_CHECK_CRON, quietHoursSendBlockForDelivery } = require('../../utilities/meridianQuietHours');
+const { resolveNotificationCheckConfig } = require('../../utilities/meridianNotificationCheckConfig');
+const {
+  resolveNotificationRules,
+  evaluateRuleGroups,
+  rulesReference,
+  defaultNotificationRules,
+} = require('../../utilities/meridianNotificationRules');
 
 const EVENT_DISCOVERY_HANDLER_KEY = 'event_discovery';
 const EVENT_DISCOVERY_DEFINITION_KEY = 'event_discovery';
-const EVENT_DISCOVERY_CRON = '0,30 * * * *';
+const EVENT_DISCOVERY_CRON = DAYTIME_CHECK_CRON;
 
 function discoveryDayBucket(date = new Date(), timeZone = 'UTC') {
   const parts = getZonedParts(date, timeZone);
@@ -93,6 +107,42 @@ async function isEventDiscoveryEnabled(req, tenantKey) {
   return definition.enabled !== false;
 }
 
+async function hoursSinceLastDiscoveryPush(req, tenantKey, userIds, now) {
+  const hoursByUserId = new Map();
+  if (!userIds.length) return hoursByUserId;
+  const jobReq = await resolveJobReq(req);
+  const { MeridianJobRun, MeridianJobDelivery } = getGlobalModels(
+    jobReq,
+    'MeridianJobRun',
+    'MeridianJobDelivery',
+  );
+  const since = new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000);
+  const runs = await MeridianJobRun.find({
+    type: EVENT_DISCOVERY_HANDLER_KEY,
+    tenantKey,
+    createdAt: { $gte: since },
+  })
+    .select('_id')
+    .lean();
+  if (!runs.length) return hoursByUserId;
+  const rows = await MeridianJobDelivery.find({
+    runId: { $in: runs.map((run) => run._id) },
+    userId: { $in: userIds },
+    deliveryStatus: { $in: ['accepted', 'skipped', 'blocked_dev_gate'] },
+  })
+    .select('userId sentAt')
+    .lean();
+  for (const row of rows) {
+    const sentAt = row.sentAt ? new Date(row.sentAt).getTime() : NaN;
+    if (Number.isNaN(sentAt)) continue;
+    const hours = (now.getTime() - sentAt) / (60 * 60 * 1000);
+    const userId = String(row.userId || '');
+    const previous = hoursByUserId.get(userId);
+    if (previous == null || hours < previous) hoursByUserId.set(userId, hours);
+  }
+  return hoursByUserId;
+}
+
 async function sendEventDiscoveryPushesForTenant(req, options = {}) {
   const tenantKey = String(options.tenantKey || req?.school || '').trim().toLowerCase();
   if (!tenantKey) {
@@ -105,7 +155,38 @@ async function sendEventDiscoveryPushesForTenant(req, options = {}) {
   }
 
   const dryRun = options.dryRun === true;
-  const users = await loadPivotPushUsers(tenantKey, options.userId ? [options.userId] : null);
+  if (!dryRun) {
+    const quiet = quietHoursSendBlockForDelivery(options, {
+      now: options.now || new Date(),
+      timeZone: tenant.pivotDropTimezone,
+      triggerConfig: options.triggerConfig,
+    });
+    if (quiet) {
+      return {
+        ...quiet,
+        data: { tenantKey, skipped: 'quiet_hours', sent: 0, failed: 0, deliveries: [] },
+      };
+    }
+  }
+  const rules = Array.isArray(options.rules)
+    ? options.rules
+    : resolveNotificationRules(EVENT_DISCOVERY_HANDLER_KEY, {
+      rules: options.rules,
+      triggerConfig: options.triggerConfig,
+    }).rules;
+  const loaded = await loadPivotPushUsers(tenantKey, options.userId ? [options.userId] : null);
+  const now = options.now || new Date();
+  const userIds = loaded.map((user) => user._id?.toString?.() || String(user._id || '')).filter(Boolean);
+  const hoursByUserId = rulesReference(rules, 'hoursSinceLastDiscoveryPush')
+    ? await hoursSinceLastDiscoveryPush(req, tenantKey, userIds, now)
+    : new Map();
+  const users = loaded.filter((user) => {
+    const userId = user._id?.toString?.() || String(user._id || '');
+    const hours = hoursByUserId.has(userId)
+      ? hoursByUserId.get(userId)
+      : Number.POSITIVE_INFINITY;
+    return evaluateRuleGroups({ hoursSinceLastDiscoveryPush: hours }, rules).includes('send');
+  });
   const capped = capDeliveryRows(users, MAX_RUN_RECIPIENTS);
   const recipients = capped.deliveries;
   const copyPack = await getMergedCopyPackOrEmpty(req, { tenantKey });
@@ -170,6 +251,28 @@ async function executeEventDiscovery(ctx) {
     });
   }
 
+  if (payload.dryRun !== true) {
+    const tenant = await getTenantByKey(req, tenantKey);
+    const quiet = tenant
+      ? quietHoursSendBlockForDelivery(payload, {
+        now: payload.now ? new Date(payload.now) : new Date(),
+        timeZone: tenant.pivotDropTimezone,
+        triggerConfig: payload.triggerConfig,
+      })
+      : null;
+    if (quiet) {
+      throw new MeridianJobHandlerError(quiet.error, {
+        retryable: true,
+        defer: true,
+        retryAfterMs: quiet.retryAfterMs,
+        statusCode: 409,
+        code: 'QUIET_HOURS',
+      });
+    }
+    const claim = await claimMeridianJobExpoSend(req, run._id);
+    if (!claim.proceed) return duplicateExpoSendResult(claim);
+  }
+
   const result = await sendEventDiscoveryPushesForTenant(req, {
     tenantKey,
     userId: payload.userId || null,
@@ -180,7 +283,25 @@ async function executeEventDiscovery(ctx) {
     copyBodyKey: payload.copyBodyKey,
     copyTitleFallback: payload.copyTitleFallback,
     copyBodyFallback: payload.copyBodyFallback,
+    triggerConfig: payload.triggerConfig,
+    rules: payload.rules,
+    now: payload.now ? new Date(payload.now) : undefined,
   });
+
+  if (result?.code === 'QUIET_HOURS' && payload.dryRun !== true) {
+    await releaseMeridianJobExpoSend(req, run._id);
+    throw new MeridianJobHandlerError(result.error || 'Quiet hours', {
+      retryable: true,
+      defer: true,
+      retryAfterMs: result.retryAfterMs,
+      statusCode: 409,
+      code: 'QUIET_HOURS',
+    });
+  }
+
+  if (result?.status >= 400 && payload.dryRun !== true) {
+    await releaseMeridianJobExpoSend(req, run._id);
+  }
 
   if (result?.status && result.status >= 400) {
     throw new MeridianJobHandlerError(result.error || 'event_discovery failed', {
@@ -223,6 +344,7 @@ const EVENT_DISCOVERY_DEFINITION_SPEC = Object.freeze({
   copyTitleKey: NOTIFICATION_COPY_KEYS.definition.title,
   copyBodyKey: NOTIFICATION_COPY_KEYS.definition.body,
   triggerConfig: { on: 'catalog_publish', debounce: 'user_day' },
+  rules: defaultNotificationRules(EVENT_DISCOVERY_HANDLER_KEY),
 });
 
 async function ensureEventDiscoveryDefinition(req) {
@@ -236,7 +358,7 @@ async function ensureEventDiscoveryDefinition(req) {
     definitionKey: EVENT_DISCOVERY_DEFINITION_KEY,
     tenantKey: '',
   });
-  if (existing) return existing;
+  if (existing) return alignDaytimeCheckCron(existing);
   try {
     return await MeridianNotificationDefinition.create({ ...EVENT_DISCOVERY_DEFINITION_SPEC });
   } catch (error) {
@@ -268,6 +390,27 @@ async function enqueueEventDiscoveryOnCatalogPublish(req, {
     if (!enabled) {
       return { skipped: 'definition_disabled', enqueued: [] };
     }
+    const jobReq = await resolveJobReq(req);
+    const { MeridianNotificationDefinition } = getGlobalModels(
+      jobReq,
+      'MeridianNotificationDefinition',
+    );
+    const definition = await MeridianNotificationDefinition.findOne({
+      definitionKey: EVENT_DISCOVERY_DEFINITION_KEY,
+      tenantKey: '',
+    }).lean();
+    const tenantForMode = await getTenantByKey(jobReq, key);
+    const override = Array.isArray(tenantForMode?.meridianNotificationOverrides)
+      ? tenantForMode.meridianNotificationOverrides.find(
+        (row) => row?.definitionKey === EVENT_DISCOVERY_DEFINITION_KEY,
+      )
+      : null;
+    const triggerConfig = override && override.triggerConfig !== undefined
+      ? override.triggerConfig
+      : definition?.triggerConfig;
+    if (resolveNotificationCheckConfig(triggerConfig).discovery.on === 'schedule') {
+      return { skipped: 'schedule_only', enqueued: [] };
+    }
 
     const tenant = await getTenantByKey(req, key);
     const dayBucket = discoveryDayBucket(now, tenant?.pivotDropTimezone || 'UTC');
@@ -289,6 +432,7 @@ async function enqueueEventDiscoveryOnCatalogPublish(req, {
           batchWeek,
           userId,
           trigger: 'catalog_publish',
+          triggerConfig,
         },
       });
       enqueued.push({
@@ -322,6 +466,7 @@ module.exports = {
   EVENT_DISCOVERY_HANDLER_KEY,
   EVENT_DISCOVERY_DEFINITION_KEY,
   EVENT_DISCOVERY_CRON,
+  EVENT_DISCOVERY_DEFINITION_SPEC,
   discoveryDayBucket,
   buildEventDiscoveryRunKey,
   isEventDiscoveryEnabled,

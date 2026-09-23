@@ -1,11 +1,15 @@
 const { registerWeeklyDropHandler } = require('./weeklyDrop');
-const { registerRitualCrewScanHandler } = require('./ritualCrewScan');
+const {
+  registerRitualCrewScanHandler,
+  registerRitualCrewConsensusHandler,
+} = require('./ritualCrewScan');
 const { registerSoloSwipeReminderHandler } = require('./soloSwipeReminder');
 const { registerEventDiscoveryEnqueueHandler } = require('./eventDiscoveryEnqueue');
 
 function ensureMeridianJobHandlersLoaded() {
   registerWeeklyDropHandler();
   registerRitualCrewScanHandler();
+  registerRitualCrewConsensusHandler();
   registerSoloSwipeReminderHandler();
   registerEventDiscoveryEnqueueHandler();
 }

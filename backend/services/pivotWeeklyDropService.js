@@ -105,6 +105,11 @@ function computeDeckCompleteFromSnapshot(snapshot, swipedEventIds) {
   );
 }
 
+function countUnfinishedCards(snapshot, swipedEventIds) {
+  if (!snapshot?.orderedEventIds?.length) return 0;
+  return snapshot.orderedEventIds.filter((eventId) => !swipedEventIds.has(String(eventId))).length;
+}
+
 function buildCrewRowsForUser(crewIds, weekStateByCrewId) {
   return Array.from(crewIds)
     .map((crewId) => {
@@ -134,6 +139,7 @@ async function loadWeeklyDropCrewContext(tenantKey, batchWeek, userIds = []) {
         userSwiped: false,
         anyCrewUnfinished: false,
         deckComplete: false,
+        unfinishedCardCount: 0,
         decideQueueOrder: [],
         decideCrewId: null,
         ritualPhase: 'solo',
@@ -205,10 +211,10 @@ async function loadWeeklyDropCrewContext(tenantKey, batchWeek, userIds = []) {
     const row = contextByUserId.get(userId);
     if (row) {
       row.userSwiped = swipedSet.has(userId);
-      row.deckComplete = computeDeckCompleteFromSnapshot(
-        snapshotByUserId.get(userId),
-        swipedEventsByUserId.get(userId) || new Set(),
-      );
+      const swipedIds = swipedEventsByUserId.get(userId) || new Set();
+      const snapshot = snapshotByUserId.get(userId);
+      row.deckComplete = computeDeckCompleteFromSnapshot(snapshot, swipedIds);
+      row.unfinishedCardCount = countUnfinishedCards(snapshot, swipedIds);
     }
   }
 
@@ -633,7 +639,16 @@ async function sendWeeklyDropPush(req, tenantKey, options = {}) {
   const copyPack = await getMergedCopyPackOrEmpty(req, { tenantKey: tenant.tenantKey });
   const dryRun = options.dryRun === true;
   const force = options.force === true;
-  const now = new Date();
+  const now = options.now ? new Date(options.now) : new Date();
+  const { quietHoursSendBlockForDelivery } = require('../utilities/meridianQuietHours');
+  if (!dryRun) {
+    const quiet = quietHoursSendBlockForDelivery(options, {
+      now,
+      timeZone: tenant.pivotDropTimezone,
+      triggerConfig: options.triggerConfig,
+    });
+    if (quiet) return quiet;
+  }
   const dropSchedule = serializeDropSchedule(tenant, batchWeek, now, { copyPack });
   const pushCopy = resolveWeeklyDropPushCopy(tenant, batchWeek, {
     pushTitle: options.pushTitle,

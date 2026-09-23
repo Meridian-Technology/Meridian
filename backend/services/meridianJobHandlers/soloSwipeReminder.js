@@ -28,10 +28,23 @@ const {
   NOTIFICATION_COPY_KEYS,
   resolveRitualNotificationCopy,
 } = require('../../utilities/meridianJobCopyResolve');
+const {
+  claimMeridianJobExpoSend,
+  releaseMeridianJobExpoSend,
+  duplicateExpoSendResult,
+} = require('../meridianJobSendClaim');
+
+const { alignDaytimeCheckCron, DAYTIME_CHECK_CRON, quietHoursSendBlockForDelivery } = require('../../utilities/meridianQuietHours');
+const {
+  resolveNotificationRules,
+  evaluateRuleGroups,
+  rulesReference,
+  defaultNotificationRules,
+} = require('../../utilities/meridianNotificationRules');
 
 const SOLO_SWIPE_REMINDER_HANDLER_KEY = 'solo_swipe_reminder';
 const SOLO_SWIPE_REMINDER_DEFINITION_KEY = 'solo_swipe_reminder';
-const SOLO_SWIPE_REMINDER_CRON = '0,30 * * * *';
+const SOLO_SWIPE_REMINDER_CRON = DAYTIME_CHECK_CRON;
 
 function buildSoloSwipeReminderRunKey({ tenantKey, payload = {} }) {
   const tenant = String(tenantKey || '').trim().toLowerCase();
@@ -47,8 +60,12 @@ async function resolveJobReq(req) {
   return { ...(req || {}), globalDb };
 }
 
-function isSoloSwipeCandidate(context = {}) {
-  return context.hasCrew !== true && context.deckComplete !== true;
+function isSoloSwipeCandidate(context = {}, solo = {}) {
+  const requireNoCrew = solo.requireNoCrew !== false;
+  const requireIncompleteDeck = solo.requireIncompleteDeck !== false;
+  if (requireNoCrew && context.hasCrew === true) return false;
+  if (requireIncompleteDeck && context.deckComplete === true) return false;
+  return true;
 }
 
 async function loadAlreadyRemindedUserIds(req, tenantKey, batchWeek) {
@@ -104,6 +121,33 @@ async function sendSoloSwipeRemindersForTenant(req, options = {}) {
     return { error: 'batchWeek must be YYYY-Www.', status: 400 };
   }
 
+  const rules = Array.isArray(options.rules)
+    ? options.rules
+    : resolveNotificationRules(SOLO_SWIPE_REMINDER_HANDLER_KEY, {
+      rules: options.rules,
+      triggerConfig: options.triggerConfig,
+    }).rules;
+  if (options.dryRun !== true) {
+    const quiet = quietHoursSendBlockForDelivery(options, {
+      now,
+      timeZone: tenant.pivotDropTimezone,
+      triggerConfig: options.triggerConfig,
+    });
+    if (quiet) {
+      return {
+        ...quiet,
+        data: {
+          tenantKey,
+          batchWeek,
+          skipped: 'quiet_hours',
+          sent: 0,
+          failed: 0,
+          deliveries: [],
+        },
+      };
+    }
+  }
+
   const crewConfig = mergePivotCrewConfig(tenant.pivotCrewConfig);
   if (!isNudgeWindowOpen(tenant, batchWeek, crewConfig.nudges.unfinishedSwipeReminderHours, now)) {
     return {
@@ -124,11 +168,19 @@ async function sendSoloSwipeRemindersForTenant(req, options = {}) {
     batchWeek,
     users.map((user) => user._id?.toString?.() || String(user._id || '')),
   );
-  const already = await loadAlreadyRemindedUserIds(req, tenantKey, batchWeek);
+  const already = rulesReference(rules, 'alreadyNotifiedThisBatchWeek')
+    ? await loadAlreadyRemindedUserIds(req, tenantKey, batchWeek)
+    : new Set();
   const eligible = users.filter((user) => {
     const userId = user._id?.toString?.() || String(user._id || '');
-    if (!userId || already.has(userId)) return false;
-    return isSoloSwipeCandidate(contextByUserId.get(userId) || {});
+    if (!userId) return false;
+    const context = contextByUserId.get(userId) || {};
+    return evaluateRuleGroups({
+      hasCrew: context.hasCrew === true,
+      deckComplete: context.deckComplete === true,
+      unfinishedCardCount: Number(context.unfinishedCardCount) || 0,
+      alreadyNotifiedThisBatchWeek: already.has(userId),
+    }, rules).includes('send');
   });
   const capped = capDeliveryRows(eligible, MAX_RUN_RECIPIENTS);
   const recipients = capped.deliveries;
@@ -194,13 +246,52 @@ async function executeSoloSwipeReminder(ctx) {
     });
   }
 
+  if (payload.dryRun !== true) {
+    const tenant = await getTenantByKey(req, tenantKey);
+    const quiet = tenant
+      ? quietHoursSendBlockForDelivery(payload, {
+        now: payload.now ? new Date(payload.now) : new Date(),
+        timeZone: tenant.pivotDropTimezone,
+        triggerConfig: payload.triggerConfig,
+      })
+      : null;
+    if (quiet) {
+      throw new MeridianJobHandlerError(quiet.error, {
+        retryable: true,
+        defer: true,
+        retryAfterMs: quiet.retryAfterMs,
+        statusCode: 409,
+        code: 'QUIET_HOURS',
+      });
+    }
+    const claim = await claimMeridianJobExpoSend(req, run._id);
+    if (!claim.proceed) return duplicateExpoSendResult(claim);
+  }
+
   const result = await sendSoloSwipeRemindersForTenant(req, {
     tenantKey,
     batchWeek: payload.batchWeek,
     now: payload.now ? new Date(payload.now) : undefined,
     dryRun: payload.dryRun === true,
     copyBodyKey: payload.copyBodyKey,
+    triggerConfig: payload.triggerConfig,
+    rules: payload.rules,
   });
+
+  if (result?.code === 'QUIET_HOURS' && payload.dryRun !== true) {
+    await releaseMeridianJobExpoSend(req, run._id);
+    throw new MeridianJobHandlerError(result.error || 'Quiet hours', {
+      retryable: true,
+      defer: true,
+      retryAfterMs: result.retryAfterMs,
+      statusCode: 409,
+      code: 'QUIET_HOURS',
+    });
+  }
+
+  if (result?.status >= 400 && payload.dryRun !== true) {
+    await releaseMeridianJobExpoSend(req, run._id);
+  }
 
   if (result?.status && result.status >= 400) {
     throw new MeridianJobHandlerError(result.error || 'solo_swipe_reminder failed', {
@@ -249,6 +340,7 @@ const SOLO_SWIPE_REMINDER_DEFINITION_SPEC = Object.freeze({
   copyTitleKey: NOTIFICATION_COPY_KEYS.ritual.swipe.title,
   copyBodyKey: NOTIFICATION_COPY_KEYS.ritual.swipe.body,
   triggerConfig: { scan: 'solo_unfinished_deck' },
+  rules: defaultNotificationRules(SOLO_SWIPE_REMINDER_HANDLER_KEY),
 });
 
 async function ensureSoloSwipeReminderDefinition(req) {
@@ -262,7 +354,7 @@ async function ensureSoloSwipeReminderDefinition(req) {
     definitionKey: SOLO_SWIPE_REMINDER_DEFINITION_KEY,
     tenantKey: '',
   });
-  if (existing) return existing;
+  if (existing) return alignDaytimeCheckCron(existing);
   try {
     return await MeridianNotificationDefinition.create({ ...SOLO_SWIPE_REMINDER_DEFINITION_SPEC });
   } catch (error) {
@@ -291,6 +383,7 @@ module.exports = {
   SOLO_SWIPE_REMINDER_HANDLER_KEY,
   SOLO_SWIPE_REMINDER_DEFINITION_KEY,
   SOLO_SWIPE_REMINDER_CRON,
+  SOLO_SWIPE_REMINDER_DEFINITION_SPEC,
   buildSoloSwipeReminderRunKey,
   isSoloSwipeCandidate,
   sendSoloSwipeRemindersForTenant,

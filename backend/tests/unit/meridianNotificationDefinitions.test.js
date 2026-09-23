@@ -21,6 +21,7 @@ const {
   upsertMeridianNotificationOverride,
   evaluateMeridianNotificationSchedules,
   resolveDefinitionForTenant,
+  restoreDefaultMeridianNotificationSchedules,
 } = require('../../services/meridianNotificationDefinitionService');
 
 const meridianNotificationDefinitionSchema = require('../../schemas/meridianNotificationDefinition');
@@ -117,6 +118,7 @@ describe('meridian notification definitions', () => {
     expect(created.enabled).toBe(true);
     expect(created.scheduleCron).toBe('0,30 * * * *');
     expect(created.triggerConfig).toEqual({ lookbackHours: 6 });
+    expect(created.rules).toEqual([]);
 
     const listed = await listMeridianNotificationDefinitions(req);
     expect(listed).toHaveLength(1);
@@ -145,6 +147,32 @@ describe('meridian notification definitions', () => {
     await expect(getMeridianNotificationDefinition(req, created.id)).rejects.toMatchObject({
       code: 'DEFINITION_NOT_FOUND',
     });
+  });
+
+  it('migrates legacy solo flags into who-rules on read', async () => {
+    const { registerSoloSwipeReminderHandler } = require('../../services/meridianJobHandlers/soloSwipeReminder');
+    registerSoloSwipeReminderHandler();
+    const migrated = await createMeridianNotificationDefinition(req, {
+      definitionKey: 'solo_swipe_reminder',
+      handlerKey: 'solo_swipe_reminder',
+      scheduleCron: '0,30 8-21 * * *',
+      triggerConfig: { requireNoCrew: false },
+    });
+    expect(migrated.rules[0].conditions.map((condition) => condition.attribute)).toEqual([
+      'deckComplete',
+      'alreadyNotifiedThisBatchWeek',
+    ]);
+
+    const stored = await updateMeridianNotificationDefinition(req, migrated.id, {
+      rules: [{
+        outcome: 'send',
+        conditions: [{ attribute: 'deckComplete', operator: 'is', value: false }],
+      }],
+    });
+    expect(stored.rules).toEqual([{
+      outcome: 'send',
+      conditions: [{ attribute: 'deckComplete', operator: 'is', value: false }],
+    }]);
   });
 
   it('rejects unknown handlers', async () => {
@@ -225,5 +253,78 @@ describe('meridian notification definitions', () => {
     await upsertMeridianNotificationOverride(req, 'nyc', 'ritual_crew_scan', { enabled: false });
     const disabled = await evaluateMeridianNotificationSchedules(req, { now });
     expect(disabled.enqueued).toHaveLength(0);
+  });
+
+  it('does not enqueue a matching cron during quiet hours', async () => {
+    await seedPivotTenant(req, 'nyc', 'America/New_York');
+    await createMeridianNotificationDefinition(req, {
+      definitionKey: 'solo_swipe_reminder',
+      handlerKey: 'ritual_stub',
+      scheduleCron: '0,30 * * * *',
+      enabled: true,
+    });
+
+    // 02:00 America/New_York
+    const night = new Date('2026-06-06T06:00:00.000Z');
+    const skipped = await evaluateMeridianNotificationSchedules(req, { now: night });
+    expect(skipped.enqueued).toHaveLength(0);
+
+    // 09:00 America/New_York
+    const morning = new Date('2026-06-06T13:00:00.000Z');
+    const sent = await evaluateMeridianNotificationSchedules(req, { now: morning });
+    expect(sent.enqueued.map((row) => row.tenantKey)).toEqual(['nyc']);
+  });
+
+  it('restores built-in schedules and leaves a custom schedule in place', async () => {
+    await createMeridianNotificationDefinition(req, {
+      definitionKey: 'ritual_crew_scan',
+      handlerKey: 'ritual_stub',
+      scheduleCron: '0 9 * * *',
+      enabled: false,
+      rules: [],
+    });
+    await createMeridianNotificationDefinition(req, {
+      definitionKey: 'custom_nudge',
+      handlerKey: 'ritual_stub',
+      scheduleCron: '0 10 * * *',
+    });
+
+    const restored = await restoreDefaultMeridianNotificationSchedules(req);
+    expect(restored.map((row) => row.definitionKey).sort()).toEqual([
+      'event_discovery',
+      'ritual_crew_consensus',
+      'ritual_crew_scan',
+      'solo_swipe_reminder',
+      'weekly_drop',
+    ]);
+
+    const scan = restored.find((row) => row.definitionKey === 'ritual_crew_scan');
+    expect(scan.handlerKey).toBe('ritual_crew_scan');
+    expect(scan.enabled).toBe(true);
+    expect(scan.scheduleCron).toBe('0,30 8-21 * * *');
+    expect(scan.rules[0].conditions.map((row) => row.attribute)).toEqual([
+      'quorumMet',
+      'activeMemberCount',
+      'unfinishedSwiperCount',
+      'hoursSinceWeeklyDrop',
+      'alreadyNotifiedThisBatchWeek',
+    ]);
+
+    const weekly = restored.find((row) => row.definitionKey === 'weekly_drop');
+    expect(weekly.enabled).toBe(true);
+    expect(weekly.scheduleCron).toBe('0 18 * * 4');
+    expect(weekly.rules).toEqual([]);
+
+    expect(restored.find((row) => row.definitionKey === 'event_discovery').enabled).toBe(false);
+
+    const listed = await listMeridianNotificationDefinitions(req);
+    expect(listed.map((row) => row.definitionKey).sort()).toEqual([
+      'custom_nudge',
+      'event_discovery',
+      'ritual_crew_consensus',
+      'ritual_crew_scan',
+      'solo_swipe_reminder',
+      'weekly_drop',
+    ]);
   });
 });

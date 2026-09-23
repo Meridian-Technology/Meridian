@@ -11,6 +11,12 @@ const { getMeridianJobHandler } = require('./meridianJobRegistry');
 const { ensureMeridianJobHandlersLoaded } = require('./meridianJobHandlers');
 const { enqueueMeridianJob } = require('./meridianJobEnqueueService');
 const { isPivotCrewNudgeCronDisabled } = require('./pivotCrewNudgeService');
+const { quietHoursDelayMs } = require('../utilities/meridianQuietHours');
+const { resolveNotificationCheckConfig } = require('../utilities/meridianNotificationCheckConfig');
+const {
+  resolveNotificationRules,
+  validateRules,
+} = require('../utilities/meridianNotificationRules');
 const {
   DEFINITION_KEY_PATTERN,
   MAX_TRIGGER_CONFIG_BYTES,
@@ -31,6 +37,7 @@ const OVERRIDEABLE_FIELDS = Object.freeze([
   'copyTitleFallback',
   'copyBodyFallback',
   'triggerConfig',
+  'rules',
 ]);
 
 function definitionAdminError(message, code, status = 400) {
@@ -81,6 +88,7 @@ function serializeMeridianNotificationDefinition(doc, overrideMeta = null) {
     copyTitleFallback: row.copyTitleFallback || null,
     copyBodyFallback: row.copyBodyFallback || null,
     triggerConfig: cloneTriggerConfig(row.triggerConfig),
+    rules: resolveNotificationRules(row.handlerKey, row).rules,
     createdAt: row.createdAt || null,
     updatedAt: row.updatedAt || null,
     overrideApplied: Boolean(overrideMeta?.applied),
@@ -96,9 +104,13 @@ function mergeDefinitionWithOverride(definition, override) {
   const fields = [];
   OVERRIDEABLE_FIELDS.forEach((field) => {
     if (Object.prototype.hasOwnProperty.call(override, field) && override[field] !== undefined) {
-      merged[field] = field === 'triggerConfig'
-        ? cloneTriggerConfig(override[field])
-        : override[field];
+      if (field === 'triggerConfig') {
+        merged[field] = cloneTriggerConfig(override[field]);
+      } else if (field === 'rules') {
+        merged[field] = JSON.parse(JSON.stringify(override[field]));
+      } else {
+        merged[field] = override[field];
+      }
       fields.push(field);
     }
   });
@@ -138,7 +150,7 @@ function assertHandlerExists(handlerKey) {
   return key;
 }
 
-function buildDefinitionFields(body = {}, { partial = false } = {}) {
+function buildDefinitionFields(body = {}, { partial = false, handlerKey = null } = {}) {
   const fields = {};
 
   if (!partial || body.definitionKey !== undefined) {
@@ -193,6 +205,15 @@ function buildDefinitionFields(body = {}, { partial = false } = {}) {
       );
     }
     fields.triggerConfig = config;
+  }
+
+  if (body.rules !== undefined) {
+    const resolvedHandler = fields.handlerKey || handlerKey;
+    const rules = validateRules(resolvedHandler, body.rules);
+    if (rules.error) {
+      throw definitionAdminError(rules.error, 'INVALID_RULES');
+    }
+    fields.rules = rules.rules;
   }
 
   return fields;
@@ -277,7 +298,7 @@ async function updateMeridianNotificationDefinition(req, idOrKey, body = {}) {
   if (!doc) {
     throw definitionAdminError('Notification definition not found', 'DEFINITION_NOT_FOUND', 404);
   }
-  const fields = buildDefinitionFields(body, { partial: true });
+  const fields = buildDefinitionFields(body, { partial: true, handlerKey: doc.handlerKey });
   Object.assign(doc, fields);
   try {
     await doc.save();
@@ -292,6 +313,54 @@ async function updateMeridianNotificationDefinition(req, idOrKey, body = {}) {
     throw error;
   }
   return serializeMeridianNotificationDefinition(doc);
+}
+
+function defaultScheduleSpecs() {
+  const { WEEKLY_DROP_DEFINITION_SPEC } = require('./meridianJobHandlers/weeklyDrop');
+  const {
+    RITUAL_CREW_SCAN_DEFINITION_SPEC,
+    RITUAL_CREW_CONSENSUS_DEFINITION_SPEC,
+  } = require('./meridianJobHandlers/ritualCrewScan');
+  const { SOLO_SWIPE_REMINDER_DEFINITION_SPEC } = require('./meridianJobHandlers/soloSwipeReminder');
+  const { EVENT_DISCOVERY_DEFINITION_SPEC } = require('./meridianJobHandlers/eventDiscoveryEnqueue');
+  return [
+    WEEKLY_DROP_DEFINITION_SPEC,
+    RITUAL_CREW_SCAN_DEFINITION_SPEC,
+    RITUAL_CREW_CONSENSUS_DEFINITION_SPEC,
+    SOLO_SWIPE_REMINDER_DEFINITION_SPEC,
+    EVENT_DISCOVERY_DEFINITION_SPEC,
+  ];
+}
+
+async function restoreDefaultMeridianNotificationSchedules(req) {
+  const { MeridianNotificationDefinition } = await getDefinitionModel(req);
+  const restored = [];
+  for (const spec of defaultScheduleSpecs()) {
+    const fields = JSON.parse(JSON.stringify(spec));
+    const existing = await MeridianNotificationDefinition.findOne({
+      definitionKey: fields.definitionKey,
+      tenantKey: '',
+    });
+    if (existing) {
+      existing.handlerKey = fields.handlerKey;
+      existing.enabled = fields.enabled;
+      existing.scheduleCron = fields.scheduleCron;
+      existing.copyTitleKey = fields.copyTitleKey;
+      existing.copyBodyKey = fields.copyBodyKey;
+      existing.copyTitleFallback = null;
+      existing.copyBodyFallback = null;
+      existing.triggerConfig = fields.triggerConfig || {};
+      existing.rules = fields.rules || [];
+      existing.markModified('triggerConfig');
+      existing.markModified('rules');
+      await existing.save();
+      restored.push(serializeMeridianNotificationDefinition(existing));
+    } else {
+      const doc = await MeridianNotificationDefinition.create(fields);
+      restored.push(serializeMeridianNotificationDefinition(doc));
+    }
+  }
+  return restored;
 }
 
 async function deleteMeridianNotificationDefinition(req, idOrKey) {
@@ -329,6 +398,20 @@ async function upsertMeridianNotificationOverride(req, tenantKey, definitionKey,
         'INVALID_OVERRIDE',
       );
     }
+    if (row.rules !== undefined) {
+      const { MeridianNotificationDefinition } = getGlobalModels(
+        jobReq,
+        'MeridianNotificationDefinition',
+      );
+      const definition = await MeridianNotificationDefinition.findOne({ definitionKey: key })
+        .select('handlerKey')
+        .lean();
+      const rules = validateRules(definition?.handlerKey || '', row.rules);
+      if (rules.error) {
+        throw definitionAdminError(rules.error, 'INVALID_RULES');
+      }
+      row.rules = rules.rules;
+    }
     next = [...existing.filter((item) => item.definitionKey !== key), row];
   }
 
@@ -364,7 +447,16 @@ async function evaluateMeridianNotificationSchedules(req, { now = new Date() } =
       if (definition.enabled === false) continue;
       if (
         nudgeCronDisabled
-        && definition.handlerKey === 'ritual_crew_scan'
+        && (definition.handlerKey === 'ritual_crew_scan'
+          || definition.handlerKey === 'ritual_crew_consensus')
+      ) {
+        continue;
+      }
+      const resolvedRules = resolveNotificationRules(definition.handlerKey, definition);
+      const checkConfig = resolveNotificationCheckConfig(definition.triggerConfig);
+      if (
+        definition.handlerKey === 'event_discovery'
+        && checkConfig.discovery.on === 'catalog_publish'
       ) {
         continue;
       }
@@ -374,6 +466,7 @@ async function evaluateMeridianNotificationSchedules(req, { now = new Date() } =
       const timezone = String(tenant.pivotDropTimezone || '').trim() || 'UTC';
       const bucket = floorToThirtyMinuteBucket(now, timezone);
       if (!cronMatchesBucket(definition.scheduleCron, bucket)) continue;
+      if (quietHoursDelayMs(now, timezone, checkConfig.quietHours) > 0) continue;
 
       const result = await enqueueMeridianJob(jobReq, {
         handlerKey: definition.handlerKey,
@@ -386,6 +479,7 @@ async function evaluateMeridianNotificationSchedules(req, { now = new Date() } =
           copyTitleFallback: definition.copyTitleFallback,
           copyBodyFallback: definition.copyBodyFallback,
           triggerConfig: cloneTriggerConfig(definition.triggerConfig),
+          rules: resolvedRules.rules,
           timeBucket: bucket.timeBucket,
           timezone,
           overrideApplied: applied,
@@ -417,6 +511,7 @@ module.exports = {
   getMeridianNotificationDefinition,
   listMeridianNotificationDefinitions,
   updateMeridianNotificationDefinition,
+  restoreDefaultMeridianNotificationSchedules,
   deleteMeridianNotificationDefinition,
   upsertMeridianNotificationOverride,
   evaluateMeridianNotificationSchedules,

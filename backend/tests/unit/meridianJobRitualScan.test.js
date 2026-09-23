@@ -28,6 +28,7 @@ const {
   RITUAL_CREW_SCAN_HANDLER_KEY,
   RITUAL_CREW_SCAN_DEFINITION_KEY,
   buildRitualCrewScanRunKey,
+  claimConsensusCrew,
 } = require('../../services/meridianJobHandlers/ritualCrewScan');
 const {
   evaluateMeridianNotificationSchedules,
@@ -65,7 +66,7 @@ describe('meridianJobRitualScan', () => {
     sendCrewUnfinishedSwipeNudgesForTenant.mockReset();
     sendPendingConsensusNudgesForTenant.mockReset();
     sendPendingConsensusNudgesForTenant.mockResolvedValue({
-      data: { sent: 0, failed: 0, crewsNudged: 0 },
+      data: { sent: 0, failed: 0, crewsNudged: 0, deliveries: [] },
     });
     await mongo.reset();
     await ensureMeridianJobIndexes(req, { force: true });
@@ -81,6 +82,26 @@ describe('meridianJobRitualScan', () => {
     await mongo.cleanup();
   });
 
+  it('claims each consensus crew once per run', async () => {
+    const { MeridianJobRun } = getGlobalModels(req, 'MeridianJobRun');
+    const run = await MeridianJobRun.create({
+      runKey: 'ritual_crew_scan:nyc:claim',
+      category: 'notification',
+      type: 'ritual_crew_scan',
+      tenantKey: 'nyc',
+      status: 'running',
+      scheduledFor: new Date('2026-06-05T22:00:00.000Z'),
+      nextAttemptAt: new Date('2026-06-05T22:00:00.000Z'),
+      payload: {},
+    });
+
+    expect(await claimConsensusCrew(req, run._id, 'crew-a')).toBe(true);
+    expect(await claimConsensusCrew(req, run._id, 'crew-a')).toBe(false);
+    expect(await claimConsensusCrew(req, run._id, 'crew-b')).toBe(true);
+    const stored = await MeridianJobRun.findById(run._id).lean();
+    expect(stored.payload.consensusSentCrewIds.sort()).toEqual(['crew-a', 'crew-b']);
+  });
+
   it('buildRunKey includes tenant and time bucket for idempotent enqueue', () => {
     expect(buildRitualCrewScanRunKey({
       tenantKey: 'NYC',
@@ -89,6 +110,24 @@ describe('meridianJobRitualScan', () => {
   });
 
   it('executes tenant nudge send through expo path and writes deliveries', async () => {
+    sendPendingConsensusNudgesForTenant.mockResolvedValue({
+      data: {
+        sent: 1,
+        failed: 0,
+        crewsNudged: 1,
+        deliveries: [{
+          userId: 'u2',
+          username: 'bo',
+          name: 'Bo',
+          product: 'justgo',
+          copyKey: 'notifications.ritual.decidePending.body',
+          title: 'confirm',
+          body: 'still deciding',
+          deliveryStatus: 'accepted',
+          error: null,
+        }],
+      },
+    });
     sendCrewUnfinishedSwipeNudgesForTenant.mockResolvedValue({
       data: {
         tenantKey: 'nyc',
@@ -122,7 +161,7 @@ describe('meridianJobRitualScan', () => {
     });
     expect(tick.claimed).toBe(true);
     expect(sendCrewUnfinishedSwipeNudgesForTenant).toHaveBeenCalled();
-    expect(sendPendingConsensusNudgesForTenant).toHaveBeenCalled();
+    expect(sendPendingConsensusNudgesForTenant).not.toHaveBeenCalled();
 
     const { MeridianJobDelivery, MeridianJobRun } = getGlobalModels(
       req,
@@ -134,6 +173,7 @@ describe('meridianJobRitualScan', () => {
     expect(run.summary.accepted).toBe(1);
     const deliveries = await MeridianJobDelivery.find({ runId: run._id }).lean();
     expect(deliveries).toHaveLength(1);
+    expect(deliveries.map((row) => row.userId)).toEqual(['u1']);
     expect(deliveries[0]).toMatchObject({
       userId: 'u1',
       deliveryStatus: 'accepted',
