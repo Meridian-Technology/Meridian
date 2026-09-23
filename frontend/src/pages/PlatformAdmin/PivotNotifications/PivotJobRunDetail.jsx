@@ -53,9 +53,17 @@ function attemptStatusTone(status) {
   return 'muted';
 }
 
-function PivotJobRunDetail({ tenantKey, runId, batchWeek: batchWeekHint = '', onBack }) {
-  const detailUrl = tenantKey && runId
-    ? `/admin/platform/tenants/${tenantKey}/meridian/jobs/runs/${runId}?deliveriesLimit=100`
+function PivotJobRunDetail({
+  tenantKey,
+  runId,
+  batchWeek: batchWeekHint = '',
+  onBack,
+  embedded = false,
+}) {
+  const detailUrl = runId
+    ? (tenantKey
+      ? `/admin/platform/tenants/${tenantKey}/meridian/jobs/runs/${runId}?deliveriesLimit=100`
+      : `/admin/meridian/jobs/runs/${runId}?deliveriesLimit=100`)
     : null;
 
   const { data, loading, error, refetch } = useFetch(detailUrl, {
@@ -83,36 +91,15 @@ function PivotJobRunDetail({ tenantKey, runId, batchWeek: batchWeekHint = '', on
     batchWeek,
   });
 
-  return (
-    <PivotTenantPage
-      title="Run detail"
-      tenantKey={tenantKey}
-      subtitle={
-        batchWeek
-          ? `${batchWeek} · ${run?.type || 'notification job'}`
-          : 'Per-user delivery audit for this notification job.'
-      }
-      className="pivot-job-run-detail-page"
-      actions={(
+  const detail = (
+    <div className="pivot-job-run-detail">
+      {embedded && onBack ? (
         <div className="pivot-job-run-detail__actions">
-          {onBack ? (
-            <button type="button" className="linear-btn linear-btn--secondary" onClick={onBack}>
-              <Icon icon="mdi:arrow-left" />
-              Back to Notifications
-            </button>
-          ) : null}
-          <button
-            type="button"
-            className="linear-btn linear-btn--ghost"
-            onClick={() => refetch()}
-            disabled={loading}
-          >
-            {loading ? 'Refreshing…' : 'Refresh'}
+          <button type="button" className="linear-btn linear-btn--secondary" onClick={onBack}>
+            Close run
           </button>
         </div>
-      )}
-    >
-      <div className="pivot-job-run-detail">
+      ) : null}
         {error ? <p className="pivot-job-run-detail__error">{error}</p> : null}
         {!run && loading ? <p className="pivot-job-run-detail__empty">Loading run…</p> : null}
         {run ? (
@@ -235,7 +222,41 @@ function PivotJobRunDetail({ tenantKey, runId, batchWeek: batchWeekHint = '', on
             </PivotOpsSection>
           </>
         ) : null}
-      </div>
+    </div>
+  );
+
+  if (embedded) return detail;
+
+  return (
+    <PivotTenantPage
+      title="Run detail"
+      tenantKey={tenantKey}
+      subtitle={
+        batchWeek
+          ? `${batchWeek} · ${run?.type || 'notification job'}`
+          : 'Per-user delivery audit for this notification job.'
+      }
+      className="pivot-job-run-detail-page"
+      actions={(
+        <div className="pivot-job-run-detail__actions">
+          {onBack ? (
+            <button type="button" className="linear-btn linear-btn--secondary" onClick={onBack}>
+              <Icon icon="mdi:arrow-left" />
+              Back to Notifications
+            </button>
+          ) : null}
+          <button
+            type="button"
+            className="linear-btn linear-btn--ghost"
+            onClick={() => refetch()}
+            disabled={loading}
+          >
+            {loading ? 'Refreshing…' : 'Refresh'}
+          </button>
+        </div>
+      )}
+    >
+      {detail}
     </PivotTenantPage>
   );
 }

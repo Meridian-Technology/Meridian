@@ -1,0 +1,196 @@
+.pivot-notification-schedule-audit {
+  --pivot-ops-surface: #ffffff;
+  --pivot-ops-surface-subtle: #f7f6f4;
+  --pivot-ops-ink: #1a1714;
+  --pivot-ops-ink-muted: rgba(26, 23, 20, 0.72);
+  --pivot-ops-ink-soft: rgba(26, 23, 20, 0.5);
+  --pivot-ops-border: rgba(26, 23, 20, 0.12);
+  --pivot-ops-border-strong: rgba(26, 23, 20, 0.22);
+  --pivot-ops-hover: rgba(26, 23, 20, 0.04);
+  --pivot-ops-accent: #ff4f1f;
+  --pivot-ops-accent-hover: #e64518;
+  --pivot-ops-on-accent: #ffffff;
+  --pivot-ops-danger: #dc2626;
+  --pivot-ops-radius-card: 22px;
+  --pivot-ops-radius-control: 14px;
+
+  width: min(880px, calc(100vw - 48px));
+  max-height: min(86vh, 900px);
+  overflow: auto;
+  box-sizing: border-box;
+  padding: 22px 22px 18px;
+  border-radius: var(--pivot-ops-radius-card);
+  background: var(--pivot-ops-surface);
+  color: var(--pivot-ops-ink);
+  border: 1px solid var(--pivot-ops-border);
+  box-shadow: 0 24px 60px rgba(26, 23, 20, 0.18);
+
+  &__head {
+    display: flex;
+    justify-content: space-between;
+    gap: 16px;
+    align-items: flex-start;
+    margin-bottom: 18px;
+  }
+
+  &__head-actions {
+    display: flex;
+    gap: 8px;
+    flex-shrink: 0;
+  }
+
+  &__title {
+    margin: 0;
+    font-size: 18px;
+    font-weight: 600;
+  }
+
+  &__lead,
+  &__empty {
+    margin: 6px 0 0;
+    font-size: 13px;
+    line-height: 1.45;
+    color: var(--pivot-ops-ink-muted);
+  }
+
+  h3 {
+    margin: 0 0 4px;
+    font-size: 15px;
+    font-weight: 600;
+  }
+
+  section > p {
+    margin: 0 0 12px;
+    font-size: 13px;
+    line-height: 1.45;
+    color: var(--pivot-ops-ink-muted);
+  }
+
+  &__checks,
+  &__people {
+    margin-bottom: 18px;
+  }
+
+  ul {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    border: 1px solid var(--pivot-ops-border);
+    border-radius: var(--pivot-ops-radius-control);
+    overflow: hidden;
+  }
+
+  li + li {
+    border-top: 1px solid var(--pivot-ops-border);
+  }
+
+  &__checks button {
+    display: grid;
+    grid-template-columns: minmax(140px, 1.2fr) minmax(100px, 1fr) auto auto auto;
+    gap: 8px 12px;
+    align-items: center;
+    width: 100%;
+    padding: 10px 12px;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    font-size: 13px;
+    text-align: left;
+    cursor: pointer;
+
+    &[aria-pressed='true'] {
+      background: var(--pivot-ops-surface-subtle);
+    }
+  }
+
+  &__people li {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    font-size: 13px;
+
+    strong {
+      font-weight: 600;
+    }
+
+    span {
+      color: var(--pivot-ops-ink-soft);
+    }
+  }
+
+  &__error {
+    margin: 0 0 8px;
+    font-size: 13px;
+    color: var(--pivot-ops-danger);
+  }
+
+  &__run {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: 12px;
+    padding-top: 8px;
+    border-top: 1px solid var(--pivot-ops-border);
+  }
+
+  .linear-field {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    min-width: 180px;
+    font-size: 13px;
+  }
+
+  .linear-field--checkbox {
+    flex-direction: row;
+    align-items: center;
+    min-width: unset;
+    padding-bottom: 8px;
+  }
+
+  .linear-field__label {
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--pivot-ops-ink-muted);
+  }
+
+  select {
+    height: 36px;
+    padding: 0 12px;
+    border: 1px solid var(--pivot-ops-border-strong);
+    border-radius: var(--pivot-ops-radius-control);
+    background: var(--pivot-ops-surface);
+    color: var(--pivot-ops-ink);
+    font: inherit;
+    font-size: 13px;
+  }
+
+  .linear-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    height: 36px;
+    padding: 0 14px;
+    border-radius: var(--pivot-ops-radius-control);
+    border: 1px solid var(--pivot-ops-border-strong);
+    background: var(--pivot-ops-surface);
+    color: var(--pivot-ops-ink);
+    font: inherit;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+  }
+
+  .linear-btn--primary {
+    background: var(--pivot-ops-accent);
+    border-color: var(--pivot-ops-accent);
+    color: var(--pivot-ops-on-accent);
+  }
+
+  .linear-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+}

@@ -1,19 +1,21 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { authenticatedRequest, useFetch } from '../../../hooks/useFetch';
 import { useNotification } from '../../../NotificationContext';
-import { PivotOpsSection } from '../../../components/PivotOps';
+import { describeWhoRules, scheduleName, schedulePurpose } from './notificationScheduleCopy';
 import {
   HOUR_OPTIONS,
   MINUTE_OPTIONS,
   WEEKDAY_OPTIONS,
   cronFromScheduleParts,
   defaultScheduleParts,
-  parseTriggerConfigJson,
+  describeSchedule,
+  isSingleClockSchedule,
   schedulePartsFromCron,
-  stringifyTriggerConfig,
   validateDefinitionKey,
   validateThirtyMinuteCron,
 } from './notificationDefinitionCron';
+import PivotNotificationVoiceFields, { voiceKeysFor } from './PivotNotificationVoiceFields';
+import PivotNotificationWhoRules from './PivotNotificationWhoRules';
 import './PivotNotificationDefinitionEditor.scss';
 
 const NO_FETCH_CACHE = { enabled: false };
@@ -22,7 +24,58 @@ const EMPTY_OVERRIDES = {
   schedule: false,
   copy: false,
   trigger: false,
+  rules: false,
 };
+
+const DISCOVERY_MODES = [
+  { value: 'catalog_publish', label: 'Catalog publish' },
+  { value: 'schedule', label: 'Schedule' },
+  { value: 'both', label: 'Both' },
+];
+
+function quietHour(value, fallback) {
+  const hour = Number(value);
+  if (!Number.isInteger(hour) || hour < 0 || hour > 23) return fallback;
+  return hour;
+}
+
+function quietHoursFrom(triggerConfig) {
+  const raw = triggerConfig?.quietHours;
+  return {
+    quietStartHour: quietHour(raw?.startHour, 22),
+    quietEndHour: quietHour(raw?.endHour, 8),
+  };
+}
+
+function discoveryOnFrom(triggerConfig) {
+  const on = triggerConfig?.on;
+  return DISCOVERY_MODES.some((mode) => mode.value === on) ? on : 'catalog_publish';
+}
+
+function triggerConfigFromForm(form) {
+  const config = {
+    quietHours: {
+      startHour: quietHour(form.quietStartHour, null),
+      endHour: quietHour(form.quietEndHour, null),
+    },
+  };
+  if (form.handlerKey === 'event_discovery') {
+    config.on = DISCOVERY_MODES.some((mode) => mode.value === form.discoveryOn)
+      ? form.discoveryOn
+      : 'catalog_publish';
+  }
+  return config;
+}
+
+function quietHoursError(form) {
+  if (!Number.isInteger(Number(form.quietStartHour)) || form.quietStartHour < 0 || form.quietStartHour > 23) {
+    return 'Quiet hours start must be an hour from 0 to 23';
+  }
+  if (!Number.isInteger(Number(form.quietEndHour)) || form.quietEndHour < 0 || form.quietEndHour > 23) {
+    return 'Quiet hours end must be an hour from 0 to 23';
+  }
+  return null;
+}
 
 function tenantLabel(tenant) {
   const key = String(tenant?.tenantKey || '').trim().toLowerCase();
@@ -32,7 +85,7 @@ function tenantLabel(tenant) {
 }
 
 function formFromDefinition(definition) {
-  const schedule = schedulePartsFromCron(definition?.scheduleCron || '0,30 * * * *');
+  const schedule = schedulePartsFromCron(definition?.scheduleCron || '0,30 8-21 * * *');
   return {
     definitionKey: definition?.definitionKey || '',
     handlerKey: definition?.handlerKey || '',
@@ -45,7 +98,9 @@ function formFromDefinition(definition) {
     copyBodyKey: definition?.copyBodyKey || '',
     copyTitleFallback: definition?.copyTitleFallback || '',
     copyBodyFallback: definition?.copyBodyFallback || '',
-    triggerConfigText: stringifyTriggerConfig(definition?.triggerConfig),
+    ...quietHoursFrom(definition?.triggerConfig),
+    discoveryOn: discoveryOnFrom(definition?.triggerConfig),
+    rules: Array.isArray(definition?.rules) ? definition.rules : null,
   };
 }
 
@@ -60,10 +115,13 @@ function PivotNotificationDefinitionEditor({
   tenants = [],
   onCancel,
   onSaved,
+  startCondensed = false,
+  onOpenChecks,
 }) {
   const { addNotification } = useNotification();
   const creating = !definition?.id;
   const fleetTemplate = Boolean(definition?.id) && !definition?.tenantKey;
+  const [settingsOpen, setSettingsOpen] = useState(!startCondensed || creating);
   const [form, setForm] = useState(() => formFromDefinition(definition));
   const [fieldErrors, setFieldErrors] = useState({});
   const [saving, setSaving] = useState(false);
@@ -71,6 +129,11 @@ function PivotNotificationDefinitionEditor({
   const [overrideToggles, setOverrideToggles] = useState(EMPTY_OVERRIDES);
   const [overrideForm, setOverrideForm] = useState(() => formFromDefinition(definition));
   const [overrideSaving, setOverrideSaving] = useState(false);
+  const voiceRef = useRef(null);
+  const voiceKeys = useMemo(
+    () => voiceKeysFor(creating ? null : definition, form.handlerKey),
+    [creating, definition, form.handlerKey],
+  );
 
   const {
     data: handlersResponse,
@@ -84,6 +147,25 @@ function PivotNotificationDefinitionEditor({
       : [];
     return rows.slice().sort((a, b) => String(a.handlerKey).localeCompare(String(b.handlerKey)));
   }, [handlersResponse]);
+
+  const {
+    data: catalogResponse,
+  } = useFetch(
+    form.handlerKey
+      ? `/admin/meridian/jobs/notification-rule-catalog?handlerKey=${encodeURIComponent(form.handlerKey)}`
+      : null,
+    { cache: NO_FETCH_CACHE },
+  );
+  const catalog = catalogResponse?.success ? catalogResponse.data : null;
+
+  useEffect(() => {
+    if (!catalog || catalog.handlerKey !== form.handlerKey) return;
+    if (!Array.isArray(catalog.defaultRules)) return;
+    setForm((current) => {
+      if (current.handlerKey !== catalog.handlerKey || current.rules != null) return current;
+      return { ...current, rules: catalog.defaultRules };
+    });
+  }, [catalog, form.handlerKey]);
 
   useEffect(() => {
     setForm(formFromDefinition(definition));
@@ -124,6 +206,7 @@ function PivotNotificationDefinitionEditor({
         || fields.has('copyTitleFallback')
         || fields.has('copyBodyFallback'),
       trigger: fields.has('triggerConfig'),
+      rules: fields.has('rules'),
     });
     setOverrideForm(formFromDefinition({
       ...definition,
@@ -144,31 +227,48 @@ function PivotNotificationDefinitionEditor({
     if (!form.handlerKey) errors.handlerKey = 'handlerKey is required';
     const cron = validateThirtyMinuteCron(currentCron(form));
     if (cron.error) errors.scheduleCron = cron.error;
-    const trigger = parseTriggerConfigJson(form.triggerConfigText);
-    if (trigger.error) errors.triggerConfig = trigger.error;
+    const quiet = quietHoursError(form);
+    if (quiet) errors.quietHours = quiet;
+    const catalogMatches = catalog?.handlerKey === form.handlerKey;
+    const rules = catalogMatches && Array.isArray(form.rules)
+      ? form.rules
+      : (catalogMatches ? catalog.defaultRules : null);
+    if (!Array.isArray(rules)) errors.rules = 'Who rules are still loading';
     setFieldErrors(errors);
-    return { errors, cron, trigger };
-  }, [creating, form]);
+    return { errors, cron, rules };
+  }, [catalog, creating, form]);
 
   const handleSave = useCallback(async (event) => {
     event.preventDefault();
-    const { errors, cron, trigger } = validateForm();
+    const { errors, cron, rules } = validateForm();
     if (Object.keys(errors).length) return;
+
+    setSaving(true);
+    const voiceResult = await voiceRef.current?.save();
+    if (voiceResult && !voiceResult.ok) {
+      setSaving(false);
+      addNotification({
+        title: 'Voice save failed',
+        message: voiceResult.message,
+        type: 'error',
+      });
+      return;
+    }
 
     const body = {
       handlerKey: form.handlerKey,
       tenantKey: form.tenantKey || null,
       enabled: form.enabled !== false,
       scheduleCron: cron.normalized,
-      copyTitleKey: form.copyTitleKey.trim() || null,
-      copyBodyKey: form.copyBodyKey.trim() || null,
-      copyTitleFallback: form.copyTitleFallback.trim() || null,
-      copyBodyFallback: form.copyBodyFallback.trim() || null,
-      triggerConfig: trigger.value,
+      copyTitleKey: voiceResult?.titleKey || voiceKeys.title || null,
+      copyBodyKey: voiceResult?.bodyKey || voiceKeys.body || null,
+      copyTitleFallback: definition?.copyTitleFallback || null,
+      copyBodyFallback: definition?.copyBodyFallback || null,
+      triggerConfig: triggerConfigFromForm(form),
+      rules,
     };
     if (creating) body.definitionKey = form.definitionKey.trim().toLowerCase();
 
-    setSaving(true);
     const path = creating
       ? '/admin/meridian/jobs/definitions'
       : `/admin/meridian/jobs/definitions/${encodeURIComponent(definition.id)}`;
@@ -194,7 +294,7 @@ function PivotNotificationDefinitionEditor({
       type: 'success',
     });
     onSaved?.(res.data);
-  }, [addNotification, creating, definition, form, onSaved, validateForm]);
+  }, [addNotification, creating, definition, form, onSaved, validateForm, voiceKeys.body, voiceKeys.title]);
 
   const handleDelete = useCallback(async () => {
     if (!definition?.id) return;
@@ -247,13 +347,21 @@ function PivotNotificationDefinitionEditor({
         body.copyBodyFallback = overrideForm.copyBodyFallback.trim() || null;
       }
       if (overrideToggles.trigger) {
-        const trigger = parseTriggerConfigJson(overrideForm.triggerConfigText);
-        if (trigger.error) {
-          setFieldErrors((current) => ({ ...current, overrideTrigger: trigger.error }));
+        const quiet = quietHoursError(overrideForm);
+        if (quiet) {
+          setFieldErrors((current) => ({ ...current, overrideTrigger: quiet }));
           setOverrideSaving(false);
           return;
         }
-        body.triggerConfig = trigger.value;
+        body.triggerConfig = triggerConfigFromForm(overrideForm);
+      }
+      if (overrideToggles.rules) {
+        if (!Array.isArray(overrideForm.rules)) {
+          setFieldErrors((current) => ({ ...current, overrideRules: 'Who rules are still loading' }));
+          setOverrideSaving(false);
+          return;
+        }
+        body.rules = overrideForm.rules;
       }
       payload = body;
     }
@@ -293,18 +401,68 @@ function PivotNotificationDefinitionEditor({
     overrideToggles,
   ]);
 
-  const scheduleFields = (prefix, target, setTarget) => (
+  const scheduleFields = (prefix, target, setTarget, { clock = false } = {}) => {
+    const patchParts = (patch) => setTarget((current) => ({
+      ...current,
+      scheduleParts: { ...current.scheduleParts, ...patch },
+    }));
+    const singleClock = clock && !target.advancedCron && isSingleClockSchedule(target.scheduleParts);
+    const clockValue = `${String(target.scheduleParts.hour).padStart(2, '0')}:${String(target.scheduleParts.minute).padStart(2, '0')}`;
+
+    return (
     <div className="pivot-notification-definition-editor__cron">
+      {singleClock ? (
+        <div className="pivot-notification-time">
+          <div className="pivot-notification-time__days" role="group" aria-label={`${prefix} day`}>
+            {WEEKDAY_OPTIONS.filter((option) => option.value !== '*').map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                className={target.scheduleParts.weekday === option.value ? 'is-selected' : ''}
+                aria-pressed={target.scheduleParts.weekday === option.value}
+                aria-label={option.label}
+                onClick={() => patchParts({ weekday: option.value })}
+              >
+                {option.label.slice(0, 3)}
+              </button>
+            ))}
+            <button
+              type="button"
+              className={target.scheduleParts.weekday === '*' ? 'is-selected' : ''}
+              aria-pressed={target.scheduleParts.weekday === '*'}
+              onClick={() => patchParts({ weekday: '*' })}
+            >
+              Every day
+            </button>
+          </div>
+          <label className="pivot-notification-time__clock">
+            <span className="linear-field__label">Time</span>
+            <input
+              type="time"
+              step="1800"
+              aria-label={`${prefix} time`}
+              value={clockValue}
+              onChange={(event) => {
+                const match = /^(\d{1,2}):(\d{2})$/.exec(event.target.value);
+                if (!match) return;
+                const hour = Number(match[1]);
+                let minute = Number(match[2]);
+                if (hour > 23) return;
+                if (minute !== 0 && minute !== 30) minute = minute < 30 ? 0 : 30;
+                patchParts({ hour: String(hour), minute: String(minute) });
+              }}
+            />
+          </label>
+        </div>
+      ) : (
+        <>
       <label className="linear-field">
         <span className="linear-field__label">Minute</span>
         <select
           aria-label={`${prefix} minute`}
           value={target.scheduleParts.minute}
           disabled={target.advancedCron}
-          onChange={(event) => setTarget((current) => ({
-            ...current,
-            scheduleParts: { ...current.scheduleParts, minute: event.target.value },
-          }))}
+          onChange={(event) => patchParts({ minute: event.target.value })}
         >
           {MINUTE_OPTIONS.map((option) => (
             <option key={option.value} value={option.value}>{option.label}</option>
@@ -317,10 +475,7 @@ function PivotNotificationDefinitionEditor({
           aria-label={`${prefix} hour`}
           value={target.scheduleParts.hour}
           disabled={target.advancedCron}
-          onChange={(event) => setTarget((current) => ({
-            ...current,
-            scheduleParts: { ...current.scheduleParts, hour: event.target.value },
-          }))}
+          onChange={(event) => patchParts({ hour: event.target.value })}
         >
           {HOUR_OPTIONS.map((option) => (
             <option key={option.value} value={option.value}>{option.label}</option>
@@ -333,16 +488,16 @@ function PivotNotificationDefinitionEditor({
           aria-label={`${prefix} weekday`}
           value={target.scheduleParts.weekday}
           disabled={target.advancedCron}
-          onChange={(event) => setTarget((current) => ({
-            ...current,
-            scheduleParts: { ...current.scheduleParts, weekday: event.target.value },
-          }))}
+          onChange={(event) => patchParts({ weekday: event.target.value })}
         >
           {WEEKDAY_OPTIONS.map((option) => (
             <option key={option.value} value={option.value}>{option.label}</option>
           ))}
         </select>
       </label>
+        </>
+      )}
+      {clock && singleClock ? null : (
       <label className="linear-field linear-field--checkbox">
         <input
           type="checkbox"
@@ -356,6 +511,7 @@ function PivotNotificationDefinitionEditor({
         />
         <span>Advanced cron</span>
       </label>
+      )}
       {target.advancedCron ? (
         <label className="linear-field">
           <span className="linear-field__label">Cron (5 fields)</span>
@@ -370,17 +526,35 @@ function PivotNotificationDefinitionEditor({
         </label>
       ) : null}
     </div>
-  );
+    );
+  };
+
+  const whoSummary = describeWhoRules(form.rules);
+  const condensed = !settingsOpen;
+  const timedOnly = Boolean(catalog) && !(catalog.attributes || []).length;
+  const timeSummary = describeSchedule(currentCron(form));
 
   return (
-    <PivotOpsSection
-      title={creating ? 'New definition' : `Edit ${definition.definitionKey}`}
-      description="Handlers stay in code. Schedule minutes are only :00 or :30 in each city’s drop timezone."
-    >
-      <form className="pivot-notification-definition-editor" onSubmit={handleSave}>
+    <div className="pivot-notification-definition-editor">
+      <header className="pivot-notification-definition-editor__head">
+        <h2 className="pivot-notification-definition-editor__title">
+          {creating ? 'New schedule' : condensed ? scheduleName(definition) : `Edit ${scheduleName(definition)}`}
+        </h2>
+        <p className="pivot-notification-definition-editor__lead">
+          {condensed
+            ? schedulePurpose(definition)
+            : 'Handlers stay in code. Schedule minutes are only :00 or :30 in each city’s drop timezone.'}
+        </p>
+        {condensed && !timedOnly && whoSummary ? (
+          <p className="pivot-notification-definition-editor__summary">{whoSummary}</p>
+        ) : null}
+      </header>
+      <form onSubmit={handleSave}>
         {handlersError ? (
           <p className="pivot-notification-definition-editor__error" role="alert">{handlersError}</p>
         ) : null}
+        {settingsOpen ? (
+        <>
         <div className="pivot-notification-definition-editor__grid">
           <label className="linear-field">
             <span className="linear-field__label">Definition key</span>
@@ -396,7 +570,12 @@ function PivotNotificationDefinitionEditor({
             <select
               aria-label="Definition handler"
               value={form.handlerKey}
-              onChange={(event) => setField('handlerKey', event.target.value)}
+              onChange={(event) => setForm((current) => ({
+                ...current,
+                handlerKey: event.target.value,
+                rules: null,
+                discoveryOn: 'catalog_publish',
+              }))}
               disabled={handlersLoading}
             >
               {!form.handlerKey ? <option value="">Select a handler</option> : null}
@@ -455,66 +634,115 @@ function PivotNotificationDefinitionEditor({
           </p>
         ) : null}
 
-        <div className="pivot-notification-definition-editor__copy">
+        <div className="pivot-notification-definition-editor__quiet">
           <label className="linear-field">
-            <span className="linear-field__label">Copy title key</span>
+            <span className="linear-field__label">Quiet hours start</span>
             <input
-              aria-label="Copy title key"
-              placeholder="notifications.ritual.title"
-              value={form.copyTitleKey}
-              onChange={(event) => setField('copyTitleKey', event.target.value)}
+              type="number"
+              min="0"
+              max="23"
+              aria-label="Quiet hours start"
+              value={form.quietStartHour}
+              onChange={(event) => setField('quietStartHour', event.target.value === '' ? '' : Number(event.target.value))}
             />
           </label>
           <label className="linear-field">
-            <span className="linear-field__label">Copy body key</span>
+            <span className="linear-field__label">Quiet hours end</span>
             <input
-              aria-label="Copy body key"
-              placeholder="notifications.ritual.body"
-              value={form.copyBodyKey}
-              onChange={(event) => setField('copyBodyKey', event.target.value)}
-            />
-          </label>
-          <label className="linear-field">
-            <span className="linear-field__label">Title fallback</span>
-            <input
-              aria-label="Copy title fallback"
-              value={form.copyTitleFallback}
-              onChange={(event) => setField('copyTitleFallback', event.target.value)}
-            />
-          </label>
-          <label className="linear-field">
-            <span className="linear-field__label">Body fallback</span>
-            <input
-              aria-label="Copy body fallback"
-              value={form.copyBodyFallback}
-              onChange={(event) => setField('copyBodyFallback', event.target.value)}
+              type="number"
+              min="0"
+              max="23"
+              aria-label="Quiet hours end"
+              value={form.quietEndHour}
+              onChange={(event) => setField('quietEndHour', event.target.value === '' ? '' : Number(event.target.value))}
             />
           </label>
         </div>
-
-        <label className="linear-field pivot-notification-definition-editor__trigger">
-          <span className="linear-field__label">triggerConfig JSON</span>
-          <textarea
-            aria-label="triggerConfig JSON"
-            placeholder="{}"
-            value={form.triggerConfigText}
-            onChange={(event) => setField('triggerConfigText', event.target.value)}
-          />
-        </label>
-        {fieldErrors.triggerConfig ? (
+        {form.handlerKey === 'event_discovery' ? (
+          <label className="linear-field">
+            <span className="linear-field__label">Fire mode</span>
+            <select
+              aria-label="Discovery fire mode"
+              value={form.discoveryOn}
+              onChange={(event) => setField('discoveryOn', event.target.value)}
+            >
+              {DISCOVERY_MODES.map((mode) => (
+                <option key={mode.value} value={mode.value}>{mode.label}</option>
+              ))}
+            </select>
+          </label>
+        ) : null}
+        {fieldErrors.quietHours ? (
           <p className="pivot-notification-definition-editor__error" role="alert">
-            {fieldErrors.triggerConfig}
+            {fieldErrors.quietHours}
+          </p>
+        ) : null}
+        </>
+        ) : null}
+
+        <PivotNotificationVoiceFields
+          ref={voiceRef}
+          titleKey={voiceKeys.title}
+          bodyKey={voiceKeys.body}
+          disabled={saving}
+        />
+
+        {condensed && timedOnly ? (
+          <div className="pivot-notification-definition-editor__when">
+            <h3 className="pivot-notification-definition-editor__section-title">When it sends</h3>
+            {timeSummary ? (
+              <p className="pivot-notification-definition-editor__summary">{timeSummary}</p>
+            ) : null}
+            {scheduleFields('Definition', form, setForm, { clock: true })}
+            {fieldErrors.scheduleCron ? (
+              <p className="pivot-notification-definition-editor__error" role="alert">
+                {fieldErrors.scheduleCron}
+              </p>
+            ) : null}
+          </div>
+        ) : null}
+
+        {timedOnly ? null : (
+          <PivotNotificationWhoRules
+            catalog={catalog}
+            rules={form.rules}
+            disabled={saving}
+            labelPrefix="Who"
+            onChange={(rules) => setField('rules', rules)}
+          />
+        )}
+        {fieldErrors.rules ? (
+          <p className="pivot-notification-definition-editor__error" role="alert">
+            {fieldErrors.rules}
           </p>
         ) : null}
 
         <div className="pivot-notification-definition-editor__actions">
-          <button type="submit" className="linear-btn" disabled={saving}>
-            {saving ? 'Saving…' : creating ? 'Create definition' : 'Save definition'}
-          </button>
           <button type="button" className="linear-btn linear-btn--secondary" onClick={onCancel}>
             Cancel
           </button>
-          {!creating ? (
+          {condensed ? (
+            <button
+              type="button"
+              className="linear-btn linear-btn--secondary"
+              onClick={() => setSettingsOpen(true)}
+            >
+              Advanced settings
+            </button>
+          ) : null}
+          {condensed && onOpenChecks ? (
+            <button
+              type="button"
+              className="linear-btn linear-btn--secondary"
+              onClick={onOpenChecks}
+            >
+              Checks
+            </button>
+          ) : null}
+          <button type="submit" className="linear-btn linear-btn--primary" disabled={saving}>
+            {saving ? 'Saving…' : creating ? 'Create schedule' : 'Save schedule'}
+          </button>
+          {!creating && !condensed ? (
             <button
               type="button"
               className="linear-btn linear-btn--secondary"
@@ -527,9 +755,9 @@ function PivotNotificationDefinitionEditor({
         </div>
       </form>
 
-      {fleetTemplate ? (
-        <form className="pivot-notification-definition-editor" onSubmit={handleSaveOverride}>
-          <h3>Tenant overrides</h3>
+      {fleetTemplate && !condensed ? (
+        <form className="pivot-notification-definition-editor__override" onSubmit={handleSaveOverride}>
+          <h3 className="pivot-notification-definition-editor__section-title">City overrides</h3>
           <p className="pivot-notification-definition-editor__hint">
             Merged at read time from TenantConfig. Clearing all toggles removes the city override.
           </p>
@@ -597,46 +825,7 @@ function PivotNotificationDefinitionEditor({
           <label className="linear-field linear-field--checkbox">
             <input
               type="checkbox"
-              aria-label="Override copy"
-              checked={overrideToggles.copy}
-              disabled={!overrideTenantKey}
-              onChange={(event) => setOverrideToggles((current) => ({
-                ...current,
-                copy: event.target.checked,
-              }))}
-            />
-            <span>Override copy keys</span>
-          </label>
-          {overrideToggles.copy ? (
-            <div className="pivot-notification-definition-editor__copy">
-              <label className="linear-field">
-                <span className="linear-field__label">Override title key</span>
-                <input
-                  aria-label="Override copy title key"
-                  value={overrideForm.copyTitleKey}
-                  onChange={(event) => setOverrideForm((current) => ({
-                    ...current,
-                    copyTitleKey: event.target.value,
-                  }))}
-                />
-              </label>
-              <label className="linear-field">
-                <span className="linear-field__label">Override body key</span>
-                <input
-                  aria-label="Override copy body key"
-                  value={overrideForm.copyBodyKey}
-                  onChange={(event) => setOverrideForm((current) => ({
-                    ...current,
-                    copyBodyKey: event.target.value,
-                  }))}
-                />
-              </label>
-            </div>
-          ) : null}
-          <label className="linear-field linear-field--checkbox">
-            <input
-              type="checkbox"
-              aria-label="Override triggerConfig"
+              aria-label="Override quiet hours"
               checked={overrideToggles.trigger}
               disabled={!overrideTenantKey}
               onChange={(event) => setOverrideToggles((current) => ({
@@ -644,36 +833,101 @@ function PivotNotificationDefinitionEditor({
                 trigger: event.target.checked,
               }))}
             />
-            <span>Override triggerConfig</span>
+            <span>Override quiet hours</span>
           </label>
           {overrideToggles.trigger ? (
+            <div className="pivot-notification-definition-editor__quiet">
+              <label className="linear-field">
+                <span className="linear-field__label">Quiet hours start</span>
+                <input
+                  type="number"
+                  min="0"
+                  max="23"
+                  aria-label="Override quiet hours start"
+                  value={overrideForm.quietStartHour}
+                  onChange={(event) => setOverrideForm((current) => ({
+                    ...current,
+                    quietStartHour: event.target.value === '' ? '' : Number(event.target.value),
+                  }))}
+                />
+              </label>
+              <label className="linear-field">
+                <span className="linear-field__label">Quiet hours end</span>
+                <input
+                  type="number"
+                  min="0"
+                  max="23"
+                  aria-label="Override quiet hours end"
+                  value={overrideForm.quietEndHour}
+                  onChange={(event) => setOverrideForm((current) => ({
+                    ...current,
+                    quietEndHour: event.target.value === '' ? '' : Number(event.target.value),
+                  }))}
+                />
+              </label>
+            </div>
+          ) : null}
+          {overrideToggles.trigger && form.handlerKey === 'event_discovery' ? (
             <label className="linear-field">
-              <span className="linear-field__label">Override triggerConfig JSON</span>
-              <textarea
-                aria-label="Override triggerConfig JSON"
-                value={overrideForm.triggerConfigText}
+              <span className="linear-field__label">Fire mode</span>
+              <select
+                aria-label="Override discovery fire mode"
+                value={overrideForm.discoveryOn}
                 onChange={(event) => setOverrideForm((current) => ({
                   ...current,
-                  triggerConfigText: event.target.value,
+                  discoveryOn: event.target.value,
                 }))}
-              />
+              >
+                {DISCOVERY_MODES.map((mode) => (
+                  <option key={mode.value} value={mode.value}>{mode.label}</option>
+                ))}
+              </select>
             </label>
+          ) : null}
+          {timedOnly ? null : (
+          <label className="linear-field linear-field--checkbox">
+            <input
+              type="checkbox"
+              aria-label="Override who gets it"
+              checked={overrideToggles.rules}
+              disabled={!overrideTenantKey}
+              onChange={(event) => setOverrideToggles((current) => ({
+                ...current,
+                rules: event.target.checked,
+              }))}
+            />
+            <span>Override who gets it</span>
+          </label>
+          )}
+          {!timedOnly && overrideToggles.rules ? (
+            <PivotNotificationWhoRules
+              catalog={catalog}
+              rules={overrideForm.rules}
+              disabled={overrideSaving}
+              labelPrefix="Override who"
+              onChange={(rules) => setOverrideForm((current) => ({ ...current, rules }))}
+            />
           ) : null}
           {fieldErrors.overrideTrigger ? (
             <p className="pivot-notification-definition-editor__error" role="alert">
               {fieldErrors.overrideTrigger}
             </p>
           ) : null}
+          {fieldErrors.overrideRules ? (
+            <p className="pivot-notification-definition-editor__error" role="alert">
+              {fieldErrors.overrideRules}
+            </p>
+          ) : null}
           <button
             type="submit"
-            className="linear-btn linear-btn--secondary"
+            className="linear-btn linear-btn--primary"
             disabled={!overrideTenantKey || overrideSaving}
           >
-            {overrideSaving ? 'Saving override…' : 'Save tenant override'}
+            {overrideSaving ? 'Saving override…' : 'Save city override'}
           </button>
         </form>
       ) : null}
-    </PivotOpsSection>
+    </div>
   );
 }
 

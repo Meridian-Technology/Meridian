@@ -199,6 +199,7 @@ function PivotTenantDashboard() {
           key={tenantKey}
           tenantKey={tenantKey}
           tenant={tenant}
+          tenants={tenants.filter(isPivotTenant)}
         />
       ),
     });
@@ -229,7 +230,7 @@ function PivotTenantDashboard() {
     });
 
     return items;
-  }, [tenantKey, cityDisplayName, tenant, refetch]);
+  }, [tenantKey, cityDisplayName, tenant, tenants, refetch]);
 
   if (!tenantKey) {
     return (

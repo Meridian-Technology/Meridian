@@ -54,7 +54,7 @@ jest.mock('./PivotComputeJobs', () => ({
 jest.mock('./PivotTenantAnalyticsPage', () => ({ scope }) => (
   <div>fleet-analytics-page:{scope}</div>
 ));
-jest.mock('../PivotNotifications/PivotFleetNotificationsPage', () => () => (
+jest.mock('../PivotNotifications/PivotNotificationsPage', () => () => (
   <div>fleet-notifications-page</div>
 ));
 jest.mock('./PivotTenantOverviewPage', () => () => <div>overview-page</div>);

@@ -11,7 +11,7 @@ import {
   mapMeridianDeliveriesToRecipients,
   mergeWeeklyDropHistory,
 } from '../PivotNotifications/mergeWeeklyDropHistory';
-import { notificationJobRunHref } from '../PivotNotifications/notificationJobRoutes';
+import { notificationJobRunHref, PIVOT_TENANT_NOTIFICATIONS_PAGE } from '../PivotNotifications/notificationJobRoutes';
 import '../TenantManagement/TenantManagementPage.scss';
 import './PivotWeeklyDropPage.scss';
 
@@ -177,9 +177,16 @@ function PivotWeeklyDropPage({
   tenantKey: fixedTenantKey = '',
   tenant: fixedTenant = null,
   notificationsPanel = false,
+  embedded = false,
+  audiencePanel = false,
+  batchWeek: controlledBatchWeek = '',
+  runPage = PIVOT_TENANT_NOTIFICATIONS_PAGE,
 }) {
   const { addNotification } = useNotification();
-  const [batchWeek, setBatchWeek] = useState(() => toIsoWeek());
+  const weekControlled = Boolean(String(controlledBatchWeek || '').trim());
+  const [ownBatchWeek, setOwnBatchWeek] = useState(() => toIsoWeek());
+  const batchWeek = weekControlled ? String(controlledBatchWeek).trim().toUpperCase() : ownBatchWeek;
+  const setBatchWeek = weekControlled ? () => {} : setOwnBatchWeek;
   const [selectedTenantKey, setSelectedTenantKey] = useState(fixedTenantKey);
   const [form, setForm] = useState(() => tenantToDropForm(null));
   const [pushCopy, setPushCopy] = useState(DEFAULT_PUSH_COPY);
@@ -470,8 +477,8 @@ function PivotWeeklyDropPage({
   );
 
   const content = (
-    <div className={`pivot-weekly-drop linear-admin${fixedTenantKey ? ' pivot-weekly-drop--tenant' : ''}`}>
-      {!fixedTenantKey ? <header className="pivot-weekly-drop__header">
+    <div className={`pivot-weekly-drop linear-admin${fixedTenantKey ? ' pivot-weekly-drop--tenant' : ''}${audiencePanel ? ' pivot-weekly-drop--audience-panel' : ''}`}>
+      {!fixedTenantKey && !embedded ? <header className="pivot-weekly-drop__header">
         <div>
           <p className="pivot-weekly-drop__eyebrow">
             Internal · Just Go pilot{fixedTenantKey ? ` · ${selectedTenant?.location || selectedTenant?.name || fixedTenantKey}` : ''}
@@ -521,13 +528,54 @@ function PivotWeeklyDropPage({
         </div>
       </header> : null}
 
+      {embedded && !audiencePanel ? (
+        <div className="pivot-weekly-drop__controls">
+          {!fixedTenantKey ? (
+            <label className="linear-field">
+              <span className="linear-field__label">City</span>
+              <select
+                className="linear-input"
+                aria-label="City for the next drop"
+                value={selectedTenantKey}
+                onChange={(e) => setSelectedTenantKey(e.target.value)}
+                disabled={tenantsLoading || !pivotTenants.length}
+              >
+                {pivotTenants.map((row) => (
+                  <option key={row.tenantKey} value={row.tenantKey}>
+                    {row.location || row.name || row.tenantKey}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : null}
+          <label className="linear-field">
+            <span className="linear-field__label">Batch week</span>
+            <input
+              className="linear-input"
+              aria-label="Batch week"
+              value={batchWeek}
+              onChange={(e) => setBatchWeek(e.target.value.toUpperCase())}
+              placeholder="2026-W26"
+            />
+          </label>
+          <button
+            type="button"
+            className="linear-btn linear-btn--ghost"
+            onClick={() => refetchPanel()}
+            disabled={statusLoading || !selectedTenantKey}
+          >
+            {statusLoading ? 'Loading…' : 'Refresh'}
+          </button>
+        </div>
+      ) : null}
+
       {!pivotTenants.length && !tenantsLoading ? (
         <p className="pivot-weekly-drop__empty">No pivot city tenants configured yet.</p>
       ) : null}
 
       {statusError ? <p className="pivot-weekly-drop__error">{statusError}</p> : null}
 
-      {dropSchedule ? (
+      {!audiencePanel && dropSchedule ? (
         <section className="linear-section pivot-weekly-drop__status" aria-label="Drop status">
           <h2 className="linear-section__title">Next drop</h2>
           <div className="pivot-weekly-drop__status-grid">
@@ -652,13 +700,37 @@ function PivotWeeklyDropPage({
         </section>
       ) : null}
 
-      {audience ? (
+      {(audience || audiencePanel) ? (
         <div className="pivot-weekly-drop__insights-grid">
           <PivotOpsSection
             title="Send audience"
             description="Live eligibility from this tenant's user records. Raw push tokens are never shown."
             className="pivot-weekly-drop__audience"
+            actions={audiencePanel && !fixedTenantKey ? (
+              <div className="pivot-weekly-drop__audience-actions">
+                {!fixedTenantKey ? (
+                  <label className="linear-field">
+                    <span className="linear-field__label">City</span>
+                    <select
+                      className="linear-input"
+                      aria-label="City for the next drop"
+                      value={selectedTenantKey}
+                      onChange={(e) => setSelectedTenantKey(e.target.value)}
+                      disabled={tenantsLoading || !pivotTenants.length}
+                    >
+                      {pivotTenants.map((row) => (
+                        <option key={row.tenantKey} value={row.tenantKey}>
+                          {row.location || row.name || row.tenantKey}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                ) : null}
+              </div>
+            ) : null}
           >
+            {audience ? (
+            <>
             <div className="pivot-weekly-drop__metric-grid">
               <div className="pivot-weekly-drop__metric pivot-weekly-drop__metric--accent">
                 <span>Eligible now</span>
@@ -689,8 +761,15 @@ function PivotWeeklyDropPage({
             <p className="pivot-weekly-drop__data-note">
               Legacy tokens are sent individually until their app next registers and identifies its Expo project.
             </p>
+            </>
+            ) : (
+              <p className="pivot-weekly-drop__empty">
+                {statusLoading ? 'Loading audience…' : 'No audience for this city yet.'}
+              </p>
+            )}
           </PivotOpsSection>
 
+          {(!embedded || audiencePanel) ? (
           <PivotOpsSection
             title="Recent sends"
             description="Meridian job runs for this city, with older PivotDropPushRun history when a send was never dual-written. Expo acceptance is not the same as device delivery."
@@ -757,6 +836,7 @@ function PivotWeeklyDropPage({
                                 tenantKey: selectedTenantKey,
                                 runId: run.meridianJobRunId,
                                 batchWeek: run.batchWeek,
+                                page: runPage,
                               })}
                             >
                               Open run
@@ -790,6 +870,7 @@ function PivotWeeklyDropPage({
               <p className="pivot-weekly-drop__empty">No sends have been recorded for this city yet.</p>
             )}
           </PivotOpsSection>
+          ) : null}
         </div>
       ) : null}
 
@@ -835,6 +916,7 @@ function PivotWeeklyDropPage({
         </PivotOpsSection>
       ) : null}
 
+      {!audiencePanel ? (
       <section className="linear-section pivot-weekly-drop__config" aria-label="Drop schedule config">
         <h2 className="linear-section__title">Weekly drop schedule</h2>
         <p className="pivot-weekly-drop__hint">
@@ -1025,8 +1107,13 @@ function PivotWeeklyDropPage({
           </div>
         </form>
       </section>
+      ) : null}
     </div>
   );
+
+  if (embedded) {
+    return content;
+  }
 
   if (fixedTenantKey) {
     return (

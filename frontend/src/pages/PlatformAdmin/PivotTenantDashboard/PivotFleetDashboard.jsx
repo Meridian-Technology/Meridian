@@ -9,7 +9,7 @@ import PivotVoicePage from './PivotVoicePage';
 import PivotFleetLaunchPage from './PivotFleetLaunchPage';
 import PivotComputeJobs, { PIVOT_FLEET_COMPUTE_JOBS_PAGE } from './PivotComputeJobs';
 import PivotTenantAnalyticsPage from './PivotTenantAnalyticsPage';
-import PivotFleetNotificationsPage from '../PivotNotifications/PivotFleetNotificationsPage';
+import PivotNotificationsPage from '../PivotNotifications/PivotNotificationsPage';
 import PivotTenantDropdown from './PivotTenantDropdown';
 import PivotJustGoLogo from './PivotJustGoLogo';
 import '../../Admin/Admin.scss';
@@ -83,7 +83,7 @@ function PivotFleetDashboard() {
       {
         label: 'Notifications',
         icon: 'mdi:bell-ring-outline',
-        element: <PivotFleetNotificationsPage tenants={pivotTenants} />,
+        element: <PivotNotificationsPage tenants={pivotTenants} />,
       },
     ],
     [pivotTenants, tenants, loading, mobileEnvOverrides, refetch],

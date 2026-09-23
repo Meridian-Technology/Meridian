@@ -15,7 +15,11 @@ export function notificationJobRunHref({
   params.set('page', String(page));
   if (runId) params.set(JOB_RUN_ID_QUERY, String(runId));
   if (batchWeek) params.set('batchWeek', String(batchWeek));
-  return `/platform-admin/pivot/${encodeURIComponent(key)}?${params.toString()}`;
+  const fleetShell = Number(page) === PIVOT_FLEET_NOTIFICATIONS_PAGE;
+  const path = fleetShell || !key
+    ? '/platform-admin/pivot'
+    : `/platform-admin/pivot/${encodeURIComponent(key)}`;
+  return `${path}?${params.toString()}`;
 }
 
 export function computeJobInspectorHref({

@@ -3,7 +3,7 @@ export const DEFINITION_KEY_PATTERN = /^[a-z][a-z0-9_]{1,127}$/;
 export const MINUTE_OPTIONS = [
   { value: '0', label: ':00' },
   { value: '30', label: ':30' },
-  { value: '0,30', label: 'Every 30 minutes' },
+  { value: '0,30', label: ':00 and :30' },
 ];
 
 export const WEEKDAY_OPTIONS = [
@@ -18,6 +18,7 @@ export const WEEKDAY_OPTIONS = [
 ];
 
 export const HOUR_OPTIONS = [
+  { value: '8-21', label: '8:00 AM to 9:30 PM' },
   { value: '*', label: 'Every hour' },
   ...Array.from({ length: 24 }, (_, hour) => ({
     value: String(hour),
@@ -25,10 +26,12 @@ export const HOUR_OPTIONS = [
   })),
 ];
 
+export const DAYTIME_CHECK_CRON = '0,30 8-21 * * *';
+
 export function defaultScheduleParts() {
   return {
     minute: '0,30',
-    hour: '*',
+    hour: '8-21',
     dayOfMonth: '*',
     month: '*',
     weekday: '*',
@@ -142,11 +145,24 @@ export function validateThirtyMinuteCron(expression) {
   return parsed;
 }
 
+export function isSingleClockSchedule(parts) {
+  if (!parts) return false;
+  const hour = Number(parts.hour);
+  const singleHour = /^\d+$/.test(String(parts.hour)) && hour <= 23;
+  const singleMinute = parts.minute === '0' || parts.minute === '30';
+  const singleDay = parts.weekday === '*' || /^[0-6]$/.test(String(parts.weekday));
+  const anyDayOfMonth = !parts.dayOfMonth || parts.dayOfMonth === '*';
+  const anyMonth = !parts.month || parts.month === '*';
+  return singleHour && singleMinute && singleDay && anyDayOfMonth && anyMonth;
+}
+
 export function isBuilderFriendlyCron(parts) {
   if (!parts) return false;
   const minuteOk = MINUTE_OPTIONS.some((option) => option.value === parts.minute)
     || parts.minute === '*/30';
-  const hourOk = parts.hour === '*' || (/^\d+$/.test(parts.hour) && Number(parts.hour) <= 23);
+  const hourOk = parts.hour === '*'
+    || parts.hour === '8-21'
+    || (/^\d+$/.test(parts.hour) && Number(parts.hour) <= 23);
   const dayOfMonthOk = parts.dayOfMonth === '*';
   const monthOk = parts.month === '*';
   const weekdayOk = parts.weekday === '*' || /^[0-6]$/.test(parts.weekday);
@@ -168,6 +184,50 @@ export function schedulePartsFromCron(expression) {
     advanced: !isBuilderFriendlyCron(parsed.parts),
     normalized: parsed.normalized,
   };
+}
+
+function formatClock(hour, minute) {
+  const suffix = hour >= 12 ? 'PM' : 'AM';
+  const hour12 = hour % 12 || 12;
+  return `${hour12}:${String(minute).padStart(2, '0')} ${suffix}`;
+}
+
+/**
+ * Plain-language schedule for the 30-minute slots this panel can store.
+ * Repeating slots are checks. A single clock time is the send window.
+ * Falls back to the raw expression when the shape is too specific to phrase.
+ */
+export function describeSchedule(expression) {
+  const parsed = validateThirtyMinuteCron(expression);
+  if (parsed.error) return String(expression || '').trim() || 'Unscheduled';
+
+  const minutes = [...parsed.minute].sort((left, right) => left - right);
+  const hours = [...parsed.hour].sort((left, right) => left - right);
+  const days = [...parsed.dayOfWeek].sort((left, right) => left - right);
+  const everyDay = days.length === 7;
+  const everyHour = hours.length === 24;
+  const onTheHalfHours = minutes.length === 2 && minutes[0] === 0 && minutes[1] === 30;
+  const onTheHour = minutes.length === 1 && minutes[0] === 0;
+  const onTheHalf = minutes.length === 1 && minutes[0] === 30;
+
+  const daytime = hours.length === 14
+    && hours[0] === 8
+    && hours[hours.length - 1] === 21
+    && hours.every((hour, index) => hour === 8 + index);
+  if (everyDay && daytime && onTheHalfHours) {
+    return 'Checks at :00 and :30, 8:00 AM to 9:30 PM';
+  }
+  if (everyDay && everyHour && onTheHalfHours) return 'Checks at :00 and :30';
+  if (everyDay && everyHour && onTheHour) return 'Checks on the hour';
+  if (everyDay && everyHour && onTheHalf) return 'Checks at :30';
+  if (everyDay && hours.length === 1 && minutes.length === 1) {
+    return `Every day at ${formatClock(hours[0], minutes[0])}`;
+  }
+  if (days.length === 1 && hours.length === 1 && minutes.length === 1) {
+    const weekday = WEEKDAY_OPTIONS.find((option) => option.value === String(days[0]));
+    return `${weekday?.label || 'That day'}s at ${formatClock(hours[0], minutes[0])}`;
+  }
+  return parsed.normalized;
 }
 
 export function cronFromScheduleParts(parts = defaultScheduleParts()) {

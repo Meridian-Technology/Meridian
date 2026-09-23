@@ -63,6 +63,21 @@
     margin-bottom: 12px;
   }
 
+  &__audience-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: flex-end;
+
+    .linear-field {
+      min-width: 120px;
+    }
+
+    .linear-input {
+      height: 36px;
+    }
+  }
+
   &__metric-grid {
     display: grid;
     grid-template-columns: repeat(4, minmax(0, 1fr));

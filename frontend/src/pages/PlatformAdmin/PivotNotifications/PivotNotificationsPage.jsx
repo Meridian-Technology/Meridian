@@ -1,44 +1,37 @@
-import React, { useCallback } from 'react';
-import { useSearchParams } from 'react-router-dom';
-import PivotWeeklyDropPage from '../PivotWeeklyDrop/PivotWeeklyDropPage';
-import PivotJobRunDetail from './PivotJobRunDetail';
-import { JOB_RUN_ID_QUERY, PIVOT_TENANT_NOTIFICATIONS_PAGE } from './notificationJobRoutes';
+import React from 'react';
+import PivotTenantPage from '../PivotTenantDashboard/PivotTenantPage';
+import PivotFleetNotificationsPage from './PivotFleetNotificationsPage';
 
 /**
- * Tenant Notifications panel. v1 absorbs weekly drop send, dry-run, schedule,
- * and run history. `?jobRunId=` opens run detail (attempts + deliveries).
+ * One Notifications panel for the fleet shell and a city shell.
+ * Activity and the schedule list stay on the page. A schedule opens
+ * its check history in a popup.
  */
-function PivotNotificationsPage({ tenantKey, tenant }) {
-  const [searchParams, setSearchParams] = useSearchParams();
-  const jobRunId = searchParams.get(JOB_RUN_ID_QUERY) || '';
-  const batchWeek = searchParams.get('batchWeek') || '';
-
-  const closeDetail = useCallback(() => {
-    setSearchParams((current) => {
-      const next = new URLSearchParams(current);
-      next.delete(JOB_RUN_ID_QUERY);
-      next.set('page', String(PIVOT_TENANT_NOTIFICATIONS_PAGE));
-      return next;
-    }, { replace: true });
-  }, [setSearchParams]);
-
-  if (jobRunId) {
-    return (
-      <PivotJobRunDetail
-        tenantKey={tenantKey}
-        runId={jobRunId}
-        batchWeek={batchWeek}
-        onBack={closeDetail}
-      />
-    );
-  }
+function PivotNotificationsPage({
+  tenantKey = '',
+  tenant = null,
+  tenants = [],
+}) {
+  const scopedTenant = String(tenantKey || '').trim().toLowerCase();
+  const cityName = tenant?.location || tenant?.name || (scopedTenant || 'All cities');
+  const knownTenants = tenants.length
+    ? tenants
+    : (tenant ? [tenant] : []);
 
   return (
-    <PivotWeeklyDropPage
-      tenantKey={tenantKey}
-      tenant={tenant}
-      notificationsPanel
-    />
+    <PivotTenantPage
+      title="Notifications"
+      tenantKey={scopedTenant}
+      cityDisplayName={cityName}
+      subtitle="What went out, who is eligible for the next drop, and the history of each schedule."
+      className="pivot-fleet-notifications"
+    >
+      <PivotFleetNotificationsPage
+        embedded
+        tenants={knownTenants}
+        tenantKey={scopedTenant}
+      />
+    </PivotTenantPage>
   );
 }
 
