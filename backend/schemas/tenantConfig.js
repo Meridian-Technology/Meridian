@@ -12,6 +12,21 @@ const pivotDropOverrideSchema = new mongoose.Schema(
   { _id: false }
 );
 
+const meridianNotificationOverrideSchema = new mongoose.Schema(
+  {
+    definitionKey: { type: String, required: true, trim: true, lowercase: true, maxlength: 128 },
+    enabled: { type: Boolean, default: undefined },
+    scheduleCron: { type: String, default: undefined, trim: true, maxlength: 128 },
+    copyTitleKey: { type: String, default: undefined, trim: true, maxlength: 128 },
+    copyBodyKey: { type: String, default: undefined, trim: true, maxlength: 128 },
+    copyTitleFallback: { type: String, default: undefined, trim: true, maxlength: 100 },
+    copyBodyFallback: { type: String, default: undefined, trim: true, maxlength: 240 },
+    triggerConfig: { type: mongoose.Schema.Types.Mixed, default: undefined },
+    rules: { type: mongoose.Schema.Types.Mixed, default: undefined },
+  },
+  { _id: false }
+);
+
 const pivotCrewConfigSchema = new mongoose.Schema(
   {
     version: { type: Number, default: null, min: 1 },
@@ -206,6 +221,10 @@ const tenantEntrySchema = new mongoose.Schema(
     pivotDropPushTitle: { type: String, default: null, trim: true, maxlength: 100 },
     pivotDropPushBody: { type: String, default: null, trim: true, maxlength: 240 },
     pivotDropOverrides: { type: [pivotDropOverrideSchema], default: undefined },
+    meridianNotificationOverrides: {
+      type: [meridianNotificationOverrideSchema],
+      default: undefined,
+    },
     pivotCrewConfig: { type: pivotCrewConfigSchema, default: undefined },
     pivotDeckConfig: { type: pivotDeckConfigSchema, default: undefined },
     pivotMobileConfig: { type: pivotMobileConfigSchema, default: undefined },

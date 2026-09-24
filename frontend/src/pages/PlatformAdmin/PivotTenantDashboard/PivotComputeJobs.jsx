@@ -53,7 +53,7 @@ const MAX_ATTEMPTS_SHOWN = 20;
 
 /**
  * `/platform-admin/pivot/:tenantKey?page=10`
- * Appended after Weekly drop — do not insert earlier pages.
+ * Appended after Notifications (former Weekly drop) — do not insert earlier pages.
  */
 
 const STATUS_FILTER_OPTIONS = [

@@ -1,4 +1,3 @@
-const axios = require('axios');
 const mongoose = require('mongoose');
 const { connectToDatabase } = require('../connectionsManager');
 const getModels = require('./getModelService');
@@ -16,8 +15,14 @@ const {
 } = require('../utilities/pivotRitualNudge');
 const { getMergedCopyPackOrEmpty } = require('./pivotCopyService');
 
-const EXPO_PUSH_URL = 'https://exp.host/--/api/v2/push/send';
-const EXPO_BATCH_SIZE = 100;
+const { sendExpoPushToRecipients } = require('./expoPushDeliveryService');
+const { quietHoursSendBlockForDelivery } = require('../utilities/meridianQuietHours');
+const { evaluateRuleGroups, rulesReference } = require('../utilities/meridianNotificationRules');
+const {
+  resolveRitualNotificationCopy,
+  resolveDefinitionNotificationCopy,
+  NOTIFICATION_COPY_KEYS,
+} = require('../utilities/meridianJobCopyResolve');
 const NUDGE_PUSH_TITLE = 'just go*';
 const NUDGE_PUSH_BODY_MAX = 240;
 
@@ -55,6 +60,37 @@ function resolveNudgeEligibleAtMs(tenant, batchWeek, unfinishedSwipeReminderHour
   return drop.dropAt.getTime() + reminderHours * 60 * 60 * 1000;
 }
 
+function hoursSinceWeeklyDrop(tenant, batchWeek, now) {
+  try {
+    const drop = resolvePivotDropInstant(tenant, batchWeek, now);
+    const dropMs = drop?.dropAt instanceof Date ? drop.dropAt.getTime() : NaN;
+    if (Number.isNaN(dropMs)) return null;
+    return (now.getTime() - dropMs) / (60 * 60 * 1000);
+  } catch {
+    return null;
+  }
+}
+
+function isPastConsensusMidpoint(weekState, now) {
+  const startedMs = new Date(weekState?.consensusStartedAt).getTime();
+  const endsMs = new Date(weekState?.consensusEndsAt).getTime();
+  if (Number.isNaN(startedMs) || Number.isNaN(endsMs) || endsMs <= startedMs) return false;
+  return now.getTime() >= startedMs + (endsMs - startedMs) / 2;
+}
+
+function crewNudgeFacts(weekState, tenant, batchWeek, now, alreadyNotified) {
+  const swipeProgress = weekState?.swipeProgress || {};
+  return {
+    quorumMet: swipeProgress.quorumMet === true,
+    activeMemberCount: Number(swipeProgress.activeMemberCount) || 0,
+    unfinishedSwiperCount: countUnfinishedSwipers(swipeProgress),
+    judgementStatus: weekState?.judgementStatus || 'awaiting_quorum',
+    pastConsensusMidpoint: isPastConsensusMidpoint(weekState, now),
+    hoursSinceWeeklyDrop: hoursSinceWeeklyDrop(tenant, batchWeek, now),
+    alreadyNotifiedThisBatchWeek: alreadyNotified === true,
+  };
+}
+
 function isNudgeWindowOpen(tenant, batchWeek, unfinishedSwipeReminderHours, now = new Date()) {
   try {
     return now.getTime() >= resolveNudgeEligibleAtMs(tenant, batchWeek, unfinishedSwipeReminderHours, now);
@@ -67,19 +103,60 @@ function buildCrewNudgePushBody(remainingCount) {
   return trimPushBody(`${remainingCount} haven't swiped yet — finish the deck`);
 }
 
+function isPivotCrewNudgeCronDisabled(env = process.env) {
+  return env.DISABLE_PIVOT_CREW_NUDGE_CRON === 'true';
+}
+
+function recipientProduct(user) {
+  return user?.pushAppProduct === 'justgo' || user?.pushAppProduct === 'campus'
+    ? user.pushAppProduct
+    : 'legacy';
+}
+
+function zipNudgeDeliveries(recipients = [], messages = [], tickets = [], copyKey) {
+  return recipients.map((user, index) => {
+    const message = messages[index] || {};
+    const ticket = tickets[index] || null;
+    const gateBlocked = /development expo push gate/i.test(ticket?.message || '');
+    const accepted = ticket?.status === 'accepted' || ticket?.status === 'ok';
+    const deliveryStatus = gateBlocked
+      ? 'blocked_dev_gate'
+      : accepted
+        ? 'accepted'
+        : 'failed';
+    return {
+      userId: user?._id?.toString?.() || String(user?._id || ''),
+      username: user.username || null,
+      name: user.name || null,
+      product: recipientProduct(user),
+      copyKey,
+      title: message.title || NUDGE_PUSH_TITLE,
+      body: message.body || '',
+      deliveryStatus,
+      error: accepted ? null : (ticket?.message || 'Expo rejected this push ticket.'),
+    };
+  });
+}
+
 function buildCrewNudgePushMessage(pushToken, payload = {}) {
   const remainingCount = Math.max(1, Number(payload.remainingCount) || 1);
   const ritualPhase = payload.ritualPhase || 'swiping';
   const ritualNudgeType = payload.ritualNudgeType || 'quorum_waiting';
+  const ritualCopy = resolveRitualNotificationCopy(ritualNudgeType, payload.copyPack);
   const body =
     trimPushBody(payload.body) ||
+    (ritualCopy.fromOverlay ? trimPushBody(ritualCopy.body) : '') ||
     resolveRitualNudgePushBody(ritualNudgeType, payload.copyPack) ||
     buildCrewNudgePushBody(remainingCount);
+  const title =
+    trimPushBody(payload.title, 100) ||
+    (ritualCopy.fromOverlay ? trimPushBody(ritualCopy.title, 100) : '') ||
+    NUDGE_PUSH_TITLE;
 
   return {
     to: pushToken,
     sound: 'default',
-    title: NUDGE_PUSH_TITLE,
+    title,
     body,
     data: buildRitualPushData({
       batchWeek: payload.batchWeek,
@@ -93,35 +170,23 @@ function buildCrewNudgePushMessage(pushToken, payload = {}) {
   };
 }
 
-async function sendExpoBatch(messages) {
-  const response = await axios.post(EXPO_PUSH_URL, messages, {
-    headers: {
-      'Content-Type': 'application/json',
-      Accept: 'application/json',
-      'Accept-Encoding': 'gzip, deflate',
-    },
-  });
-
-  const tickets = Array.isArray(response.data?.data)
-    ? response.data.data
-    : [response.data?.data].filter(Boolean);
-
-  let sent = 0;
-  let failed = 0;
-  const errors = [];
-
-  for (const ticket of tickets) {
-    if (ticket?.status === 'ok') {
-      sent += 1;
-    } else {
-      failed += 1;
-      if (ticket?.message) {
-        errors.push(ticket.message);
-      }
-    }
+function scheduleNotificationCopy(options, pack, nudgeType) {
+  if (options.copyTitleKey || options.copyBodyKey) {
+    return {
+      copy: resolveDefinitionNotificationCopy({
+        pack,
+        titleKey: options.copyTitleKey,
+        bodyKey: options.copyBodyKey,
+        titleFallback: options.copyTitleFallback,
+        bodyFallback: options.copyBodyFallback,
+      }),
+      copyKey: options.copyBodyKey || NOTIFICATION_COPY_KEYS.ritual[nudgeType].body,
+    };
   }
-
-  return { sent, failed, errors };
+  return {
+    copy: resolveRitualNotificationCopy(nudgeType, pack),
+    copyKey: NOTIFICATION_COPY_KEYS.ritual[nudgeType].body,
+  };
 }
 
 function isCrewEligibleForNudge(weekState, crewConfig) {
@@ -188,7 +253,7 @@ async function loadNonSwiperPushRecipients(req, crewId, batchWeek) {
     pushToken: { $exists: true, $nin: [null, ''] },
     pushAppEdition: 'pivot',
   })
-    .select('_id pushToken')
+    .select('_id username name pushToken pushAppProduct roles')
     .lean();
 }
 
@@ -245,10 +310,47 @@ async function sendCrewUnfinishedSwipeNudgesForTenant(req, options = {}) {
     return { error: 'batchWeek must be YYYY-Www.', status: 400 };
   }
 
+  if (options.dryRun !== true) {
+    const quiet = quietHoursSendBlockForDelivery(options, {
+      now,
+      timeZone: tenant.pivotDropTimezone,
+      triggerConfig: options.triggerConfig,
+    });
+    if (quiet) {
+      return {
+        ...quiet,
+        data: {
+          tenantKey,
+          batchWeek,
+          skipped: 'quiet_hours',
+          sent: 0,
+          failed: 0,
+          deliveries: [],
+        },
+      };
+    }
+  }
+
+  const ruleMode = Array.isArray(options.rules);
+  const swipeRules = ruleMode ? options.rules : null;
+  if (ruleMode && !swipeRules.length) {
+    return {
+      data: {
+        tenantKey,
+        batchWeek,
+        skipped: 'swipe_nudges_disabled',
+        sent: 0,
+        failed: 0,
+        crewsChecked: 0,
+        deliveries: [],
+      },
+    };
+  }
+
   const crewConfig = mergePivotCrewConfig(tenant.pivotCrewConfig);
   const reminderHours = crewConfig.nudges.unfinishedSwipeReminderHours;
 
-  if (!isNudgeWindowOpen(tenant, batchWeek, reminderHours, now)) {
+  if (!ruleMode && !isNudgeWindowOpen(tenant, batchWeek, reminderHours, now)) {
     return {
       data: {
         tenantKey,
@@ -262,13 +364,29 @@ async function sendCrewUnfinishedSwipeNudgesForTenant(req, options = {}) {
   }
 
   const { PivotCrew, PivotCrewWeekState } = getModels(req, 'PivotCrew', 'PivotCrewWeekState');
-  const weekStates = await PivotCrewWeekState.find({
+  const weekQuery = {
     tenantKey: tenantKey.toLowerCase(),
     batchWeek,
-    'swipeProgress.quorumMet': false,
-  }).lean();
+  };
+  if (!ruleMode) weekQuery['swipeProgress.quorumMet'] = false;
+  const weekStates = await PivotCrewWeekState.find(weekQuery).lean();
 
-  const eligibleStates = weekStates.filter((weekState) => isCrewEligibleForNudge(weekState, crewConfig));
+  const eligibleStates = [];
+  for (const weekState of weekStates) {
+    if (!ruleMode) {
+      if (isCrewEligibleForNudge(weekState, crewConfig)) eligibleStates.push(weekState);
+      continue;
+    }
+    const crewId = weekState.crewId?.toString?.();
+    const already = rulesReference(swipeRules, 'alreadyNotifiedThisBatchWeek')
+      ? await wasCrewNudgeSent(req, crewId, batchWeek)
+      : false;
+    const matched = evaluateRuleGroups(
+      crewNudgeFacts(weekState, tenant, batchWeek, now, already),
+      swipeRules,
+    );
+    if (matched.length) eligibleStates.push(weekState);
+  }
   if (!eligibleStates.length) {
     return {
       data: {
@@ -293,10 +411,11 @@ async function sendCrewUnfinishedSwipeNudgesForTenant(req, options = {}) {
   let failed = 0;
   let crewsNudged = 0;
   const errors = [];
+  const deliveries = [];
 
   for (const weekState of eligibleStates) {
     const crewId = weekState.crewId.toString();
-    if (await wasCrewNudgeSent(req, crewId, batchWeek)) {
+    if (!ruleMode && options.oncePerCrewPerWeek !== false && await wasCrewNudgeSent(req, crewId, batchWeek)) {
       continue;
     }
 
@@ -306,6 +425,9 @@ async function sendCrewUnfinishedSwipeNudgesForTenant(req, options = {}) {
     }
 
     const remainingCount = countUnfinishedSwipers(weekState.swipeProgress);
+    const scheduled = scheduleNotificationCopy(options, copyPack, 'quorum_waiting');
+    const copyKey = scheduled.copyKey;
+    const useScheduleCopy = Boolean(options.copyTitleKey || options.copyBodyKey);
     const messages = recipients.map((recipient) =>
       buildCrewNudgePushMessage(recipient.pushToken, {
         batchWeek,
@@ -315,19 +437,15 @@ async function sendCrewUnfinishedSwipeNudgesForTenant(req, options = {}) {
         ritualPhase: 'swiping',
         ritualNudgeType: 'quorum_waiting',
         copyPack,
+        ...(useScheduleCopy ? { title: scheduled.copy.title, body: scheduled.copy.body } : {}),
       }),
     );
 
-    let batchSent = 0;
-    let batchFailed = 0;
-
-    for (let index = 0; index < messages.length; index += EXPO_BATCH_SIZE) {
-      const batch = messages.slice(index, index + EXPO_BATCH_SIZE);
-      const result = await sendExpoBatch(batch);
-      batchSent += result.sent;
-      batchFailed += result.failed;
-      errors.push(...result.errors);
-    }
+    const pushResult = await sendExpoPushToRecipients(tenantKey, recipients, messages);
+    deliveries.push(...zipNudgeDeliveries(recipients, messages, pushResult.tickets, copyKey));
+    const batchSent = pushResult.sent;
+    const batchFailed = pushResult.failed;
+    errors.push(...pushResult.errors);
 
     if (batchSent > 0) {
       await recordCrewNudgeSent(req, {
@@ -353,6 +471,7 @@ async function sendCrewUnfinishedSwipeNudgesForTenant(req, options = {}) {
       crewsEligible: eligibleStates.length,
       crewsNudged,
       errors: errors.slice(0, 5),
+      deliveries,
     },
   };
 }
@@ -370,33 +489,81 @@ async function sendPendingConsensusNudgesForTenant(req, options = {}) {
 
   const now = options.now || new Date();
   const batchWeek = options.batchWeek || resolvePivotLiveBatchWeek(tenant, now);
+  if (options.dryRun !== true) {
+    const quiet = quietHoursSendBlockForDelivery(options, {
+      now,
+      timeZone: tenant.pivotDropTimezone,
+      triggerConfig: options.triggerConfig,
+    });
+    if (quiet) {
+      return {
+        ...quiet,
+        data: {
+          tenantKey,
+          batchWeek,
+          skipped: 'quiet_hours',
+          sent: 0,
+          failed: 0,
+          deliveries: [],
+        },
+      };
+    }
+  }
   const { PivotCrewWeekState, PivotCrewMembership } = getModels(
     req,
     'PivotCrewWeekState',
     'PivotCrewMembership',
   );
 
-  const decidingStates = await PivotCrewWeekState.find({
+  const ruleMode = Array.isArray(options.rules);
+  const consensusRules = ruleMode ? options.rules : null;
+  if (ruleMode && !consensusRules.length) {
+    return {
+      data: {
+        tenantKey,
+        batchWeek,
+        skipped: 'consensus_nudges_disabled',
+        sent: 0,
+        failed: 0,
+        deliveries: [],
+        crewsNudged: 0,
+      },
+    };
+  }
+
+  const weekQuery = {
     tenantKey: tenantKey.toLowerCase(),
     batchWeek,
-    judgementStatus: 'deciding',
-    consensusStartedAt: { $ne: null },
-    consensusEndsAt: { $ne: null },
-  }).lean();
+  };
+  if (!ruleMode) {
+    weekQuery.judgementStatus = 'deciding';
+    weekQuery.consensusStartedAt = { $ne: null };
+    weekQuery.consensusEndsAt = { $ne: null };
+  }
+  const decidingStates = await PivotCrewWeekState.find(weekQuery).lean();
 
   let sent = 0;
   let failed = 0;
   let crewsNudged = 0;
+  const deliveries = [];
 
   for (const weekState of decidingStates) {
-    const startedMs = new Date(weekState.consensusStartedAt).getTime();
-    const endsMs = new Date(weekState.consensusEndsAt).getTime();
-    if (Number.isNaN(startedMs) || Number.isNaN(endsMs) || endsMs <= startedMs) {
-      continue;
-    }
-    const midpoint = startedMs + (endsMs - startedMs) / 2;
-    if (now.getTime() < midpoint) {
-      continue;
+    if (ruleMode) {
+      const matched = evaluateRuleGroups(
+        crewNudgeFacts(weekState, tenant, batchWeek, now, false),
+        consensusRules,
+      );
+      if (!matched.length) continue;
+    } else {
+      const startedMs = new Date(weekState.consensusStartedAt).getTime();
+      const endsMs = new Date(weekState.consensusEndsAt).getTime();
+      if (Number.isNaN(startedMs) || Number.isNaN(endsMs) || endsMs <= startedMs) {
+        continue;
+      }
+      const midpoint = startedMs + (endsMs - startedMs) / 2;
+      if (now.getTime() < midpoint) {
+        continue;
+      }
     }
 
     const proposedEventId = weekState.proposedEventId?.toString?.();
@@ -433,13 +600,24 @@ async function sendPendingConsensusNudgesForTenant(req, options = {}) {
       continue;
     }
 
+    const crewId = weekState.crewId.toString();
+    if (typeof options.claimCrew === 'function') {
+      const claimed = await options.claimCrew(crewId);
+      if (!claimed) continue;
+    }
+
     const result = await notifyPendingConsensusConfirms(req, {
-      crewId: weekState.crewId.toString(),
+      crewId,
       batchWeek,
       pendingUserIds,
+      copyTitleKey: options.copyTitleKey,
+      copyBodyKey: options.copyBodyKey,
+      copyTitleFallback: options.copyTitleFallback,
+      copyBodyFallback: options.copyBodyFallback,
     });
     sent += result.data?.sent || 0;
     failed += result.data?.failed || 0;
+    deliveries.push(...(result.data?.deliveries || []));
     if ((result.data?.sent || 0) > 0) {
       crewsNudged += 1;
     }
@@ -453,6 +631,7 @@ async function sendPendingConsensusNudgesForTenant(req, options = {}) {
       failed,
       crewsNudged,
       crewsChecked: decidingStates.length,
+      deliveries,
     },
   };
 }
@@ -511,7 +690,7 @@ async function loadActiveMemberPushRecipients(req, crewId, { excludeUserId } = {
     pushToken: { $exists: true, $nin: [null, ''] },
     pushAppEdition: 'pivot',
   })
-    .select('_id pushToken')
+    .select('_id pushToken roles')
     .lean();
 }
 
@@ -549,16 +728,10 @@ async function notifyCrewConsensusPeers(
       }),
     );
 
-    let sent = 0;
-    let failed = 0;
-    for (let index = 0; index < messages.length; index += EXPO_BATCH_SIZE) {
-      const batch = messages.slice(index, index + EXPO_BATCH_SIZE);
-      const result = await sendExpoBatch(batch);
-      sent += result.sent;
-      failed += result.failed;
-    }
+    const tenantKey = req.school;
+    const pushResult = await sendExpoPushToRecipients(tenantKey, recipients, messages);
 
-    return { data: { sent, failed } };
+    return { data: { sent: pushResult.sent, failed: pushResult.failed } };
   } catch (error) {
     console.error('[pivotCrewNudge] consensus peer notify failed', {
       crewId,
@@ -578,10 +751,14 @@ async function notifyPendingConsensusConfirms(
     crewId,
     batchWeek,
     pendingUserIds = [],
+    copyTitleKey = null,
+    copyBodyKey = null,
+    copyTitleFallback = null,
+    copyBodyFallback = null,
   },
 ) {
   if (!pendingUserIds.length) {
-    return { data: { sent: 0, failed: 0 } };
+    return { data: { sent: 0, failed: 0, deliveries: [] } };
   }
 
   try {
@@ -591,14 +768,21 @@ async function notifyPendingConsensusConfirms(
       pushToken: { $exists: true, $nin: [null, ''] },
       pushAppEdition: 'pivot',
     })
-      .select('_id pushToken')
+      .select('_id username name pushToken pushAppProduct roles')
       .lean();
 
     if (!recipients.length) {
-      return { data: { sent: 0, failed: 0 } };
+      return { data: { sent: 0, failed: 0, deliveries: [] } };
     }
 
     const copyPack = await getMergedCopyPackOrEmpty(req, { tenantKey: req.school });
+    const scheduled = scheduleNotificationCopy({
+      copyTitleKey,
+      copyBodyKey,
+      copyTitleFallback,
+      copyBodyFallback,
+    }, copyPack, 'decide_pending');
+    const useScheduleCopy = Boolean(copyTitleKey || copyBodyKey);
     const messages = recipients.map((recipient) =>
       buildCrewNudgePushMessage(recipient.pushToken, {
         batchWeek,
@@ -606,31 +790,39 @@ async function notifyPendingConsensusConfirms(
         ritualPhase: 'decide',
         ritualNudgeType: 'decide_pending',
         copyPack,
+        ...(useScheduleCopy ? { title: scheduled.copy.title, body: scheduled.copy.body } : {}),
       }),
     );
 
-    let sent = 0;
-    let failed = 0;
-    for (let index = 0; index < messages.length; index += EXPO_BATCH_SIZE) {
-      const batch = messages.slice(index, index + EXPO_BATCH_SIZE);
-      const result = await sendExpoBatch(batch);
-      sent += result.sent;
-      failed += result.failed;
-    }
+    const tenantKey = req.school;
+    const pushResult = await sendExpoPushToRecipients(tenantKey, recipients, messages);
+    const copyKey = scheduled.copyKey;
 
-    return { data: { sent, failed } };
+    return {
+      data: {
+        sent: pushResult.sent,
+        failed: pushResult.failed,
+        deliveries: zipNudgeDeliveries(
+          recipients,
+          messages,
+          pushResult.tickets,
+          copyKey,
+        ),
+      },
+    };
   } catch (error) {
     console.error('[pivotCrewNudge] pending confirm notify failed', {
       crewId,
       batchWeek,
       error: error.message,
     });
-    return { data: { sent: 0, failed: 1 } };
+    return { data: { sent: 0, failed: 1, deliveries: [] } };
   }
 }
 
 module.exports = {
   NUDGE_PUSH_TITLE,
+  isPivotCrewNudgeCronDisabled,
   buildCrewNudgePushBody,
   buildCrewNudgePushMessage,
   countUnfinishedSwipers,

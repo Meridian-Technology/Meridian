@@ -400,7 +400,7 @@ function TenantDetail({
             </div>
           </div>
           <p className="tenant-detail__drop-hint">
-            Edit in tenant details or Platform Admin → Weekly drop.
+            Edit in tenant details or the city Notifications tab (Platform Admin → Just Go → city).
           </p>
         </section>
       ) : null}

@@ -25,6 +25,10 @@ const justGoWaitlistSchema = require('../schemas/justGoWaitlist');
 const justGoLandingQrSchema = require('../schemas/justGoLandingQr');
 const pivotComputeJobSchema = require('../schemas/pivotComputeJob');
 const pivotComputeJobAttemptSchema = require('../schemas/pivotComputeJobAttempt');
+const meridianJobRunSchema = require('../schemas/meridianJobRun');
+const meridianJobAttemptSchema = require('../schemas/meridianJobAttempt');
+const meridianJobDeliverySchema = require('../schemas/meridianJobDelivery');
+const meridianNotificationDefinitionSchema = require('../schemas/meridianNotificationDefinition');
 
 /**
  * Get models from the global/platform DB (cross-tenant data).
@@ -32,7 +36,7 @@ const pivotComputeJobAttemptSchema = require('../schemas/pivotComputeJobAttempt'
  * Requires req.globalDb to be set (see app.js middleware).
  *
  * @param {object} req - request with req.globalDb
- * @param {...string} names - model names including 'GlobalUser', 'PlatformRole', 'PlatformAdminInvite', 'PivotCitySource', 'PivotCreatorGrant', 'PivotCopyPack', 'PivotCarouselDeck', 'PivotCarouselVoice', 'JustGoLandingEvent', 'JustGoWaitlist', 'JustGoLandingQr', …
+ * @param {...string} names - model names including 'GlobalUser', 'PlatformRole', 'PlatformAdminInvite', 'PivotCitySource', 'PivotCreatorGrant', 'PivotCopyPack', 'PivotCarouselDeck', 'PivotCarouselVoice', 'JustGoLandingEvent', 'JustGoWaitlist', 'JustGoLandingQr', 'MeridianJobRun', 'MeridianJobAttempt', 'MeridianJobDelivery', 'MeridianNotificationDefinition', …
  * @returns {object} map of requested models
  */
 const getGlobalModels = (req, ...names) => {
@@ -144,6 +148,26 @@ const getGlobalModels = (req, ...names) => {
             'PivotComputeJobAttempt',
             pivotComputeJobAttemptSchema,
             'pivot_compute_job_attempts'
+        ),
+        MeridianJobRun: db.model(
+            'MeridianJobRun',
+            meridianJobRunSchema,
+            'meridian_job_runs'
+        ),
+        MeridianJobAttempt: db.model(
+            'MeridianJobAttempt',
+            meridianJobAttemptSchema,
+            'meridian_job_attempts'
+        ),
+        MeridianJobDelivery: db.model(
+            'MeridianJobDelivery',
+            meridianJobDeliverySchema,
+            'meridian_job_deliveries'
+        ),
+        MeridianNotificationDefinition: db.model(
+            'MeridianNotificationDefinition',
+            meridianNotificationDefinitionSchema,
+            'meridian_notification_definitions'
         ),
     };
 

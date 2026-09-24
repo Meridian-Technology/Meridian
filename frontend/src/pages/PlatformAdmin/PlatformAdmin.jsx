@@ -28,6 +28,8 @@ function PlatformAdmin() {
     {
       label: 'Weekly drop',
       icon: 'mdi:bell-ring-outline',
+      // City ops live on Just Go → tenant Notifications (?page=9). This tab
+      // stays so /platform-admin?page=2 bookmarks do not shift Platform admins.
       element: <PivotWeeklyDropPage />,
     },
     {

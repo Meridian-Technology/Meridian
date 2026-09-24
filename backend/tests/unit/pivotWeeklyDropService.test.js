@@ -31,6 +31,8 @@ const {
   resolveWeeklyDropPushCopy,
   resolveWeeklyDropPushCopyForRecipient,
   buildWeeklyDropPushMessages,
+  buildPushRunRecipientRows,
+  capPushRunRecipients,
   PUSH_TITLE,
   PUSH_BODY,
 } = require('../../services/pivotWeeklyDropService');
@@ -361,7 +363,7 @@ describe('pivotWeeklyDropService', () => {
     expect(result.dropSchedule.pushCopy.title).toBe(PUSH_TITLE);
   });
 
-  it('resolveWeeklyDropPushCopy prefers per-week override and tenant defaults', () => {
+  it('resolveWeeklyDropPushCopy prefers send > week override > tenant > copy pack', () => {
     const tenant = {
       pivotDropPushTitle: 'NYC drop',
       pivotDropPushBody: 'Swipe the week',
@@ -393,6 +395,24 @@ describe('pivotWeeklyDropService', () => {
       title: 'One-off',
       body: 'Tonight only',
       source: 'send',
+    });
+    expect(
+      resolveWeeklyDropPushCopy(
+        {},
+        '2026-W23',
+        {
+          copyPack: {
+            entries: {
+              'notifications.weeklyDrop.title': 'pack title',
+              'notifications.weeklyDrop.body': 'pack body',
+            },
+          },
+        },
+      ),
+    ).toEqual({
+      title: 'pack title',
+      body: 'pack body',
+      source: 'copy_pack',
     });
   });
 
@@ -467,6 +487,97 @@ describe('pivotWeeklyDropService', () => {
     expect(result.sent).toBe(2);
     expect(result.snapshotRebuilt).toBe(true);
     expect(rebuildWeeklySnapshot).toHaveBeenCalledWith(req, { batchWeek: '2026-W23' });
+  });
+
+  it('caps push-run recipient rows at 500 and records overflow', () => {
+    const rows = Array.from({ length: 501 }, (_, index) => ({
+      userId: String(index),
+      deliveryStatus: 'accepted',
+    }));
+    const capped = capPushRunRecipients(rows, 500);
+    expect(capped.recipients).toHaveLength(500);
+    expect(capped.recipientOverflowCount).toBe(1);
+  });
+
+  it('buildPushRunRecipientRows maps Expo tickets to users', () => {
+    const rows = buildPushRunRecipientRows(
+      [
+        { _id: '1', username: 'ari', name: 'Ari', pushAppProduct: 'justgo' },
+        { _id: '2', username: 'ben', name: 'Ben', pushAppProduct: 'campus' },
+      ],
+      [
+        { status: 'accepted', message: null },
+        { status: 'failed', message: 'DeviceNotRegistered' },
+      ],
+    );
+
+    expect(rows).toEqual([
+      expect.objectContaining({
+        userId: '2',
+        username: 'ben',
+        deliveryStatus: 'failed',
+        error: 'DeviceNotRegistered',
+      }),
+      expect.objectContaining({
+        userId: '1',
+        username: 'ari',
+        deliveryStatus: 'accepted',
+        product: 'justgo',
+      }),
+    ]);
+  });
+
+  it('sendWeeklyDropPush records per-user delivery outcomes on the push run', async () => {
+    getTenantByKey.mockResolvedValue(nycTenant);
+    const create = jest.fn().mockResolvedValue({});
+    getModels.mockImplementation(() => ({
+      Event: { countDocuments: jest.fn().mockResolvedValue(3) },
+      User: {
+        find: jest.fn().mockReturnValue({
+          select: jest.fn().mockReturnValue({
+            lean: jest.fn().mockResolvedValue([
+              {
+                _id: '1',
+                username: 'ari',
+                name: 'Ari Example',
+                pushToken: 'ExponentPushToken[a]',
+                pushAppEdition: 'pivot',
+                pushAppProduct: 'justgo',
+              },
+              {
+                _id: '2',
+                username: 'ben',
+                name: 'Ben Example',
+                pushToken: 'ExponentPushToken[b]',
+                pushAppEdition: 'pivot',
+                pushAppProduct: 'justgo',
+              },
+            ]),
+          }),
+        }),
+      },
+      PivotCrewMembership: { find: jest.fn().mockReturnValue({ select: jest.fn().mockReturnValue({ lean: jest.fn().mockResolvedValue([]) }) }) },
+      PivotCrewWeekState: { find: jest.fn().mockReturnValue({ select: jest.fn().mockReturnValue({ lean: jest.fn().mockResolvedValue([]) }) }) },
+      PivotEventIntent: {
+        distinct: jest.fn().mockResolvedValue([]),
+        find: jest.fn().mockReturnValue({ select: jest.fn().mockReturnValue({ lean: jest.fn().mockResolvedValue([]) }) }),
+      },
+      PivotDeckSnapshot: { find: jest.fn().mockReturnValue({ select: jest.fn().mockReturnValue({ lean: jest.fn().mockResolvedValue([]) }) }) },
+      PivotDropPushRun: { create },
+    }));
+    axios.post.mockResolvedValue({
+      data: { data: [{ status: 'ok' }, { status: 'error', message: 'DeviceNotRegistered' }] },
+    });
+    rebuildWeeklySnapshot.mockResolvedValue({ data: { batchWeek: '2026-W23' } });
+
+    await sendWeeklyDropPush({}, 'nyc', { batchWeek: '2026-W23', force: true });
+
+    expect(create).toHaveBeenCalledWith(expect.objectContaining({
+      recipients: expect.arrayContaining([
+        expect.objectContaining({ userId: '2', deliveryStatus: 'failed', error: 'DeviceNotRegistered' }),
+        expect.objectContaining({ userId: '1', deliveryStatus: 'accepted' }),
+      ]),
+    }));
   });
 
   it('separates known Meridian and Just Go tokens before calling Expo', async () => {

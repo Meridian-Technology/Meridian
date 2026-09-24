@@ -38,6 +38,9 @@ const {
 const {
   normalizeRichLocationControls,
 } = require('../utilities/justGoRichLocationControls');
+const {
+  normalizeMeridianNotificationOverrides,
+} = require('../utilities/meridianNotificationOverrides');
 
 const PIVOT_DROP_PUSH_TITLE_MAX = 100;
 const PIVOT_DROP_PUSH_BODY_MAX = 240;
@@ -120,6 +123,14 @@ function normalizePivotDropFields(row = {}, target = {}) {
     target.pivotDropPushBody = pushBody;
   } else if (row.pivotDropPushBody !== undefined) {
     target.pivotDropPushBody = undefined;
+  }
+  const notificationOverrides = normalizeMeridianNotificationOverrides(
+    row.meridianNotificationOverrides,
+  );
+  if (notificationOverrides) {
+    target.meridianNotificationOverrides = notificationOverrides;
+  } else if (row.meridianNotificationOverrides !== undefined) {
+    target.meridianNotificationOverrides = undefined;
   }
   return target;
 }

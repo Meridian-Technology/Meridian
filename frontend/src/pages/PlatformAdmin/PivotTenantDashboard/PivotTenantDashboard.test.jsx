@@ -57,8 +57,8 @@ jest.mock('./PivotVoicePage', () => ({ scope, tenantKey }) => (
 jest.mock('./PivotTenantLaunchPage', () => ({ tenantKey }) => (
   <div>city-launch-page:{tenantKey}</div>
 ));
-jest.mock('../PivotWeeklyDrop/PivotWeeklyDropPage', () => ({ tenantKey }) => (
-  <div>city-weekly-drop-page:{tenantKey}</div>
+jest.mock('../PivotNotifications/PivotNotificationsPage', () => ({ tenantKey }) => (
+  <div>city-notifications-page:{tenantKey}</div>
 ));
 jest.mock('./PivotComputeJobs', () => ({ tenantKey }) => (
   <div>city-compute-jobs-page:{tenantKey}</div>
@@ -180,11 +180,11 @@ describe('PivotTenantDashboard city operations shell', () => {
     expect(screen.queryByText(/\+1/)).toBeNull();
   });
 
-  it('appends the tenant weekly drop panel without renumbering existing pages', () => {
+  it('appends the tenant Notifications panel (former Weekly drop) without renumbering existing pages', () => {
     renderDashboard('/platform-admin/pivot/nyc?page=9');
 
-    expect(screen.getByText('city-weekly-drop-page:nyc')).toBeInTheDocument();
-    expect(screen.getByTestId('menu-9')).toHaveTextContent('Weekly drop');
+    expect(screen.getByText('city-notifications-page:nyc')).toBeInTheDocument();
+    expect(screen.getByTestId('menu-9')).toHaveTextContent('Notifications');
     expect(screen.getByTestId('menu-9')).toHaveAttribute(
       'data-icon',
       'mdi:bell-ring-outline',

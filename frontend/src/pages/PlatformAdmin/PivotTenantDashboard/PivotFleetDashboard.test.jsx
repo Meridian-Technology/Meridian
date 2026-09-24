@@ -54,6 +54,9 @@ jest.mock('./PivotComputeJobs', () => ({
 jest.mock('./PivotTenantAnalyticsPage', () => ({ scope }) => (
   <div>fleet-analytics-page:{scope}</div>
 ));
+jest.mock('../PivotNotifications/PivotNotificationsPage', () => () => (
+  <div>fleet-notifications-page</div>
+));
 jest.mock('./PivotTenantOverviewPage', () => () => <div>overview-page</div>);
 jest.mock('./PivotTenantCurationPage', () => () => <div>curation-page</div>);
 jest.mock('./PivotTenantJourneysPage', () => () => <div>journeys-page</div>);
@@ -125,6 +128,7 @@ describe('PivotFleetDashboard', () => {
     expect(screen.getByTestId('menu-2')).toHaveTextContent('Launch');
     expect(screen.getByTestId('menu-3')).toHaveTextContent('Compute jobs');
     expect(screen.getByTestId('menu-4')).toHaveTextContent('Analytics');
+    expect(screen.getByTestId('menu-5')).toHaveTextContent('Notifications');
   });
 
   it('shows Voice at /platform-admin/pivot?page=1', () => {
@@ -154,6 +158,14 @@ describe('PivotFleetDashboard', () => {
     renderFleet('/platform-admin/pivot?page=4');
 
     expect(screen.getByText('fleet-analytics-page:fleet')).toBeInTheDocument();
+    expect(screen.queryByText('fleet-overview-page')).not.toBeInTheDocument();
+  });
+
+  it('shows fleet Notifications at /platform-admin/pivot?page=5 without shifting Analytics', () => {
+    renderFleet('/platform-admin/pivot?page=5');
+
+    expect(screen.getByText('fleet-notifications-page')).toBeInTheDocument();
+    expect(screen.queryByText('fleet-analytics-page:fleet')).not.toBeInTheDocument();
     expect(screen.queryByText('fleet-overview-page')).not.toBeInTheDocument();
   });
 });

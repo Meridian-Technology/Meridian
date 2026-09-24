@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import PivotWeeklyDropPage from './PivotWeeklyDropPage';
 
 const mockUseFetch = jest.fn();
@@ -48,6 +48,14 @@ describe('PivotWeeklyDropPage tenant panel', () => {
   beforeEach(() => {
     mockUseFetch.mockImplementation((url) => {
       if (!url) return { data: null, loading: false, error: null, refetch: jest.fn() };
+      if (String(url).includes('/meridian/jobs/runs')) {
+        return {
+          data: { success: true, data: { runs: [] } },
+          loading: false,
+          error: null,
+          refetch: jest.fn(),
+        };
+      }
       return {
         data: {
           success: true,
@@ -86,7 +94,26 @@ describe('PivotWeeklyDropPage tenant panel', () => {
                 batchWeek: '2026-W37',
                 accepted: 3,
                 failed: 1,
+                attempted: 4,
                 createdAt: '2026-09-07T21:00:00.000Z',
+                recipients: [
+                  {
+                    userId: 'user-2',
+                    name: 'Ben Example',
+                    username: 'ben',
+                    product: 'justgo',
+                    deliveryStatus: 'failed',
+                    error: 'DeviceNotRegistered',
+                  },
+                  {
+                    userId: 'user-1',
+                    name: 'Ari Example',
+                    username: 'ari',
+                    product: 'justgo',
+                    deliveryStatus: 'accepted',
+                    error: null,
+                  },
+                ],
               },
             ],
           },
@@ -118,5 +145,19 @@ describe('PivotWeeklyDropPage tenant panel', () => {
     expect(screen.getByText('@ari')).toBeInTheDocument();
     expect(screen.getByText('3 accepted')).toBeInTheDocument();
     expect(screen.getByText('1 failed')).toBeInTheDocument();
+  });
+
+  it('expands a recent send to show specific recipients', () => {
+    render(
+      <PivotWeeklyDropPage
+        tenantKey="sf"
+        tenant={{ tenantKey: 'sf', name: 'San Francisco', pivotPilot: true }}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Inspect 2 users' }));
+    expect(screen.getByText('Ben Example')).toBeInTheDocument();
+    expect(screen.getByText('DeviceNotRegistered')).toBeInTheDocument();
+    expect(screen.getAllByText('Ari Example').length).toBeGreaterThan(0);
   });
 });

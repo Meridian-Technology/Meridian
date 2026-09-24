@@ -68,18 +68,6 @@
       "shipped": "block"
     },
     {
-      "path": "accountSettings.safety.blockedEmpty",
-      "kind": "string",
-      "params": [],
-      "shipped": "you have not blocked anyone"
-    },
-    {
-      "path": "accountSettings.safety.blockedTitle",
-      "kind": "string",
-      "params": [],
-      "shipped": "blocked"
-    },
-    {
       "path": "accountSettings.safety.blockError",
       "kind": "string",
       "params": [],
@@ -101,6 +89,18 @@
       "sampleArgs": {
         "name": "alex"
       }
+    },
+    {
+      "path": "accountSettings.safety.blockedEmpty",
+      "kind": "string",
+      "params": [],
+      "shipped": "you have not blocked anyone"
+    },
+    {
+      "path": "accountSettings.safety.blockedTitle",
+      "kind": "string",
+      "params": [],
+      "shipped": "blocked"
     },
     {
       "path": "accountSettings.safety.contactCta",
@@ -543,16 +543,16 @@
       "shipped": "add to calendar"
     },
     {
-      "path": "calendar.added",
-      "kind": "string",
-      "params": [],
-      "shipped": "in your calendar ✓"
-    },
-    {
       "path": "calendar.addFailed",
       "kind": "string",
       "params": [],
       "shipped": "couldn't add to calendar. try again"
+    },
+    {
+      "path": "calendar.added",
+      "kind": "string",
+      "params": [],
+      "shipped": "in your calendar ✓"
     },
     {
       "path": "calendar.calendarUnavailable",
@@ -750,16 +750,16 @@
       "usesTokens": true
     },
     {
-      "path": "crew.addMember.invited",
-      "kind": "string",
-      "params": [],
-      "shipped": "invited"
-    },
-    {
       "path": "crew.addMember.inviteError",
       "kind": "string",
       "params": [],
       "shipped": "could not send invite. try again"
+    },
+    {
+      "path": "crew.addMember.invited",
+      "kind": "string",
+      "params": [],
+      "shipped": "invited"
     },
     {
       "path": "crew.addMember.searchEmpty",
@@ -1599,17 +1599,17 @@
       "usesTokens": true
     },
     {
-      "path": "crew.invited",
-      "kind": "string",
-      "params": [],
-      "shipped": "invited"
-    },
-    {
       "path": "crew.inviteError",
       "kind": "string",
       "params": [],
       "shipped": "could not create {group.singular} invites. try again",
       "usesTokens": true
+    },
+    {
+      "path": "crew.invited",
+      "kind": "string",
+      "params": [],
+      "shipped": "invited"
     },
     {
       "path": "crew.invites.accept",
@@ -1787,6 +1787,13 @@
       "usesTokens": true
     },
     {
+      "path": "crew.onboarding.createError",
+      "kind": "string",
+      "params": [],
+      "shipped": "could not create {group.singular}. try again",
+      "usesTokens": true
+    },
+    {
       "path": "crew.onboarding.createdHint",
       "kind": "template",
       "params": [
@@ -1796,13 +1803,6 @@
       "sampleArgs": {
         "crewName": "friday crew"
       }
-    },
-    {
-      "path": "crew.onboarding.createError",
-      "kind": "string",
-      "params": [],
-      "shipped": "could not create {group.singular}. try again",
-      "usesTokens": true
     },
     {
       "path": "crew.onboarding.emptyName",
@@ -2403,6 +2403,12 @@
       "usesTokens": true
     },
     {
+      "path": "crew.week.lockInCta",
+      "kind": "string",
+      "params": [],
+      "shipped": "rank picks"
+    },
+    {
       "path": "crew.week.lockedBadge",
       "kind": "string",
       "params": [],
@@ -2424,12 +2430,6 @@
       "sampleArgs": {
         "count": 2
       }
-    },
-    {
-      "path": "crew.week.lockInCta",
-      "kind": "string",
-      "params": [],
-      "shipped": "rank picks"
     },
     {
       "path": "crew.week.memberCount",
@@ -2633,16 +2633,16 @@
       "shipped": "save"
     },
     {
-      "path": "editInterests.savedToast",
-      "kind": "string",
-      "params": [],
-      "shipped": "saved. pull week to refresh your deck"
-    },
-    {
       "path": "editInterests.saveError",
       "kind": "string",
       "params": [],
       "shipped": "could not save your picks. try again."
+    },
+    {
+      "path": "editInterests.savedToast",
+      "kind": "string",
+      "params": [],
+      "shipped": "saved. pull week to refresh your deck"
     },
     {
       "path": "editInterests.subtitle",
@@ -2754,16 +2754,16 @@
       "shipped": "dismiss event preview"
     },
     {
-      "path": "eventDetail.expandedPoster",
-      "kind": "string",
-      "params": [],
-      "shipped": "event poster"
-    },
-    {
       "path": "eventDetail.expandPoster",
       "kind": "string",
       "params": [],
       "shipped": "expand event poster"
+    },
+    {
+      "path": "eventDetail.expandedPoster",
+      "kind": "string",
+      "params": [],
+      "shipped": "event poster"
     },
     {
       "path": "eventDetail.getTickets",
@@ -2838,16 +2838,16 @@
       "shipped": "Yes"
     },
     {
-      "path": "eventDetail.registeredError",
-      "kind": "string",
-      "params": [],
-      "shipped": "couldn't save that. try again"
-    },
-    {
       "path": "eventDetail.registerSection",
       "kind": "string",
       "params": [],
       "shipped": "Registration"
+    },
+    {
+      "path": "eventDetail.registeredError",
+      "kind": "string",
+      "params": [],
+      "shipped": "couldn't save that. try again"
     },
     {
       "path": "eventDetail.shareCta",
@@ -2903,6 +2903,25 @@
       "shipped": "in your plans"
     },
     {
+      "path": "explore.backToDiscover",
+      "kind": "string",
+      "params": [],
+      "shipped": "back to discover"
+    },
+    {
+      "path": "explore.daySectionCount",
+      "kind": "template",
+      "params": [
+        "label",
+        "count"
+      ],
+      "shipped": "{label} · {count, plural, one {# event} other {# events}}",
+      "sampleArgs": {
+        "label": "2h",
+        "count": 2
+      }
+    },
+    {
       "path": "explore.emptyBody",
       "kind": "string",
       "params": [],
@@ -2936,13 +2955,13 @@
       "path": "explore.emptyWeekBody",
       "kind": "string",
       "params": [],
-      "shipped": "nothing staged or published for this drop week yet"
+      "shipped": "no published events in the city over the next few months yet"
     },
     {
       "path": "explore.emptyWeekTitle",
       "kind": "string",
       "params": [],
-      "shipped": "no events this week"
+      "shipped": "nothing upcoming"
     },
     {
       "path": "explore.eventCount",
@@ -2954,6 +2973,18 @@
       "sampleArgs": {
         "count": 2
       }
+    },
+    {
+      "path": "explore.featuredCity",
+      "kind": "string",
+      "params": [],
+      "shipped": "what's on"
+    },
+    {
+      "path": "explore.featuredWeekend",
+      "kind": "string",
+      "params": [],
+      "shipped": "this weekend"
     },
     {
       "path": "explore.filterAll",
@@ -2979,7 +3010,7 @@
       "params": [
         "city"
       ],
-      "shipped": "this week in {city}",
+      "shipped": "{city}",
       "sampleArgs": {
         "city": "brooklyn"
       }
@@ -3009,22 +3040,76 @@
       "shipped": "interested"
     },
     {
+      "path": "explore.layoutAgenda",
+      "kind": "string",
+      "params": [],
+      "shipped": "agenda"
+    },
+    {
+      "path": "explore.layoutAgendaA11y",
+      "kind": "string",
+      "params": [],
+      "shipped": "show agenda"
+    },
+    {
+      "path": "explore.layoutDiscoverA11y",
+      "kind": "string",
+      "params": [],
+      "shipped": "show discover"
+    },
+    {
+      "path": "explore.layoutRails",
+      "kind": "string",
+      "params": [],
+      "shipped": "discover"
+    },
+    {
       "path": "explore.loadError",
       "kind": "string",
       "params": [],
       "shipped": "couldn't load explore. pull to refresh"
     },
     {
+      "path": "explore.loadMore",
+      "kind": "string",
+      "params": [],
+      "shipped": "loading more"
+    },
+    {
       "path": "explore.loading",
       "kind": "string",
       "params": [],
-      "shipped": "loading this week's events"
+      "shipped": "loading upcoming events"
     },
     {
       "path": "explore.nav",
       "kind": "string",
       "params": [],
       "shipped": "explore"
+    },
+    {
+      "path": "explore.nightChip.fri",
+      "kind": "string",
+      "params": [],
+      "shipped": "fri"
+    },
+    {
+      "path": "explore.nightChip.sat",
+      "kind": "string",
+      "params": [],
+      "shipped": "sat"
+    },
+    {
+      "path": "explore.nightChip.sun",
+      "kind": "string",
+      "params": [],
+      "shipped": "sun"
+    },
+    {
+      "path": "explore.nightChip.thu",
+      "kind": "string",
+      "params": [],
+      "shipped": "thu"
     },
     {
       "path": "explore.rails.crews",
@@ -3076,6 +3161,12 @@
       "shipped": "search events or hosts"
     },
     {
+      "path": "explore.seeAll",
+      "kind": "string",
+      "params": [],
+      "shipped": "see all"
+    },
+    {
       "path": "explore.showPassed",
       "kind": "string",
       "params": [],
@@ -3097,7 +3188,26 @@
       "path": "explore.ticker",
       "kind": "string",
       "params": [],
-      "shipped": "browse the drop. just go"
+      "shipped": "what's on in the city. just go"
+    },
+    {
+      "path": "explore.tonight",
+      "kind": "string",
+      "params": [],
+      "shipped": "tonight"
+    },
+    {
+      "path": "explore.upcomingSubtitle",
+      "kind": "template",
+      "params": [
+        "city",
+        "count"
+      ],
+      "shipped": "{city} · {count, plural, one {# upcoming} other {# upcoming}}",
+      "sampleArgs": {
+        "city": "brooklyn",
+        "count": 2
+      }
     },
     {
       "path": "explore.weekRangeSubtitle",
@@ -3590,6 +3700,18 @@
       "kind": "string",
       "params": [],
       "shipped": "changed your mind?"
+    },
+    {
+      "path": "landing.app.cta",
+      "kind": "string",
+      "params": [],
+      "shipped": "get started"
+    },
+    {
+      "path": "landing.app.tagline",
+      "kind": "string",
+      "params": [],
+      "shipped": "it's in the name"
     },
     {
       "path": "landing.web.cities.empty",
@@ -4199,6 +4321,120 @@
       "shipped": "you're on the list"
     },
     {
+      "path": "notifications.definition.body",
+      "kind": "string",
+      "params": [],
+      "shipped": "open {brand.name}",
+      "usesTokens": true
+    },
+    {
+      "path": "notifications.definition.title",
+      "kind": "string",
+      "params": [],
+      "shipped": "just go*"
+    },
+    {
+      "path": "notifications.ritual.decide.body",
+      "kind": "string",
+      "params": [],
+      "shipped": "confirm where your {group.singular}'s going. locks soon",
+      "usesTokens": true
+    },
+    {
+      "path": "notifications.ritual.decide.title",
+      "kind": "string",
+      "params": [],
+      "shipped": "just go*"
+    },
+    {
+      "path": "notifications.ritual.decidePending.body",
+      "kind": "string",
+      "params": [],
+      "shipped": "your {group.singular} is waiting on your confirm",
+      "usesTokens": true
+    },
+    {
+      "path": "notifications.ritual.decidePending.title",
+      "kind": "string",
+      "params": [],
+      "shipped": "just go*"
+    },
+    {
+      "path": "notifications.ritual.decideStarted.body",
+      "kind": "string",
+      "params": [],
+      "shipped": "confirm where you're going. locks in a few hours"
+    },
+    {
+      "path": "notifications.ritual.decideStarted.title",
+      "kind": "string",
+      "params": [],
+      "shipped": "just go*"
+    },
+    {
+      "path": "notifications.ritual.decideSwap.body",
+      "kind": "string",
+      "params": [],
+      "shipped": "new pick. confirm again"
+    },
+    {
+      "path": "notifications.ritual.decideSwap.title",
+      "kind": "string",
+      "params": [],
+      "shipped": "just go*"
+    },
+    {
+      "path": "notifications.ritual.quorumWaiting.body",
+      "kind": "string",
+      "params": [],
+      "shipped": "your {group.singular} is waiting on swipes",
+      "usesTokens": true
+    },
+    {
+      "path": "notifications.ritual.quorumWaiting.title",
+      "kind": "string",
+      "params": [],
+      "shipped": "just go*"
+    },
+    {
+      "path": "notifications.ritual.recap.body",
+      "kind": "string",
+      "params": [],
+      "shipped": "see where your {group.plural} landed this week",
+      "usesTokens": true
+    },
+    {
+      "path": "notifications.ritual.recap.title",
+      "kind": "string",
+      "params": [],
+      "shipped": "just go*"
+    },
+    {
+      "path": "notifications.ritual.swipe.body",
+      "kind": "string",
+      "params": [],
+      "shipped": "finish swiping for your {group.plural} this week",
+      "usesTokens": true
+    },
+    {
+      "path": "notifications.ritual.swipe.title",
+      "kind": "string",
+      "params": [],
+      "shipped": "just go*"
+    },
+    {
+      "path": "notifications.weeklyDrop.body",
+      "kind": "string",
+      "params": [],
+      "shipped": "What are you doing this week? Just go."
+    },
+    {
+      "path": "notifications.weeklyDrop.title",
+      "kind": "string",
+      "params": [],
+      "shipped": "just go*"
+    },
+    {
       "path": "onboarding.emptyName",
       "kind": "string",
       "params": [],
@@ -4226,7 +4462,7 @@
       "path": "onboarding.subtitle",
       "kind": "string",
       "params": [],
-      "shipped": "friends see this on events. no campus username needed"
+      "shipped": "friends see this on events."
     },
     {
       "path": "onboarding.ticker",
@@ -4833,10 +5069,34 @@
       "shipped": "peek design system"
     },
     {
+      "path": "week.dropSoonBody",
+      "kind": "string",
+      "params": [],
+      "shipped": "next drop is almost here"
+    },
+    {
+      "path": "week.exploreEmptyBody",
+      "kind": "string",
+      "params": [],
+      "shipped": "nothing saved yet. see what's on"
+    },
+    {
       "path": "week.exploreRestCta",
       "kind": "string",
       "params": [],
       "shipped": "find more plans"
+    },
+    {
+      "path": "week.finishDeckBody",
+      "kind": "string",
+      "params": [],
+      "shipped": "nothing saved yet. finish the deck"
+    },
+    {
+      "path": "week.finishDeckCta",
+      "kind": "string",
+      "params": [],
+      "shipped": "finish deck"
     },
     {
       "path": "week.header",
@@ -4912,6 +5172,17 @@
       "shipped": "keep swiping"
     },
     {
+      "path": "week.stillInDeck",
+      "kind": "template",
+      "params": [
+        "count"
+      ],
+      "shipped": "{count, plural, one {# event still to swipe} other {# events still to swipe}}",
+      "sampleArgs": {
+        "count": 2
+      }
+    },
+    {
       "path": "week.subtitle",
       "kind": "string",
       "params": [],
@@ -4922,6 +5193,18 @@
       "kind": "string",
       "params": [],
       "shipped": "this week"
+    },
+    {
+      "path": "week.unopenedBody",
+      "kind": "string",
+      "params": [],
+      "shipped": "swipe through what's on. tickets come after you pick"
+    },
+    {
+      "path": "week.viewWeekCta",
+      "kind": "string",
+      "params": [],
+      "shipped": "view week"
     },
     {
       "path": "welcome.tryJustGoCta",

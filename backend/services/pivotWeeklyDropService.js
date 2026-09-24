@@ -1,4 +1,3 @@
-const axios = require('axios');
 const mongoose = require('mongoose');
 const connectionsManager = require('../connectionsManager');
 const getModels = require('./getModelService');
@@ -18,12 +17,16 @@ const {
   resolveCrewWeeklyDropVariant,
 } = require('../utilities/pivotCrewPushCopy');
 const { getMergedCopyPackOrEmpty } = require('./pivotCopyService');
+const { mergeWeeklyDropPushCopy } = require('../utilities/meridianJobCopyResolve');
 const { computeRitualPhase } = require('../utilities/pivotRitualPhase');
 const { buildDecideQueueOrder } = require('../utilities/pivotCrewDecideQueue');
 const { buildRitualPushData } = require('../utilities/pivotRitualNudge');
-
-const EXPO_PUSH_URL = 'https://exp.host/--/api/v2/push/send';
-const EXPO_BATCH_SIZE = 100;
+const {
+  EXPO_BATCH_SIZE,
+  filterTenantUsersForExpoPushDelivery,
+  postExpoPushBatch,
+} = require('./expoPushDeliveryService');
+const { tryPersistWeeklyDropMeridianAudit } = require('./meridianJobWeeklyDropAudit');
 const DROP_WINDOW_MS = 30 * 60 * 1000;
 
 const PUSH_TITLE = 'just go*';
@@ -43,34 +46,15 @@ function resolveWeeklyDropPushCopy(tenant, batchWeek, options = {}) {
     ? tenant.pivotDropOverrides.find((row) => row?.batchWeek === batchWeek)
     : null;
 
-  const title =
-    trimPushField(options.pushTitle, PUSH_TITLE_MAX) ||
-    trimPushField(override?.pushTitle, PUSH_TITLE_MAX) ||
-    trimPushField(tenant?.pivotDropPushTitle, PUSH_TITLE_MAX) ||
-    PUSH_TITLE;
-
-  const body =
-    trimPushField(options.pushBody, PUSH_BODY_MAX) ||
-    trimPushField(override?.pushBody, PUSH_BODY_MAX) ||
-    trimPushField(tenant?.pivotDropPushBody, PUSH_BODY_MAX) ||
-    PUSH_BODY;
-
-  let source = 'default';
-  if (trimPushField(options.pushTitle, PUSH_TITLE_MAX) || trimPushField(options.pushBody, PUSH_BODY_MAX)) {
-    source = 'send';
-  } else if (
-    trimPushField(override?.pushTitle, PUSH_TITLE_MAX) ||
-    trimPushField(override?.pushBody, PUSH_BODY_MAX)
-  ) {
-    source = 'override';
-  } else if (
-    trimPushField(tenant?.pivotDropPushTitle, PUSH_TITLE_MAX) ||
-    trimPushField(tenant?.pivotDropPushBody, PUSH_BODY_MAX)
-  ) {
-    source = 'tenant';
-  }
-
-  return { title, body, source };
+  return mergeWeeklyDropPushCopy({
+    pack: options.copyPack || null,
+    sendTitle: options.pushTitle,
+    sendBody: options.pushBody,
+    overrideTitle: override?.pushTitle,
+    overrideBody: override?.pushBody,
+    tenantTitle: tenant?.pivotDropPushTitle,
+    tenantBody: tenant?.pivotDropPushBody,
+  });
 }
 
 function toObjectId(value) {
@@ -121,6 +105,11 @@ function computeDeckCompleteFromSnapshot(snapshot, swipedEventIds) {
   );
 }
 
+function countUnfinishedCards(snapshot, swipedEventIds) {
+  if (!snapshot?.orderedEventIds?.length) return 0;
+  return snapshot.orderedEventIds.filter((eventId) => !swipedEventIds.has(String(eventId))).length;
+}
+
 function buildCrewRowsForUser(crewIds, weekStateByCrewId) {
   return Array.from(crewIds)
     .map((crewId) => {
@@ -150,6 +139,7 @@ async function loadWeeklyDropCrewContext(tenantKey, batchWeek, userIds = []) {
         userSwiped: false,
         anyCrewUnfinished: false,
         deckComplete: false,
+        unfinishedCardCount: 0,
         decideQueueOrder: [],
         decideCrewId: null,
         ritualPhase: 'solo',
@@ -221,10 +211,10 @@ async function loadWeeklyDropCrewContext(tenantKey, batchWeek, userIds = []) {
     const row = contextByUserId.get(userId);
     if (row) {
       row.userSwiped = swipedSet.has(userId);
-      row.deckComplete = computeDeckCompleteFromSnapshot(
-        snapshotByUserId.get(userId),
-        swipedEventsByUserId.get(userId) || new Set(),
-      );
+      const swipedIds = swipedEventsByUserId.get(userId) || new Set();
+      const snapshot = snapshotByUserId.get(userId);
+      row.deckComplete = computeDeckCompleteFromSnapshot(snapshot, swipedIds);
+      row.unfinishedCardCount = countUnfinishedCards(snapshot, swipedIds);
     }
   }
 
@@ -392,7 +382,7 @@ async function loadPivotPushRecipients(tenantKey) {
     pushToken: { $exists: true, $nin: [null, ''] },
     pushAppEdition: 'pivot',
   })
-    .select('_id pushToken pushAppProduct pushTokenUpdatedAt username name createdAt')
+    .select('_id pushToken pushAppProduct pushTokenUpdatedAt username name createdAt roles')
     .lean();
 }
 
@@ -513,10 +503,10 @@ function validateDropConfigPayload(body = {}) {
   return { patch };
 }
 
-function serializeDropSchedule(tenant, batchWeek, now = new Date()) {
+function serializeDropSchedule(tenant, batchWeek, now = new Date(), options = {}) {
   const dropSchedule = buildDropSchedulePayload(tenant, batchWeek, now);
   const deltaMs = Math.abs(now.getTime() - new Date(dropSchedule.nextDropAt).getTime());
-  const pushCopy = resolveWeeklyDropPushCopy(tenant, batchWeek);
+  const pushCopy = resolveWeeklyDropPushCopy(tenant, batchWeek, options);
 
   return {
     ...dropSchedule,
@@ -544,15 +534,16 @@ async function getWeeklyDropStatus(req, tenantKey, batchWeekInput) {
     return { status: 400, error: 'batchWeek must be YYYY-Www.' };
   }
 
-  const [publishedEventCount, audience, recentRuns] = await Promise.all([
+  const [publishedEventCount, audience, recentRuns, copyPack] = await Promise.all([
     countPublishedEvents(tenantKey, batchWeek),
     loadPushAudience(tenantKey),
     loadRecentPushRuns(tenantKey),
+    getMergedCopyPackOrEmpty(req, { tenantKey }),
   ]);
 
   return {
     tenant: serializeTenantForAdmin(tenant),
-    dropSchedule: serializeDropSchedule(tenant, batchWeek),
+    dropSchedule: serializeDropSchedule(tenant, batchWeek, new Date(), { copyPack }),
     publishedEventCount,
     pivotPushRecipientCount: audience.eligible,
     audience,
@@ -591,68 +582,44 @@ async function updateWeeklyDropConfig(req, tenantKey, body, updatedBy) {
   };
 }
 
-async function sendExpoBatch(messages) {
-  let response;
-  try {
-    response = await axios.post(EXPO_PUSH_URL, messages, {
-      headers: {
-        'Content-Type': 'application/json',
-        Accept: 'application/json',
-        'Accept-Encoding': 'gzip, deflate',
-      },
-    });
-  } catch (error) {
-    /*
-     * A pivot audience can contain tokens issued by both the Meridian and the
-     * standalone Just Go Expo projects. Expo rejects a request containing
-     * multiple projects with HTTP 400. The token itself is opaque, so split a
-     * rejected batch until each request contains one known-safe token. Expo's
-     * 4xx response rejects the entire request, which makes these retries safe.
-     */
-    if (messages.length > 1 && error?.response?.status === 400) {
-      const middle = Math.ceil(messages.length / 2);
-      const [left, right] = await Promise.all([
-        sendExpoBatch(messages.slice(0, middle)),
-        sendExpoBatch(messages.slice(middle)),
-      ]);
-      return {
-        sent: left.sent + right.sent,
-        failed: left.failed + right.failed,
-        errors: [...left.errors, ...right.errors],
-      };
-    }
+function recipientProduct(user) {
+  return user?.pushAppProduct === 'justgo' || user?.pushAppProduct === 'campus'
+    ? user.pushAppProduct
+    : 'legacy';
+}
 
-    const expoErrors = error?.response?.data?.errors;
-    const messagesFromExpo = Array.isArray(expoErrors)
-      ? expoErrors.map((row) => row?.message || row?.code).filter(Boolean)
-      : [];
-    const fallbackMessage =
-      error?.response?.data?.message || error?.message || 'Expo push request failed.';
+function buildPushRunRecipientRows(recipients, ticketOutcomes = []) {
+  const rows = recipients.map((user, index) => {
+    const ticket = ticketOutcomes[index];
+    const accepted = ticket?.status === 'accepted';
     return {
-      sent: 0,
-      failed: messages.length,
-      errors: messagesFromExpo.length ? messagesFromExpo : [fallbackMessage],
+      userId: user._id?.toString?.() || String(user._id || ''),
+      username: user.username || null,
+      name: user.name || null,
+      product: recipientProduct(user),
+      deliveryStatus: accepted ? 'accepted' : 'failed',
+      error: accepted ? null : (ticket?.message || null),
     };
-  }
-
-  const tickets = Array.isArray(response.data?.data)
-    ? response.data.data
-    : [response.data?.data].filter(Boolean);
-
-  let sent = 0;
-  let failed = 0;
-  const errors = [];
-
-  for (const ticket of tickets) {
-    if (ticket?.status === 'ok') {
-      sent += 1;
-    } else {
-      failed += 1;
-      if (ticket?.message) errors.push(ticket.message);
+  });
+  rows.sort((a, b) => {
+    if (a.deliveryStatus !== b.deliveryStatus) {
+      return a.deliveryStatus === 'failed' ? -1 : 1;
     }
-  }
+    const aLabel = (a.name || a.username || a.userId).toLowerCase();
+    const bLabel = (b.name || b.username || b.userId).toLowerCase();
+    return aLabel.localeCompare(bLabel);
+  });
+  return rows;
+}
 
-  return { sent, failed, errors };
+function capPushRunRecipients(rows, maxRecipients) {
+  if (!Array.isArray(rows) || rows.length <= maxRecipients) {
+    return { recipients: rows || [], recipientOverflowCount: 0 };
+  }
+  return {
+    recipients: rows.slice(0, maxRecipients),
+    recipientOverflowCount: rows.length - maxRecipients,
+  };
 }
 
 async function sendWeeklyDropPush(req, tenantKey, options = {}) {
@@ -669,18 +636,38 @@ async function sendWeeklyDropPush(req, tenantKey, options = {}) {
     return { status: 400, error: 'batchWeek must be YYYY-Www.' };
   }
 
+  const copyPack = await getMergedCopyPackOrEmpty(req, { tenantKey: tenant.tenantKey });
   const dryRun = options.dryRun === true;
   const force = options.force === true;
-  const now = new Date();
-  const dropSchedule = serializeDropSchedule(tenant, batchWeek, now);
+  const now = options.now ? new Date(options.now) : new Date();
+  const { quietHoursSendBlockForDelivery } = require('../utilities/meridianQuietHours');
+  if (!dryRun) {
+    const quiet = quietHoursSendBlockForDelivery(options, {
+      now,
+      timeZone: tenant.pivotDropTimezone,
+      triggerConfig: options.triggerConfig,
+    });
+    if (quiet) return quiet;
+  }
+  const dropSchedule = serializeDropSchedule(tenant, batchWeek, now, { copyPack });
   const pushCopy = resolveWeeklyDropPushCopy(tenant, batchWeek, {
     pushTitle: options.pushTitle,
     pushBody: options.pushBody,
+    copyPack,
   });
   const publishedEventCount = await countPublishedEvents(tenantKey, batchWeek);
-  const recipients = await loadPivotPushRecipients(tenantKey);
+  const allRecipients = await loadPivotPushRecipients(tenantKey);
+  const devPushFilter = await filterTenantUsersForExpoPushDelivery(tenantKey, allRecipients);
+  const recipients = devPushFilter.users;
+  const allowedIds = new Set(recipients.map((user) => String(user._id)));
+  const blockedRecipients = allRecipients.filter((user) => !allowedIds.has(String(user._id)));
 
   const warnings = [];
+  if (devPushFilter.gateActive && devPushFilter.blockedCount > 0) {
+    warnings.push(
+      `Development expo push gate: only admin-level accounts receive push (${devPushFilter.blockedCount} non-admin recipient(s) excluded).`,
+    );
+  }
   if (dropSchedule.usingPilotDefaults) {
     warnings.push(
       'Tenant has no stored weekly drop config — using pilot defaults (Thu 18:00 America/New_York).'
@@ -707,10 +694,24 @@ async function sendWeeklyDropPush(req, tenantKey, options = {}) {
     pushTitle: options.pushTitle,
     pushBody: options.pushBody,
     req,
+    copyPack,
   });
   const pushCopyBreakdown = summarizePushCopyBreakdown(messages);
 
   if (dryRun) {
+    const audit = await tryPersistWeeklyDropMeridianAudit(req, {
+      tenantKey,
+      batchWeek,
+      dryRun: true,
+      force,
+      triggeredBy: options.triggeredBy || null,
+      meridianJobRunId: options.meridianJobRunId || null,
+      pushCopy,
+      allowedRecipients: recipients,
+      blockedRecipients,
+      messages,
+      ticketOutcomes: [],
+    });
     return {
       dryRun: true,
       dropSchedule,
@@ -720,10 +721,30 @@ async function sendWeeklyDropPush(req, tenantKey, options = {}) {
       pivotPushRecipientCount: recipients.length,
       warnings,
       sampleMessage: messages[0] || null,
+      meridianJobRunId: audit?.meridianJobRunId || null,
+      pivotDropPushRunId: null,
+      recipientOverflowCount: audit?.recipientOverflowCount || 0,
+      skipped: audit?.summary?.skipped || 0,
+      summary: audit?.summary || null,
     };
   }
 
   if (recipients.length === 0) {
+    if (blockedRecipients.length) {
+      await tryPersistWeeklyDropMeridianAudit(req, {
+        tenantKey,
+        batchWeek,
+        dryRun: false,
+        force,
+        triggeredBy: options.triggeredBy || null,
+        meridianJobRunId: options.meridianJobRunId || null,
+        pushCopy,
+        allowedRecipients: [],
+        blockedRecipients,
+        messages: [],
+        ticketOutcomes: [],
+      });
+    }
     return {
       status: 400,
       error: 'No pivot push tokens found for this city.',
@@ -735,27 +756,38 @@ async function sendWeeklyDropPush(req, tenantKey, options = {}) {
   let sent = 0;
   let failed = 0;
   const errors = [];
+  const ticketOutcomes = new Array(recipients.length).fill(null);
 
+  const sendUnits = messages.map((message, index) => ({ message, index }));
   const messagesByProduct = new Map();
-  messages.forEach((message, index) => {
-    const product = recipients[index]?.pushAppProduct;
+  sendUnits.forEach((unit) => {
+    const product = recipients[unit.index]?.pushAppProduct;
     // Legacy tokens have no product metadata. Keep each isolated until the app
     // next launches and re-registers it with pushAppProduct.
     const key = product === 'campus' || product === 'justgo'
       ? product
-      : `legacy-${index}`;
+      : `legacy-${unit.index}`;
     const group = messagesByProduct.get(key) || [];
-    group.push(message);
+    group.push(unit);
     messagesByProduct.set(key, group);
   });
 
-  for (const productMessages of messagesByProduct.values()) {
-    for (let index = 0; index < productMessages.length; index += EXPO_BATCH_SIZE) {
-      const batch = productMessages.slice(index, index + EXPO_BATCH_SIZE);
-      const result = await sendExpoBatch(batch);
+  for (const productUnits of messagesByProduct.values()) {
+    for (let index = 0; index < productUnits.length; index += EXPO_BATCH_SIZE) {
+      const batchUnits = productUnits.slice(index, index + EXPO_BATCH_SIZE);
+      const result = await postExpoPushBatch(batchUnits.map((unit) => unit.message), {
+        tenantKey,
+        recipients: batchUnits.map((unit) => recipients[unit.index]),
+      });
       sent += result.sent;
       failed += result.failed;
       errors.push(...result.errors);
+      batchUnits.forEach((unit, offset) => {
+        ticketOutcomes[unit.index] = result.tickets[offset] || {
+          status: 'failed',
+          message: 'No Expo ticket returned for this recipient.',
+        };
+      });
     }
   }
 
@@ -767,11 +799,16 @@ async function sendWeeklyDropPush(req, tenantKey, options = {}) {
     ).length,
   };
 
+  const { MAX_RUN_RECIPIENTS } = require('../schemas/pivotDropPushRun');
+  const recipientRows = buildPushRunRecipientRows(recipients, ticketOutcomes);
+  const cappedRecipients = capPushRunRecipients(recipientRows, MAX_RUN_RECIPIENTS);
+
+  let pivotDropPushRunId = null;
   try {
     const db = await connectionsManager.connectToDatabase(tenantKey);
     const runReq = { db, school: tenantKey };
     const { PivotDropPushRun } = getModels(runReq, 'PivotDropPushRun');
-    await PivotDropPushRun.create({
+    const pushRun = await PivotDropPushRun.create({
       tenantKey,
       batchWeek,
       title: pushCopy.title,
@@ -781,12 +818,30 @@ async function sendWeeklyDropPush(req, tenantKey, options = {}) {
       failed,
       audience,
       errors: errors.slice(0, 20),
+      recipients: cappedRecipients.recipients,
+      recipientOverflowCount: cappedRecipients.recipientOverflowCount,
       forced: force,
       triggeredBy: options.triggeredBy || null,
     });
+    pivotDropPushRunId = pushRun?._id || null;
   } catch (error) {
     console.error('[pivotWeeklyDrop] failed to persist push run:', error?.message || error);
   }
+
+  const audit = await tryPersistWeeklyDropMeridianAudit(req, {
+    tenantKey,
+    batchWeek,
+    dryRun: false,
+    force,
+    triggeredBy: options.triggeredBy || null,
+    meridianJobRunId: options.meridianJobRunId || null,
+    pushCopy,
+    allowedRecipients: recipients,
+    blockedRecipients,
+    messages,
+    ticketOutcomes,
+    pivotDropPushRunId,
+  });
 
   // Best-effort: freeze this week's metrics right after the drop so Lab trends
   // build themselves; a snapshot failure must never mask a successful send.
@@ -814,6 +869,13 @@ async function sendWeeklyDropPush(req, tenantKey, options = {}) {
     snapshotRebuilt,
     warnings,
     errors: errors.slice(0, 5),
+    meridianJobRunId: audit?.meridianJobRunId || null,
+    pivotDropPushRunId,
+    recipientOverflowCount: audit?.recipientOverflowCount
+      || cappedRecipients.recipientOverflowCount
+      || 0,
+    skipped: audit?.summary?.skipped || blockedRecipients.length,
+    summary: audit?.summary || null,
   };
 }
 
@@ -828,6 +890,8 @@ module.exports = {
   loadWeeklyDropCrewContext,
   buildWeeklyDropPushMessages,
   buildWeeklyDropPushMessage,
+  buildPushRunRecipientRows,
+  capPushRunRecipients,
   getWeeklyDropStatus,
   updateWeeklyDropConfig,
   sendWeeklyDropPush,

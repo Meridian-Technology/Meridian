@@ -1,0 +1,46 @@
+// Round 05 gathers the details inward, with a contour-cut publisher sticker placed into the artwork.
+.jgr-cover.jgr-cover--centered {
+  .jgr-top { display: contents; }
+  .jgr-mark { display: none; }
+  .jgr-die-cut {
+    position: absolute; top: 88cqw; left: 62cqw; width: 27cqw; z-index: 9;
+    transform: rotate(9deg);
+    filter: drop-shadow(.12cqw .22cqw .06cqw rgba(26,23,20,.55))
+      drop-shadow(.4cqw .65cqw .5cqw rgba(26,23,20,.28))
+      drop-shadow(.9cqw 1.3cqw 1.2cqw rgba(26,23,20,.14));
+  }
+  .jgr-die-cut img { display: block; width: 100%; height: auto; }
+  .jgr-die-cut::after {
+    content: ''; position: absolute; inset: 0; pointer-events: none;
+    background: linear-gradient(125deg, rgba(255,255,255,.32), transparent 48%, rgba(0,0,0,.12));
+    -webkit-mask: var(--sticker-image) center / contain no-repeat;
+    mask: var(--sticker-image) center / contain no-repeat;
+    mix-blend-mode: soft-light;
+  }
+  .jgr-top > span {
+    position: absolute; top: 27cqw; left: 15cqw; right: 15cqw; z-index: 5;
+    max-width: none; text-align: center; font-size: 1.9cqw; line-height: 1.4;
+  }
+  .jgr-foot {
+    top: 108cqw; bottom: auto; left: 15cqw; right: 15cqw;
+    justify-content: center; align-items: center; gap: 2cqw;
+    font-size: 1.8cqw;
+  }
+  .jgr-foot > span + span { border-left: .15cqw solid currentColor; padding-left: 2cqw; }
+  .jgr-letter-caption, .jgr-window-note, .jgr-archive-note {
+    top: 99cqw; left: 15cqw; right: 40cqw;
+    font-size: 1.9cqw; line-height: 1.4; text-align: left;
+  }
+  &.jgr-cover--k {
+    .jgr-die-cut { top: 86cqw; left: 63cqw; transform: rotate(-9deg); }
+    .jgr-top > span { color: var(--paper); }
+    .jgr-window-note { top: 108cqw; right: 15cqw; text-align: center; color: var(--ink); }
+    .jgr-foot { top: 113cqw; color: var(--ink); }
+  }
+  &.jgr-cover--l {
+    .jgr-die-cut { top: 85cqw; left: 62cqw; transform: rotate(8deg); }
+    .jgr-top > span { top: 15cqw; }
+    .jgr-archive-note { top: 105cqw; right: 15cqw; text-align: center; }
+    .jgr-foot { top: 110cqw; }
+  }
+}

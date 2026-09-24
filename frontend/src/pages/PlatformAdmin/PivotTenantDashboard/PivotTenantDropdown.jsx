@@ -2,6 +2,10 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Icon } from '@iconify-icon/react';
 import { isPivotTenant } from '../TenantManagement/tenantPivotUtils';
+import {
+  PIVOT_FLEET_NOTIFICATIONS_PAGE,
+  PIVOT_TENANT_NOTIFICATIONS_PAGE,
+} from '../PivotNotifications/notificationJobRoutes';
 import '../../ClubDash/OrgDropdown/OrgDropdown.scss';
 import '../../Admin/AdminTenantDropdown/AdminTenantDropdown.scss';
 import './PivotTenantDropdown.scss';
@@ -24,8 +28,10 @@ export const PIVOT_OPS_PAGES = Object.freeze({
   fleetLaunch: 2,
   fleetCompute: 3,
   fleetAnalytics: 4,
+  fleetNotifications: PIVOT_FLEET_NOTIFICATIONS_PAGE,
   cityVoice: 5,
   cityLaunch: 6,
+  cityNotifications: PIVOT_TENANT_NOTIFICATIONS_PAGE,
   cityCompute: 10,
   cityAnalytics: 11,
 });
@@ -47,6 +53,8 @@ function pageLabelForShell(shell, page) {
   if (shell === 'city' && page === PIVOT_OPS_PAGES.cityCompute) return 'compute';
   if (shell === 'fleet' && page === PIVOT_OPS_PAGES.fleetAnalytics) return 'analytics';
   if (shell === 'city' && page === PIVOT_OPS_PAGES.cityAnalytics) return 'analytics';
+  if (shell === 'fleet' && page === PIVOT_OPS_PAGES.fleetNotifications) return 'notifications';
+  if (shell === 'city' && page === PIVOT_OPS_PAGES.cityNotifications) return 'notifications';
   return null;
 }
 
@@ -63,13 +71,16 @@ function pageForLabel(shell, label) {
   if (label === 'analytics') {
     return shell === 'fleet' ? PIVOT_OPS_PAGES.fleetAnalytics : PIVOT_OPS_PAGES.cityAnalytics;
   }
+  if (label === 'notifications') {
+    return shell === 'fleet' ? PIVOT_OPS_PAGES.fleetNotifications : PIVOT_OPS_PAGES.cityNotifications;
+  }
   return PIVOT_OPS_PAGES.overview;
 }
 
 /**
  * Remap `?page=` by menu label when switching fleet ↔ city.
- * Shared labels (Voice, Launch, Compute jobs, Analytics) keep their tab. City-only pages
- * (Curation, Catalog, …) have no fleet equivalent and drop to Overview.
+ * Shared labels (Voice, Launch, Compute jobs, Analytics, Notifications) keep their tab.
+ * City-only pages (Curation, Catalog, …) have no fleet equivalent and drop to Overview.
  */
 export function remapPivotOpsSearch(searchParams, { from, to }) {
   const params = new URLSearchParams(searchParams);
@@ -93,7 +104,8 @@ export function remapPivotOpsSearch(searchParams, { from, to }) {
  * Pivot-only city switcher for Just Go ops dashboards.
  * Navigates between /platform-admin/pivot (all cities) and
  * /platform-admin/pivot/:tenantKey. City → city keeps ?page=;
- * fleet ↔ city remaps shared tabs by label (Voice 1↔5, Launch 2↔6, Compute 3↔10, Analytics 4↔11).
+ * fleet ↔ city remaps shared tabs by label (Voice 1↔5, Launch 2↔6, Compute 3↔10,
+ * Analytics 4↔11, Notifications 5↔9).
  */
 function PivotTenantDropdown({
   tenants = [],

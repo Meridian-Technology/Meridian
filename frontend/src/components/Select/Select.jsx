@@ -19,6 +19,8 @@ const Select = ({
     placeholder = 'Select an option',
     menuPlacement = 'bottom',
     className = '',
+    disabled = false,
+    ariaLabel,
 }) => {
     const items = optionItems || options.map(o => ({ value: o, label: o }));
     const [selectedValue, setSelectedValue] = useState(defaultValue);
@@ -49,11 +51,21 @@ const Select = ({
         <div
             className={[
                 'select-container',
+                isOpen ? 'is-open' : '',
                 menuPlacement === 'top' ? 'select-container--top' : '',
                 className,
             ].filter(Boolean).join(' ')}
         >
-            <div className="select-header" onClick={() => setIsOpen(!isOpen)}>
+            <div
+                className="select-header"
+                role="button"
+                aria-label={ariaLabel}
+                aria-disabled={disabled || undefined}
+                aria-expanded={isOpen}
+                onClick={() => {
+                    if (!disabled) setIsOpen(!isOpen);
+                }}
+            >
                 <div className="select-header-text">
                     {selectedItem ? (
                         <span className="select-header-content">
