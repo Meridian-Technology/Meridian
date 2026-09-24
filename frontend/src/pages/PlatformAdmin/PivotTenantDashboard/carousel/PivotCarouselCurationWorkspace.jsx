@@ -1,5 +1,7 @@
+import { generateCoverSlide, generateEventSlide } from '../../../../shared/carouselStudio/presets';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { authenticatedRequest } from '../../../../hooks/useFetch';
+import PivotOpsSection from '../../../../components/PivotOps/PivotOpsSection';
 import {
   chipsFromCurationQuery,
   removeCurationChip,
@@ -7,11 +9,14 @@ import {
 } from './carouselCurationQuery';
 import { filterCurationCandidates } from './carouselCurationCatalog';
 import PivotCarouselCurationCatalog from './PivotCarouselCurationCatalog';
+import StudioSlide from './studio/StudioSlide';
 import {
   addSelection,
   addVisibleSelection,
   COVER_PRESETS,
+  COVER_VARIATIONS,
   EVENT_PRESETS,
+  nextCoverVariation,
   defaultQueryForFormat,
   describeCurationDiff,
   diffSelection,
@@ -30,7 +35,10 @@ import {
   shouldRecoverLocalDraft,
   writeCurationDraftLocal,
 } from './carouselCurationDraftStorage';
+import '../../../../components/PivotOps/PivotOpsCard.scss';
+import '../../../../components/PivotOps/PivotOpsSection.scss';
 import './PivotCarouselCurationWorkspace.scss';
+
 
 function when(value) {
   if (!value) return '—';
@@ -50,6 +58,7 @@ export default function PivotCarouselCurationWorkspace({
   onDraftId,
   onCreated,
   onApplied,
+  staged = false,
   onCancel,
   notify,
 }) {
@@ -63,6 +72,8 @@ export default function PivotCarouselCurationWorkspace({
   const [selected, setSelected] = useState([]);
   const [theme, setTheme] = useState('');
   const [coverPreset, setCoverPreset] = useState('loose-letters');
+  const [coverVariation, setCoverVariation] = useState(1);
+  const [variationPast, setVariationPast] = useState([]);
   const [eventPreset, setEventPreset] = useState('photo-note');
   const [name, setName] = useState('');
   const [idempotencyKey] = useState(() => newIdempotencyKey());
@@ -95,6 +106,7 @@ export default function PivotCarouselCurationWorkspace({
       selected: payload.selected,
       theme: payload.theme,
       coverPreset: payload.coverPreset,
+      coverVariation: payload.coverVariation,
       eventPreset: payload.eventPreset,
       issueId: issue?.id || undefined,
       idempotencyKey,
@@ -128,7 +140,7 @@ export default function PivotCarouselCurationWorkspace({
         if (local?.selected?.length) {
           setSelected(local.selected);
           setTheme(local.theme || '');
-          setFormat(local.format || format);
+          setFormat(current => local.format || current);
           setQuery((current) => ({ ...current, ...(local.query || {}) }));
         }
         setReady(true);
@@ -148,8 +160,9 @@ export default function PivotCarouselCurationWorkspace({
       setQuery((current) => ({ ...current, ...(useLocal ? local.query : loaded.query) }));
       setSelected(useLocal ? local.selected : loaded.selected || []);
       setTheme(useLocal ? local.theme : loaded.theme || '');
-      setCoverPreset(loaded.coverPreset || 'loose-letters');
-      setEventPreset(loaded.eventPreset || 'photo-note');
+      setCoverPreset(useLocal ? local.coverPreset || loaded.coverPreset : loaded.coverPreset || 'loose-letters');
+      setCoverVariation(useLocal ? local.coverVariation || loaded.coverVariation || 1 : loaded.coverVariation || 1);
+      setEventPreset(useLocal ? local.eventPreset || loaded.eventPreset : loaded.eventPreset || 'photo-note');
       setReady(true);
     }
     boot();
@@ -157,8 +170,8 @@ export default function PivotCarouselCurationWorkspace({
   }, [draftId, path, storageKey]);
 
   const snapshot = useMemo(() => ({
-    format, query, selected, theme, coverPreset, eventPreset,
-  }), [format, query, selected, theme, coverPreset, eventPreset]);
+    format, query, selected, theme, coverPreset, coverVariation, eventPreset,
+  }), [format, query, selected, theme, coverPreset, coverVariation, eventPreset]);
 
   useEffect(() => {
     if (!account?.id || !ready) return;
@@ -269,15 +282,18 @@ export default function PivotCarouselCurationWorkspace({
       setError('The draft is still saving.');
       return;
     }
-    if (!name.trim()) {
+    if (!issue && !name.trim()) {
       setError('Name the issue after you have reviewed the batch.');
       return;
     }
     setLoading(true);
+    clearTimeout(saveTimer.current);
+    const persisted = await persist(id, snapshot);
+    if (!persisted.data?.success) { setLoading(false); setError('Could not save your selection. Try again.'); return; }
     const stale = revalidation && (
       revalidation.missing?.length || revalidation.unavailable?.length || revalidation.complete === false
     );
-    const endpoint = issue ? 'apply' : 'create';
+    const endpoint = issue ? (staged ? 'preview' : 'apply') : 'create';
     const result = await authenticatedRequest(`${path}/drafts/${id}/${endpoint}`, {
       method: 'POST',
       data: {
@@ -286,6 +302,8 @@ export default function PivotCarouselCurationWorkspace({
         acceptChanges: Boolean(stale),
         issueId: issue?.id,
         revision: issue?.revision,
+        document: staged ? issue?.document : undefined,
+        previousRefs: staged ? previousRefs : undefined,
       },
     });
     setLoading(false);
@@ -300,18 +318,38 @@ export default function PivotCarouselCurationWorkspace({
     else onCreated(result.data.data);
   };
 
+  const stepActions = (
+    <>
+      <button type="button" className="linear-btn linear-btn--ghost" onClick={onCancel}>{staged ? 'Cancel' : 'All issues'}</button>
+      {step !== 'search' && (
+        <button type="button" className="linear-btn linear-btn--secondary" onClick={() => setStep(previousCurationStep(step))}>Back</button>
+      )}
+      {step === 'search' && (
+        <button type="button" className="linear-btn linear-btn--primary" onClick={goReview} disabled={!selected.length || estimate.overflow}>
+          Review selection
+        </button>
+      )}
+      {step === 'review' && (
+        <button type="button" className="linear-btn linear-btn--primary" onClick={goName} disabled={!selected.length || estimate.overflow || loading}>
+          {issue ? 'Review changes' : 'Continue to name'}
+        </button>
+      )}
+      {step === 'name' && (
+        <button type="button" className="linear-btn linear-btn--primary" onClick={finish} disabled={loading || (!issue && !name.trim())}>
+          {issue ? (staged ? 'Apply to editor' : 'Update issue') : 'Create issue'}
+        </button>
+      )}
+    </>
+  );
+
   return (
     <div className="jg-curate">
-      <header className="jg-curate__head">
-        <button type="button" className="jg-curate__quiet" onClick={onCancel}>All issues</button>
-        <h2>{issue ? 'Edit selection' : 'New issue'}</h2>
-        <p>
-          {formatLabel(format)}
-          {saving ? ' · saving draft' : ''}
-          {` · ${selected.length} selected · ${estimate.slideCount} slides`}
-        </p>
-      </header>
-
+      <PivotOpsSection
+        className="jg-curate__panel"
+        title={issue ? 'Edit selection' : 'New issue'}
+        description={`${formatLabel(format)}${saving ? ' · saving draft' : ''} · ${selected.length} selected · ${estimate.slideCount} slides`}
+        actions={stepActions}
+      >
       {error && <p className="jg-curate__alert" role="alert">{error}</p>}
 
       {step === 'search' && (
@@ -365,14 +403,14 @@ export default function PivotCarouselCurationWorkspace({
             <p className="jg-curate__warn" role="status">
               {failedSources.map((row) => `${row.tenantKey}: ${row.error}`).join(' · ')}
               {' '}
-              <button type="button" onClick={() => search({ ...query, cursor: null }, false)}>Retry</button>
+              <button type="button" className="linear-btn linear-btn--ghost" onClick={() => search({ ...query, cursor: null }, false)}>Retry</button>
               {!complete && ' Results are incomplete.'}
             </p>
           )}
 
           <div className="jg-curate__results">
             <div className="jg-curate__result-bar">
-              <button type="button" onClick={() => setSelected(addVisibleSelection(selected, visible).selected)}>
+              <button type="button" className="linear-btn linear-btn--secondary" onClick={() => setSelected(addVisibleSelection(selected, visible).selected)}>
                 Select visible
               </button>
             </div>
@@ -384,7 +422,7 @@ export default function PivotCarouselCurationWorkspace({
               onToggle={toggleCandidate}
             />
             {cursor && (
-              <button type="button" className="jg-curate__more" onClick={() => search({ ...query, cursor }, true)} disabled={loading}>
+              <button type="button" className="linear-btn linear-btn--secondary jg-curate__more" onClick={() => search({ ...query, cursor }, true)} disabled={loading}>
                 More
               </button>
             )}
@@ -393,7 +431,7 @@ export default function PivotCarouselCurationWorkspace({
       )}
 
       {step === 'review' && (
-        <section className="jg-curate__review">
+        <div className="jg-curate__review">
           <label>
             Optional theme
             <input value={theme} onChange={(event) => setTheme(event.target.value)} placeholder="A catchy cover title, not the issue name" />
@@ -406,11 +444,41 @@ export default function PivotCarouselCurationWorkspace({
               </select>
             </label>
             <label>
+              Cover variation
+              <select value={coverVariation} onChange={(event) => setCoverVariation(Number(event.target.value))}>
+                {COVER_VARIATIONS.map((variation) => <option key={variation} value={variation}>{variation}</option>)}
+              </select>
+            </label>
+            <label>
               Event start
               <select value={eventPreset} onChange={(event) => setEventPreset(event.target.value)}>
                 {EVENT_PRESETS.map((id) => <option key={id} value={id}>{id.replace(/-/g, ' ')}</option>)}
               </select>
             </label>
+            <button
+              type="button"
+              onClick={() => {
+                setVariationPast((past) => [...past, coverVariation]);
+                setCoverVariation(nextCoverVariation(coverVariation));
+              }}
+            >
+              Shuffle variation
+            </button>
+            <button
+              type="button"
+              disabled={!variationPast.length}
+              onClick={() => {
+                const previous = variationPast[variationPast.length - 1];
+                setVariationPast((past) => past.slice(0, -1));
+                setCoverVariation(previous);
+              }}
+            >
+              Undo shuffle
+            </button>
+          </div>
+          <div className="jg-curate__preview">
+            <StudioSlide doc={generateCoverSlide({ theme, coverPreset, variation: coverVariation })} width={220} />
+            <StudioSlide doc={generateEventSlide(selected[0] || {}, eventPreset, { format })} width={220} />
           </div>
           {estimate.overflow && (
             <p className="jg-curate__alert">This batch would create {estimate.slideCount} slides. The cap is {estimate.maxSlides}.</p>
@@ -441,12 +509,12 @@ export default function PivotCarouselCurationWorkspace({
               </li>
             ))}
           </ol>
-        </section>
+        </div>
       )}
 
       {step === 'name' && (
-        <section className="jg-curate__name">
-          <p>The issue name is internal. It does not print on the cover.</p>
+        <div className="jg-curate__name">
+          <p>{issue ? 'Existing slides keep your edits. Removed events remain as detached slides; new events receive the selected template.' : 'The issue name is internal. It does not print on the cover.'}</p>
           {revalidation && (
             <ul className="jg-curate__report">
               {revalidation.missing?.map((ref) => (
@@ -464,53 +532,37 @@ export default function PivotCarouselCurationWorkspace({
               )}
             </ul>
           )}
-          <label>
+          {!issue && <label>
             Issue name
             <input value={name} onChange={(event) => setName(event.target.value)} maxLength={80} />
-          </label>
-        </section>
+          </label>}
+        </div>
       )}
+      </PivotOpsSection>
 
-      <aside className="jg-curate__tray">
-        <header>
-          <strong>{selected.length} selected</strong>
-          <span>{estimate.slideCount} / {estimate.maxSlides} slides</span>
-        </header>
-        <ol>
-          {selected.map((item, index) => (
-            <li key={eventRefKey(item.ref)}>
-              <b>{item.snapshot.name}</b>
-              <span>{item.snapshot.city?.tenantKey || item.ref.sourceTenantKey}</span>
-              <span className="jg-curate__tray-ops">
-                <button type="button" disabled={index === 0} onClick={() => setSelected(moveSelection(selected, item.ref, -1))}>Up</button>
-                <button type="button" disabled={index === selected.length - 1} onClick={() => setSelected(moveSelection(selected, item.ref, 1))}>Down</button>
-                <button type="button" onClick={() => setSelected(removeSelection(selected, item.ref))}>Remove</button>
-              </span>
-            </li>
-          ))}
-        </ol>
-      </aside>
-
-      <footer className="jg-curate__foot">
-        {step !== 'search' && (
-          <button type="button" onClick={() => setStep(previousCurationStep(step))}>Back</button>
-        )}
-        {step === 'search' && (
-          <button type="button" onClick={goReview} disabled={!selected.length || estimate.overflow}>
-            Review selection
-          </button>
-        )}
-        {step === 'review' && (
-          <button type="button" onClick={goName} disabled={!selected.length || estimate.overflow || loading}>
-            Continue to name
-          </button>
-        )}
-        {step === 'name' && (
-          <button type="button" onClick={finish} disabled={loading || !name.trim()}>
-            {issue ? 'Update issue' : 'Create issue'}
-          </button>
-        )}
-      </footer>
+      {step === 'search' && selected.length > 0 && (
+        <PivotOpsSection
+          className="jg-curate__panel"
+          title="Selection"
+          description={`${estimate.slideCount} / ${estimate.maxSlides} slides, including the cover.`}
+        >
+          <ol className="jg-curate__tray">
+            {selected.map((item, index) => (
+              <li key={eventRefKey(item.ref)}>
+                <div>
+                  <strong>{item.snapshot.name}</strong>
+                  <span>{item.snapshot.city?.tenantKey || item.ref.sourceTenantKey}</span>
+                </div>
+                <span className="jg-curate__tray-ops">
+                  <button type="button" className="linear-btn linear-btn--ghost" disabled={index === 0} onClick={() => setSelected(moveSelection(selected, item.ref, -1))}>Up</button>
+                  <button type="button" className="linear-btn linear-btn--ghost" disabled={index === selected.length - 1} onClick={() => setSelected(moveSelection(selected, item.ref, 1))}>Down</button>
+                  <button type="button" className="linear-btn linear-btn--ghost" onClick={() => setSelected(removeSelection(selected, item.ref))}>Remove</button>
+                </span>
+              </li>
+            ))}
+          </ol>
+        </PivotOpsSection>
+      )}
     </div>
   );
 }

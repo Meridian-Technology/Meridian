@@ -26,7 +26,7 @@ describe('carousel issue list', () => {
 
     expect(screen.getByText('No issues yet.')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /continue previous/i })).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'New' }));
+    fireEvent.click(screen.getByRole('button', { name: 'New issue' }));
     expect(onCreate).toHaveBeenCalled();
   });
 
@@ -43,7 +43,7 @@ describe('carousel issue list', () => {
     fireEvent.click(screen.getByRole('button', { name: /continue previous/i }));
     expect(onOpen).toHaveBeenCalledWith('new');
 
-    fireEvent.click(screen.getByRole('button', { name: 'New' }));
+    fireEvent.click(screen.getByRole('button', { name: 'New issue' }));
     expect(onCreate).toHaveBeenCalled();
   });
 });

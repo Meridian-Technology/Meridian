@@ -21,6 +21,7 @@ import PivotTenantPage from '../PivotTenantPage';
 import PivotCarouselEditor from './PivotCarouselEditor';
 import PivotCarouselLibrary from './PivotCarouselLibrary';
 import PivotCarouselCurationWorkspace from './PivotCarouselCurationWorkspace';
+import StudioEditor from './studio/StudioEditor';
 import { librarySelection } from './carouselLibrary';
 import { candidateToSelection } from './carouselCurationSelection';
 import useCarouselExport from './useCarouselExport';
@@ -354,6 +355,29 @@ export default function PivotCarouselPage({ tenantKey, cityDisplayName }) {
     }
   }, [addNotification, ensureAccount, openCuration]);
 
+  const saveStudioDocument = useCallback(async (document, editorial = {}) => {
+    if (!draft?.accountId || !draft?._id) return { error: 'Missing issue', code: 400 };
+    const result = await authenticatedRequest(
+      `/admin/pivot/carousel-accounts/${draft.accountId}/issues/${draft._id}`,
+      { method: 'PATCH', data: { revision: draft.revision, document, ...editorial } },
+    );
+    if (result.error || result.data?.success === false) {
+      return { error: result.error || result.data?.message, code: result.code || result.data?.code };
+    }
+    const saved = result.data?.data?.issue;
+    if (!saved) return { error: 'Save failed', code: 500 };
+    setDraft((current) => ({
+      ...current,
+      revision: saved.revision,
+      document: saved.document,
+      curation: saved.curation,
+      sources: saved.sources,
+      name: saved.name || current.name,
+      updatedAt: saved.updatedAt,
+    }));
+    return { document: saved.document, revision: saved.revision, editorial: { curation: saved.curation, sources: saved.sources } };
+  }, [draft]);
+
   const startEditSelection = useCallback(async () => {
     const account = accounts.find((row) => row.id === (draft?.accountId || accountId));
     if (!account || !draft) return;
@@ -408,7 +432,7 @@ export default function PivotCarouselPage({ tenantKey, cityDisplayName }) {
 
   return (
     <PivotTenantPage
-      className={`pivot-carousel-page${focused ? ' is-carousel-focused' : ''}`}
+      className={`pivot-carousel-page${focused || draft?.schemaVersion === 2 ? ' is-carousel-focused' : ''}`}
       title="Carousel"
       tenantKey={tenantKey}
       cityDisplayName={cityDisplayName}
@@ -421,8 +445,8 @@ export default function PivotCarouselPage({ tenantKey, cityDisplayName }) {
         </>
       )}
     >
-      <div className="jgz">
-        {draft && manifest && draft.schemaVersion !== 2 ? (
+      {draft && manifest && draft.schemaVersion !== 2 ? (
+        <div className="jgz">
           <PivotCarouselEditor
             deck={{ ...draft, edition, inkPlate, showIssueNumber }}
             manifest={manifest}
@@ -441,6 +465,7 @@ export default function PivotCarouselPage({ tenantKey, cityDisplayName }) {
             focused={focused}
             onToggleFocus={toggleFocus}
           />
+        </div>
         ) : requestedCurationId && (accounts.find((account) => account.id === accountId) || accounts[0]) ? (
           <PivotCarouselCurationWorkspace
             account={accounts.find((account) => account.id === accountId) || accounts[0]}
@@ -477,25 +502,14 @@ export default function PivotCarouselPage({ tenantKey, cityDisplayName }) {
             notify={addNotification}
           />
         ) : draft?.schemaVersion === 2 ? (
-          <div className="jg-library">
-            <p>This issue has {draft.document?.slides?.length || 0} editable slides. Canvas editing is a later step.</p>
-            <p>{draft.name || draft.title} · {draft.format || 'issue'} · revision {draft.revision || 1}</p>
-            {(draft.curation?.refs || draft.sources || []).length > 0 && (
-              <ol>
-                {(draft.curation?.refs || draft.sources).map((ref) => (
-                  <li key={`${ref.sourceTenantKey}-${ref.eventId}`}>{ref.sourceTenantKey} · {ref.eventId}</li>
-                ))}
-              </ol>
-            )}
-            {(draft.curation?.unsupported || []).length > 0 && (
-              <ul>
-                {draft.curation.unsupported.map((item) => (
-                  <li key={`${item.index}-${item.field || item.slideType}`}>{item.reason}{item.slideType ? ` (${item.slideType})` : ''}</li>
-                ))}
-              </ul>
-            )}
-            <button type="button" onClick={startEditSelection} disabled={seeding}>Edit selection</button>
-          </div>
+          <StudioEditor
+            key={draft._id}
+            issue={draft}
+            onSave={saveStudioDocument}
+            account={accounts.find(row => row.id === draft.accountId)}
+            onEditSelection={startEditSelection}
+            onBack={closeLibrary}
+          />
         ) : (
           <PivotCarouselLibrary
             issues={library}
@@ -505,7 +519,6 @@ export default function PivotCarouselPage({ tenantKey, cityDisplayName }) {
             busy={seeding || loading}
           />
         )}
-      </div>
     </PivotTenantPage>
   );
 }

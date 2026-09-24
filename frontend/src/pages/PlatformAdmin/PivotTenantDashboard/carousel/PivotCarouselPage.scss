@@ -15,7 +15,7 @@
  * wrong for a slide editor — the canvas wants every pixel. This is the one tab
  * that opts out.
  */
-.pivot-tenant-page.pivot-carousel-page > .pivot-tenant-page__body {
+.pivot-tenant-page.pivot-carousel-page.is-carousel-focused > .pivot-tenant-page__body {
   max-width: none;
 }
 

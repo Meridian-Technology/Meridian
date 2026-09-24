@@ -1,5 +1,12 @@
 export const COVER_PRESETS = ['loose-letters', 'open-invitation', 'kept-somewhere'];
 export const EVENT_PRESETS = ['photo-note', 'on-the-bill', 'in-the-room'];
+export const COVER_VARIATIONS = [1, 2, 3];
+
+/** Explicit shuffle. Loading a draft does not call this. */
+export function nextCoverVariation(current) {
+  const index = COVER_VARIATIONS.indexOf(Number(current));
+  return COVER_VARIATIONS[(index + 1) % COVER_VARIATIONS.length];
+}
 export const MAX_SLIDES = 20;
 export const MAX_SELECTED = MAX_SLIDES - 1;
 

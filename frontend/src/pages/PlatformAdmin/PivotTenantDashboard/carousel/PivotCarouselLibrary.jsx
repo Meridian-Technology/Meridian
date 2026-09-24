@@ -1,4 +1,5 @@
 import React, { useMemo } from 'react';
+import PivotOpsSection from '../../../../components/PivotOps/PivotOpsSection';
 import { issueId, issueName, latestIssue, listPastIssues } from './carouselLibrary';
 import './PivotCarouselLibrary.scss';
 
@@ -14,7 +15,7 @@ function Thumb({ issue }) {
     <span className="jg-library__thumb">
       {issue.coverImage
         ? <img src={issue.coverImage} alt="" />
-        : <b>{issueName(issue)}</b>}
+        : <b>{issueName(issue).slice(0, 1)}</b>}
     </span>
   );
 }
@@ -38,7 +39,16 @@ export default function PivotCarouselLibrary({
         </p>
       )}
 
-      <div className="jg-library__actions">
+      <PivotOpsSection
+        className="jg-library__panel"
+        title="Issues"
+        description="Open the latest issue, or start a new one for this city."
+        actions={(
+          <button type="button" className="linear-btn linear-btn--primary" onClick={onCreate} disabled={busy}>
+            New issue
+          </button>
+        )}
+      >
         {previous ? (
           <button
             type="button"
@@ -54,27 +64,26 @@ export default function PivotCarouselLibrary({
             </span>
           </button>
         ) : (
-          <p className="jg-library__empty">No issues yet.</p>
+          <p className="pivot-lab__empty">No issues yet.</p>
         )}
-        <button type="button" className="jg-library__new" onClick={onCreate} disabled={busy}>
-          New
-        </button>
-      </div>
+      </PivotOpsSection>
 
       {older.length > 0 && (
-        <ul className="jg-library__grid">
-          {older.map((issue) => (
-            <li key={issueId(issue)}>
-              <button type="button" className="jg-library__card" onClick={() => onOpen(issueId(issue))}>
-                <Thumb issue={issue} />
-                <span className="jg-library__meta">
-                  <strong>{issueName(issue)}</strong>
-                  <time dateTime={issue.updatedAt}>{when(issue.updatedAt)}</time>
-                </span>
-              </button>
-            </li>
-          ))}
-        </ul>
+        <PivotOpsSection className="jg-library__panel" title="Earlier issues">
+          <ul className="jg-library__list">
+            {older.map((issue) => (
+              <li key={issueId(issue)}>
+                <button type="button" className="jg-library__row" onClick={() => onOpen(issueId(issue))}>
+                  <Thumb issue={issue} />
+                  <span className="jg-library__meta">
+                    <strong>{issueName(issue)}</strong>
+                    <time dateTime={issue.updatedAt}>{when(issue.updatedAt)}</time>
+                  </span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </PivotOpsSection>
       )}
     </div>
   );
