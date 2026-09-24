@@ -20,6 +20,8 @@ const pivotCreatorGrantSchema = require('../schemas/pivotCreatorGrant');
 const pivotCopyPackSchema = require('../schemas/pivotCopyPack');
 const pivotCarouselDeckSchema = require('../schemas/pivotCarouselDeck');
 const pivotCarouselVoiceSchema = require('../schemas/pivotCarouselVoice');
+const pivotCarouselAccountSchema = require('../schemas/pivotCarouselAccount');
+const pivotCarouselSavedSearchSchema = require('../schemas/pivotCarouselSavedSearch');
 const justGoLandingEventSchema = require('../schemas/justGoLandingEvent');
 const justGoWaitlistSchema = require('../schemas/justGoWaitlist');
 const justGoLandingQrSchema = require('../schemas/justGoLandingQr');
@@ -36,7 +38,7 @@ const meridianNotificationDefinitionSchema = require('../schemas/meridianNotific
  * Requires req.globalDb to be set (see app.js middleware).
  *
  * @param {object} req - request with req.globalDb
- * @param {...string} names - model names including 'GlobalUser', 'PlatformRole', 'PlatformAdminInvite', 'PivotCitySource', 'PivotCreatorGrant', 'PivotCopyPack', 'PivotCarouselDeck', 'PivotCarouselVoice', 'JustGoLandingEvent', 'JustGoWaitlist', 'JustGoLandingQr', 'MeridianJobRun', 'MeridianJobAttempt', 'MeridianJobDelivery', 'MeridianNotificationDefinition', …
+ * @param {...string} names - model names including 'GlobalUser', 'PlatformRole', 'PlatformAdminInvite', 'PivotCitySource', 'PivotCreatorGrant', 'PivotCopyPack', 'PivotCarouselDeck', 'PivotCarouselVoice', 'PivotCarouselAccount', 'PivotCarouselSavedSearch', 'JustGoLandingEvent', 'JustGoWaitlist', 'JustGoLandingQr', 'MeridianJobRun', 'MeridianJobAttempt', 'MeridianJobDelivery', 'MeridianNotificationDefinition', …
  * @returns {object} map of requested models
  */
 const getGlobalModels = (req, ...names) => {
@@ -123,6 +125,16 @@ const getGlobalModels = (req, ...names) => {
             'PivotCarouselVoice',
             pivotCarouselVoiceSchema,
             'pivot_carousel_voice'
+        ),
+        PivotCarouselAccount: db.model(
+            'PivotCarouselAccount',
+            pivotCarouselAccountSchema,
+            'pivot_carousel_accounts'
+        ),
+        PivotCarouselSavedSearch: db.model(
+            'PivotCarouselSavedSearch',
+            pivotCarouselSavedSearchSchema,
+            'pivot_carousel_saved_searches'
         ),
         JustGoLandingEvent: db.model(
             'JustGoLandingEvent',

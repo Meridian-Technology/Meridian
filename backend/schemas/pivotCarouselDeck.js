@@ -123,6 +123,20 @@ const pivotCarouselDeckSchema = new mongoose.Schema(
       tokens: { type: mongoose.Schema.Types.Mixed, default: () => ({}) },
     },
     slides: { type: [slideSchema], default: [] },
+    /*
+     * Additive issue fields. Legacy decks leave these at the defaults and keep
+     * using tenantKey, title, and updatedAt. schemaVersion 2 is the editable
+     * document; revision is a monotonic integer, not updatedAt.
+     */
+    accountId: { type: mongoose.Schema.Types.ObjectId, default: null, index: true },
+    name: { type: String, default: '', trim: true },
+    format: { type: String, enum: ['city-picks', 'sorry-you-missed-it'] },
+    status: { type: String, enum: ['active', 'archived'], default: 'active' },
+    schemaVersion: { type: Number, default: 1 },
+    revision: { type: Number, default: 1, min: 1 },
+    document: { type: mongoose.Schema.Types.Mixed, default: null },
+    curation: { type: mongoose.Schema.Types.Mixed, default: null },
+    sources: { type: [mongoose.Schema.Types.Mixed], default: [] },
     lastExportedAt: { type: Date, default: null },
     createdBy: { type: String, default: null, trim: true },
     updatedBy: { type: String, default: null, trim: true },
@@ -143,6 +157,8 @@ pivotCarouselDeckSchema.pre('validate', function normalizeFields() {
 });
 
 pivotCarouselDeckSchema.index({ tenantKey: 1, updatedAt: -1 });
+pivotCarouselDeckSchema.index({ accountId: 1, status: 1, updatedAt: -1 });
+pivotCarouselDeckSchema.index({ tenantKey: 1, status: 1, updatedAt: -1 });
 
 module.exports = pivotCarouselDeckSchema;
 module.exports.EDITIONS = EDITIONS;
