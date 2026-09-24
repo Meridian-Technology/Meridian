@@ -1,14 +1,16 @@
-import { filterIssues, librarySelection } from './carouselLibrary';
+import { latestIssue, librarySelection, listPastIssues } from './carouselLibrary';
 
-describe('carousel library selection', () => {
+describe('carousel issue list', () => {
   const decks = [
-    { _id: 'aaa', name: 'Older', updatedAt: '2026-09-01T00:00:00.000Z' },
-    { _id: 'bbb', name: 'Newer', updatedAt: '2026-09-20T00:00:00.000Z' },
+    { _id: 'aaa', name: 'Older', updatedAt: '2026-09-01T00:00:00.000Z', status: 'active' },
+    { _id: 'bbb', name: 'Newer', updatedAt: '2026-09-20T00:00:00.000Z', status: 'active' },
+    { _id: 'ccc', name: 'Filed', updatedAt: '2026-09-22T00:00:00.000Z', status: 'archived' },
   ];
 
-  test('no id stays on the library and does not choose the latest issue', () => {
-    expect(librarySelection(decks, null)).toEqual({ mode: 'library' });
-    expect(librarySelection(decks, '')).toEqual({ mode: 'library' });
+  test('opening the page stays on the list and does not open the latest issue', () => {
+    expect(librarySelection(decks, null)).toEqual({ mode: 'list' });
+    expect(librarySelection(decks, '')).toEqual({ mode: 'list' });
+    expect(latestIssue(decks)._id).toBe('bbb');
   });
 
   test('a known id opens that issue', () => {
@@ -19,13 +21,7 @@ describe('carousel library selection', () => {
     expect(librarySelection(decks, 'missing')).toEqual({ mode: 'missing', requestedId: 'missing' });
   });
 
-  test('search, format, and status filters compose', () => {
-    const issues = [
-      { name: 'Lanterns', format: 'city-picks', status: 'active' },
-      { name: 'Jazz night', format: 'sorry-you-missed-it', status: 'archived' },
-    ];
-    expect(filterIssues(issues, { q: 'jazz', status: 'all' })).toHaveLength(1);
-    expect(filterIssues(issues, { format: 'city-picks' })).toHaveLength(1);
-    expect(filterIssues(issues, { status: 'archived', q: 'lantern' })).toHaveLength(0);
+  test('the list is newest first and hides archived issues', () => {
+    expect(listPastIssues(decks).map((issue) => issue._id)).toEqual(['bbb', 'aaa']);
   });
 });

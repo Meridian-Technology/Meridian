@@ -118,7 +118,7 @@ export default function PivotCarouselPage({ tenantKey, cityDisplayName }) {
   const [library, setLibrary] = useState([]);
   const [accounts, setAccounts] = useState([]);
   const [accountId, setAccountId] = useState('');
-  const [libraryMode, setLibraryMode] = useState('library');
+  const [libraryMode, setLibraryMode] = useState('list');
   const [missingId, setMissingId] = useState(null);
   const [loading, setLoading] = useState(true);
   const [seeding, setSeeding] = useState(false);
@@ -406,53 +406,6 @@ export default function PivotCarouselPage({ tenantKey, cityDisplayName }) {
     setSearchParams(next);
   }, [searchParams, setSearchParams]);
 
-  const assignDecks = useCallback(async () => {
-    setSeeding(true);
-    const result = await authenticatedRequest('/admin/pivot/carousel-accounts/migrate', {
-      method: 'POST',
-      data: { dryRun: false, tenantKey },
-    });
-    setSeeding(false);
-    const report = result.data?.data?.report;
-    if (!result.data?.success) {
-      addNotification({ title: 'Could not assign decks', message: result.data?.message || 'The request failed.', type: 'error' });
-      return;
-    }
-    addNotification({
-      title: 'Decks assigned',
-      message: `${report.issuesAssigned.length} issue(s) on ${report.accountsCreated.length + report.accountsReused.length} account(s).`,
-      type: 'success',
-    });
-    load();
-  }, [tenantKey, addNotification, load]);
-
-  const makeEditableCopy = useCallback(async (issue) => {
-    if (!issue.accountId) return;
-    setSeeding(true);
-    const result = await authenticatedRequest(
-      `/admin/pivot/carousel-accounts/${issue.accountId}/issues/${issue._id || issue.id}/editable-copy`,
-      { method: 'POST' },
-    );
-    setSeeding(false);
-    if (!result.data?.success) {
-      addNotification({ title: 'Could not copy the issue', message: result.data?.message || 'The request failed.', type: 'error' });
-      return;
-    }
-    const unsupported = result.data.data.unsupported || [];
-    addNotification({
-      title: 'Editable copy created',
-      message: unsupported.length
-        ? `${unsupported.length} element(s) could not be converted and were kept as notes.`
-        : 'The original issue is unchanged.',
-      type: unsupported.length ? 'warning' : 'success',
-    });
-    openIssue(result.data.data.issue.id);
-  }, [addNotification, openIssue]);
-
-  const libraryIssues = library.filter((issue) => (
-    accountId ? issue.accountId === accountId : !issue.accountId
-  ));
-
   return (
     <PivotTenantPage
       className={`pivot-carousel-page${focused ? ' is-carousel-focused' : ''}`}
@@ -461,9 +414,9 @@ export default function PivotCarouselPage({ tenantKey, cityDisplayName }) {
       cityDisplayName={cityDisplayName}
       actions={draft && manifest && draft.schemaVersion !== 2 ? null : (
         <>
-          {draft || requestedCurationId
-            ? <button type="button" className="jgz__action" onClick={closeLibrary}>Library</button>
-            : editionTools}
+          {draft || requestedCurationId ? (
+            <button type="button" className="jgz__action" onClick={closeLibrary}>All issues</button>
+          ) : null}
           <span className="jgz__note">4:5 · 1080×1350</span>
         </>
       )}
@@ -545,15 +498,10 @@ export default function PivotCarouselPage({ tenantKey, cityDisplayName }) {
           </div>
         ) : (
           <PivotCarouselLibrary
-            accounts={accounts}
-            accountId={accountId}
-            onAccount={setAccountId}
-            issues={libraryIssues}
+            issues={library}
             missingId={libraryMode === 'missing' ? missingId : null}
             onOpen={openIssue}
             onCreate={createDeck}
-            onMigrate={assignDecks}
-            onEditableCopy={makeEditableCopy}
             busy={seeding || loading}
           />
         )}

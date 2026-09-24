@@ -286,7 +286,7 @@ export default function PivotCarouselCurationWorkspace({
   return (
     <div className="jg-curate">
       <header className="jg-curate__head">
-        <button type="button" className="jg-curate__quiet" onClick={onCancel}>Back to library</button>
+        <button type="button" className="jg-curate__quiet" onClick={onCancel}>All issues</button>
         <h2>{issue ? 'Edit selection' : 'New issue'}</h2>
         <p>
           {formatLabel(format)}

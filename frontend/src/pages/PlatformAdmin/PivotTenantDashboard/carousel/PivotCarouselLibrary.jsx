@@ -1,5 +1,5 @@
-import React, { useMemo, useState } from 'react';
-import { filterIssues } from './carouselLibrary';
+import React, { useMemo } from 'react';
+import { issueId, issueName, latestIssue, listPastIssues } from './carouselLibrary';
 import './PivotCarouselLibrary.scss';
 
 function when(value) {
@@ -9,87 +9,73 @@ function when(value) {
   return date.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
 }
 
+function Thumb({ issue }) {
+  return (
+    <span className="jg-library__thumb">
+      {issue.coverImage
+        ? <img src={issue.coverImage} alt="" />
+        : <b>{issueName(issue)}</b>}
+    </span>
+  );
+}
+
 export default function PivotCarouselLibrary({
-  accounts,
-  accountId,
-  onAccount,
   issues,
   missingId,
   onOpen,
   onCreate,
-  onMigrate,
-  onEditableCopy,
   busy,
 }) {
-  const [q, setQ] = useState('');
-  const [format, setFormat] = useState('all');
-  const [status, setStatus] = useState('active');
-  const visible = useMemo(() => filterIssues(issues, { q, format, status }), [issues, q, format, status]);
+  const past = useMemo(() => listPastIssues(issues), [issues]);
+  const previous = latestIssue(past);
+  const older = previous ? past.filter((issue) => issueId(issue) !== issueId(previous)) : [];
 
   return (
     <div className="jg-library">
       {missingId && (
         <p className="jg-library__missing" role="alert">
-          No issue matches <span>{missingId}</span>. It may have been removed, or it belongs to another account.
+          That issue is gone, or it is not in this city.
         </p>
       )}
-      <div className="jg-library__bar">
-        <label>
-          Account
-          <select value={accountId || ''} onChange={(event) => onAccount(event.target.value)}>
-            <option value="">This city’s unassigned decks</option>
-            {accounts.map((account) => (
-              <option key={account.id} value={account.id}>{account.displayName}</option>
-            ))}
-          </select>
-        </label>
-        <label>
-          Search
-          <input value={q} onChange={(event) => setQ(event.target.value)} placeholder="Issue name" />
-        </label>
-        <label>
-          Format
-          <select value={format} onChange={(event) => setFormat(event.target.value)}>
-            <option value="all">All</option>
-            <option value="city-picks">City picks</option>
-            <option value="sorry-you-missed-it">Sorry you missed it</option>
-          </select>
-        </label>
-        <label>
-          Status
-          <select value={status} onChange={(event) => setStatus(event.target.value)}>
-            <option value="active">Active</option>
-            <option value="archived">Archived</option>
-            <option value="all">All</option>
-          </select>
-        </label>
-        <button type="button" onClick={onCreate} disabled={busy}>New issue</button>
-        <button type="button" onClick={onMigrate} disabled={busy}>Assign existing decks</button>
+
+      <div className="jg-library__actions">
+        {previous ? (
+          <button
+            type="button"
+            className="jg-library__continue"
+            onClick={() => onOpen(issueId(previous))}
+            disabled={busy}
+          >
+            <Thumb issue={previous} />
+            <span className="jg-library__continue-copy">
+              <small>Continue previous</small>
+              <strong>{issueName(previous)}</strong>
+              <time dateTime={previous.updatedAt}>{when(previous.updatedAt)}</time>
+            </span>
+          </button>
+        ) : (
+          <p className="jg-library__empty">No issues yet.</p>
+        )}
+        <button type="button" className="jg-library__new" onClick={onCreate} disabled={busy}>
+          New
+        </button>
       </div>
-      {!visible.length && <p className="jg-library__empty">No issues in this view.</p>}
-      <ul className="jg-library__grid">
-        {visible.map((issue) => (
-          <li key={issue._id || issue.id}>
-            <button type="button" className="jg-library__card" onClick={() => onOpen(issue._id || issue.id)}>
-              <span className="jg-library__thumb">
-                {issue.coverImage
-                  ? <img src={issue.coverImage} alt="" />
-                  : <b>{issue.coverType || 'issue'}</b>}
-              </span>
-              <span className="jg-library__meta">
-                <strong>{issue.name || issue.title}</strong>
-                <em>{issue.format || 'legacy'} · {issue.schemaVersion === 2 ? 'editable' : 'original'} · {issue.status || 'active'}</em>
-                <time dateTime={issue.updatedAt}>{when(issue.updatedAt)}</time>
-              </span>
-            </button>
-            {issue.schemaVersion !== 2 && issue.accountId && (
-              <button type="button" className="jg-library__copy" onClick={() => onEditableCopy(issue)} disabled={busy}>
-                Create editable copy
+
+      {older.length > 0 && (
+        <ul className="jg-library__grid">
+          {older.map((issue) => (
+            <li key={issueId(issue)}>
+              <button type="button" className="jg-library__card" onClick={() => onOpen(issueId(issue))}>
+                <Thumb issue={issue} />
+                <span className="jg-library__meta">
+                  <strong>{issueName(issue)}</strong>
+                  <time dateTime={issue.updatedAt}>{when(issue.updatedAt)}</time>
+                </span>
               </button>
-            )}
-          </li>
-        ))}
-      </ul>
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }
