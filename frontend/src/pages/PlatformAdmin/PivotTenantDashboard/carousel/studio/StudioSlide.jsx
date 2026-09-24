@@ -67,7 +67,8 @@ function ElementNode({ element, index, editingId, onEdit, onMeasure, onImageRequ
   const locked = inheritedLocked || element.locked;
   const style = { ...frameStyle(element, index), background: element.style?.fill, opacity: element.style?.opacity ?? 1, '--rule-color': element.style?.ruleColor || 'currentColor' };
   const treatment = element.style?.treatment || '';
-  const classes = `studio-art__node studio-art__node--${element.kind}${treatment ? ` studio-art__node--${treatment}` : ''}${element.style?.borderTop ? ' has-rule' : ''}${element.style?.shadow ? ' has-shadow' : ''}`;
+  const blankText = element.kind === 'text' && !(element.presence === 'blank' ? '' : String(element.text || '')).trim();
+  const classes = `studio-art__node studio-art__node--${element.kind}${treatment ? ` studio-art__node--${treatment}` : ''}${blankText ? ' is-blank' : ''}${element.style?.borderTop ? ' has-rule' : ''}${element.style?.shadow ? ' has-shadow' : ''}`;
   return <div className={classes} data-element-id={element.id} data-kind={element.kind} data-locked={locked ? 'true' : 'false'}
     data-frame={`${element.frame.x},${element.frame.y},${element.frame.width},${element.frame.height}`} data-rotation={element.rotation || 0} style={style}>
     {element.kind === 'card' ? (element.children || []).map((child, childIndex) => <ElementNode key={child.id} element={child} index={childIndex} editingId={editingId} onEdit={onEdit} onMeasure={onMeasure} onImageRequest={onImageRequest} timezone={timezone} inheritedLocked={locked} />)

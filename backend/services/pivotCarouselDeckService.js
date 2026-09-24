@@ -69,6 +69,26 @@ function coverImageOf(row) {
   return event?.imageOverride?.url || event?.snapshot?.image || row.document?.slides?.[0]?.elements?.find((element) => element.kind === 'image')?.asset?.src || null;
 }
 
+function previewImagesOf(row) {
+  const images = [];
+  const push = (src) => { if (src && !images.includes(src)) images.push(src); };
+  const walk = (elements) => {
+    for (const element of elements || []) {
+      if (element.kind === 'image' && element.role !== 'sticker') push(element.asset?.src);
+      walk(element.children);
+    }
+  };
+  for (const slide of row.document?.slides || []) {
+    push(slide.background?.asset?.src);
+    walk(slide.elements);
+  }
+  for (const slide of row.slides || []) {
+    for (const event of slide.events || []) push(event.imageOverride?.url || event.snapshot?.image);
+  }
+  if (!images.length) push(coverImageOf(row));
+  return images;
+}
+
 function serializeDeck(doc, { withSlides = true } = {}) {
   const row = doc?.toObject ? doc.toObject() : doc;
   const base = {
@@ -92,6 +112,7 @@ function serializeDeck(doc, { withSlides = true } = {}) {
     revision: row.revision || 1,
     coverType: row.slides?.[0]?.type || row.document?.slides?.[0]?.preset?.id || null,
     coverImage: coverImageOf(row),
+    previewImages: previewImagesOf(row),
   };
   if (!withSlides) return base;
   return {

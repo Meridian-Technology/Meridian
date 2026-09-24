@@ -51,3 +51,11 @@ Local screenshot artifacts (ignored by Git): `out/carousel-studio/editor.png`, `
 ## Remaining release verification
 
 A signed-in staging session must still exercise real upload/list/save/reload/replacement against configured S3, account authorization middleware, and deployment packaging. Full touch-device coverage and the complete release matrix remain in phase 6.1. Autosave/recovery, immutable export jobs, deployment, and Relay operations remain separate work. The local fixture deliberately cannot serve as evidence of those operations.
+
+## Shared image picker and Unsplash (MER-205 follow-up)
+
+The Image toolbar action, Add a photograph placeholder, Replace image, Background image, and Assets panel open the shared picker. Event photos combine original curated source images with photographs elsewhere in the issue; duplicates are collapsed. Saved assets remain account scoped. Choosing a replacement preserves the existing frame/crop and records one undo transaction. The modal traps focus through the native dialog, restores focus on close, and keeps failed uploads/selections open without changing artwork.
+
+Unsplash browsing, keyword search, pagination, and selection use authenticated account routes. Configure `UNSPLASH_ACCESS_KEY` in the backend environment (an Unsplash developer application's access key, never a frontend `REACT_APP_*` variable), then restart the backend. No key was created or committed. A missing key produces an actionable unavailable state. The account-free development fixture intentionally cannot query Unsplash.
+
+The integration hotlinks provider-returned image URLs, stores photographer/source attribution, shows attribution links with referral parameters, and calls the fixed provider download-tracking endpoint on selection before applying an image. It does not copy Unsplash files to S3. See [Unsplash API documentation](https://unsplash.com/documentation) and [API guidelines](https://help.unsplash.com/en/articles/2511245-unsplash-api-guidelines). Search failures and provider request limits preserve the existing artwork. Tests use mocked provider responses; live Unsplash search still requires a configured application key.

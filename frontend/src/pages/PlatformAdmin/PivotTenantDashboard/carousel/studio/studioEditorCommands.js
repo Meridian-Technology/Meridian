@@ -469,10 +469,11 @@ export function replaceImageAsset(doc, slideId, id, asset) {
     const element = findElement(slideNode(next, slideId), id);
     if (!element || (element.kind !== 'image' && element.kind !== 'sticker') || isElementLocked(slideNode(next, slideId), id)) return;
     const previous = element.asset || {};
+    const replacingSource = asset.src != null && asset.src !== previous.src;
     element.asset = {
-      ...previous,
+      ...(replacingSource ? {} : previous),
       ...asset,
-      credit: asset.credit != null ? asset.credit : previous.credit,
+      credit: asset.credit != null ? asset.credit : previous.provider === 'unsplash' && replacingSource ? null : previous.credit,
     };
   });
 }
@@ -732,6 +733,7 @@ export function insertUploadedImage(doc, slideId, asset) {
       frame: { x: 180, y: 160, width: 480, height: 480 },
       crop: { focalX: 0.5, focalY: 0.5, scale: 1 },
       asset: {
+        ...asset,
         id: asset.id || createEditorId('asset'),
         key: asset.key || null,
         src: asset.src,
@@ -754,11 +756,17 @@ export function setBackgroundImage(doc, slideId, asset) {
   return withDocument(doc, (next) => {
     const slide = slideNode(next, slideId);
     const previous = slide.background?.kind === 'image' ? slide.background : null;
+    const previousAsset = previous?.asset || {};
+    const replacingSource = asset.src != null && asset.src !== previousAsset.src;
     slide.background = {
       kind: 'image',
       color: previous?.color || slide.background?.color || '#1a1714',
       crop: previous?.crop || { focalX: 0.5, focalY: 0.5, scale: 1 },
-      asset: { ...(previous?.asset || {}), ...asset },
+      asset: {
+        ...(replacingSource ? {} : previousAsset),
+        ...asset,
+        credit: asset.credit != null ? asset.credit : previousAsset.provider === 'unsplash' && replacingSource ? null : previousAsset.credit,
+      },
     };
   });
 }
@@ -833,11 +841,13 @@ export function assetsInDocument(doc) {
   const list = [];
   const visit = (node) => {
     if (!node || typeof node !== 'object') return;
-    const key = node.asset?.key || node.asset?.id || node.asset?.src;
-    if (node.kind === 'image' && node.asset?.src && key && !seen.has(key)) {
-      seen.add(key);
-      list.push(node.asset);
-    }
+    const found = [];
+    if (node.kind === 'image' && node.asset?.src) found.push(node.asset);
+    if (node.background?.asset?.src) found.push(node.background.asset);
+    found.forEach(asset => {
+      const key = asset.key || asset.id || asset.src;
+      if (key && !seen.has(key)) { seen.add(key); list.push(asset); }
+    });
     for (const child of node.elements || node.children || node.slides || []) visit(child);
   };
   visit(doc);

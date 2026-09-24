@@ -84,9 +84,8 @@
     background: var(--pivot-ops-surface, #fff);
 
     .pivot-curation-sheet__scroller {
-      max-height: min(70vh, 720px);
-      overflow-x: hidden;
-      overflow-y: auto;
+      max-height: min(58vh, 640px);
+      overflow: auto;
       overscroll-behavior: contain;
       -webkit-overflow-scrolling: touch;
     }
@@ -181,5 +180,7 @@
     display: flex;
     gap: 16px;
     align-items: flex-start;
+    overflow-x: auto;
+    padding-bottom: 8px;
   }
 }

@@ -21,6 +21,18 @@ test('a completed drag moves the rendered frame and creates exactly one undo tra
   fireEvent.click(screen.getByRole('button', { name: 'Redo', exact: true }));
   expect(node().style.left).toBe('140px');
 });
+test('backspace on a sidebar slide deletes that slide', () => {
+  const issue = makeIssue();
+  issue.document.slides.push({ id: 's2', role: 'event', width: 1080, height: 1350, elements: [] });
+  render(<StudioEditor issue={issue} />);
+  const slide = screen.getByRole('button', { name: 'Slide 2' });
+  fireEvent.click(slide);
+  fireEvent.keyDown(slide, { key: 'Backspace' });
+  expect(screen.queryByRole('button', { name: 'Slide 2' })).not.toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Slide 1' })).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Undo', exact: true }));
+  expect(screen.getByRole('button', { name: 'Slide 2' })).toBeInTheDocument();
+});
 test('escape cancels the gesture and leaves no undo entry', () => {
   render(<StudioEditor issue={makeIssue()} />);
   fireEvent.pointerDown(node(), { clientX: 50, clientY: 50 });
@@ -74,21 +86,72 @@ test('Add a photograph opens the picker and successful replacement is one undo s
   const image = { id: 'asset', accountId: 'account', key: 'pivot-carousel/accounts/account/image.png', src: 'https://assets.test/image.png' };
   authenticatedRequest.mockResolvedValueOnce({ data: { success: true, data: { asset: image } } });
   render(<StudioEditor issue={makeIssue([photo])} />);
-  const input = screen.getByLabelText('Add photograph file'); const click = jest.spyOn(input, 'click');
-  fireEvent.click(screen.getByRole('button', { name: /Add a photograph/ })); expect(click).toHaveBeenCalledTimes(1);
+  fireEvent.click(screen.getByRole('button', { name: /Add a photograph/ }));
+  expect(screen.getByRole('dialog', { name: 'Choose a photograph' })).toBeInTheDocument();
+  const input = screen.getByLabelText('Upload photograph');
   fireEvent.change(input, { target: { files: [new File(['image'], 'photo.png', { type: 'image/png' })] } });
   await screen.findByText('Image uploaded. Save to keep it in this issue.');
   expect(node().getAttribute('data-frame')).toBe('40,50,120,80'); expect(node().querySelector('img').src).toBe(image.src);
   fireEvent.click(screen.getByRole('button', { name: 'Undo', exact: true }));
   expect(screen.getByRole('button', { name: /Add a photograph/ })).toBeInTheDocument();
-  expect(screen.getByRole('button', { name: 'Undo', exact: true })).toBeDisabled(); click.mockRestore();
+  expect(screen.getByRole('button', { name: 'Undo', exact: true })).toBeDisabled();
 });
 test('failed image uploads preserve the original image and geometry', async () => {
   const photo = { ...shape, kind: 'image', asset: { src: 'https://assets.test/original.png' } };
   authenticatedRequest.mockRejectedValueOnce(new Error('Upload failed'));
   render(<StudioEditor issue={makeIssue([photo])} />);
   fireEvent.pointerDown(node(), { clientX: 10, clientY: 10 }); fireEvent.pointerUp(node());
-  fireEvent.change(screen.getByLabelText('Replace image'), { target: { files: [new File(['image'], 'photo.png', { type: 'image/png' })] } });
-  await screen.findByText('Upload failed'); expect(node().querySelector('img').src).toBe(photo.asset.src);
+  fireEvent.click(screen.getByRole('button', { name: 'Replace image' }));
+  fireEvent.change(screen.getByLabelText('Upload photograph'), { target: { files: [new File(['image'], 'photo.png', { type: 'image/png' })] } });
+  expect(await screen.findByRole('alert')).toHaveTextContent('Upload failed'); expect(node().querySelector('img').src).toBe(photo.asset.src);
   expect(screen.getByRole('button', { name: 'Undo', exact: true })).toBeDisabled();
+});
+
+test('choosing a source event photograph replaces the frame and undoes in one step', () => {
+  const photo = { ...shape, kind: 'image', asset: {}, crop: { focalX: .4, focalY: .6, scale: 1.2 } };
+  const issue = { ...makeIssue([photo]), sources: [{ snapshot: { name: 'Other event', image: 'https://assets.test/other.jpg', imageCredit: 'Event photographer' } }] };
+  render(<StudioEditor issue={issue} />);
+  fireEvent.click(screen.getByRole('button', { name: /Add a photograph/ }));
+  fireEvent.click(screen.getByRole('button', { name: 'Use Other event' }));
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  expect(node().querySelector('img').src).toBe('https://assets.test/other.jpg');
+  expect(node().getAttribute('data-frame')).toBe('40,50,120,80');
+  fireEvent.click(screen.getByRole('button', { name: 'Undo', exact: true }));
+  expect(screen.getByRole('button', { name: /Add a photograph/ })).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Undo', exact: true })).toBeDisabled();
+});
+
+test('saved assets stay account-scoped and an Unsplash photo can be inserted again', async () => {
+  const stock = { id: 'unsplash:abc', provider: 'unsplash', photoId: 'abc', src: 'https://images.unsplash.com/night.jpg', alt: 'Night market', photographer: 'Pat', photographerUrl: 'https://unsplash.com/@pat?utm_source=just_go&utm_medium=referral', sourceUrl: 'https://unsplash.com/photos/abc?utm_source=just_go&utm_medium=referral', credit: 'Pat / Unsplash' };
+  authenticatedRequest.mockResolvedValueOnce({ data: { success: true, data: { assets: [stock] } } });
+  const issue = { ...makeIssue(), accountId: 'account', sources: [{ snapshot: { name: 'Other event', image: 'https://assets.test/other.jpg' } }] };
+  render(<StudioEditor issue={issue} />);
+  fireEvent.click(screen.getByRole('button', { name: 'Image', exact: true }));
+  fireEvent.click(screen.getByRole('button', { name: 'Saved assets', exact: true }));
+  expect(await screen.findByRole('button', { name: 'Use Night market' })).toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Use Other event' })).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Close image picker', exact: true }));
+  fireEvent.click(screen.getByRole('button', { name: 'Assets', exact: true }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Night market' }));
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  expect(screen.getByTestId('editor-stage').querySelector('img').src).toBe(stock.src);
+});
+
+test('a rejected upload explains why and leaves the picker open', async () => {
+  render(<StudioEditor issue={makeIssue()} />);
+  fireEvent.click(screen.getByRole('button', { name: 'Image', exact: true }));
+  fireEvent.change(screen.getByLabelText('Upload photograph'), { target: { files: [new File(['notes'], 'notes.txt', { type: 'text/plain' })] } });
+  expect(await screen.findByRole('alert')).toHaveTextContent('Use a PNG, JPEG, WebP, or GIF.');
+  expect(screen.getByRole('dialog', { name: 'Choose a photograph' })).toBeInTheDocument();
+});
+
+test('an Unsplash background keeps its photographer credit', () => {
+  const stock = { provider: 'unsplash', photoId: 'abc', src: 'https://images.unsplash.com/night.jpg', photographer: 'Pat', photographerUrl: 'https://unsplash.com/@pat?utm_source=just_go&utm_medium=referral', sourceUrl: 'https://unsplash.com/photos/abc?utm_source=just_go&utm_medium=referral' };
+  const issue = makeIssue();
+  issue.document.slides[0].background = { kind: 'image', asset: stock };
+  render(<StudioEditor issue={issue} />);
+  const credits = screen.getAllByRole('link', { name: 'Pat' });
+  expect(credits.length).toBeGreaterThan(0);
+  credits.forEach(link => expect(link).toHaveAttribute('href', stock.photographerUrl));
+  screen.getAllByRole('link', { name: 'Unsplash' }).forEach(link => expect(link).toHaveAttribute('href', stock.sourceUrl));
 });

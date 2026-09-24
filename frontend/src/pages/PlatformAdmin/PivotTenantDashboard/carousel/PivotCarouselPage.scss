@@ -2223,10 +2223,23 @@
   }
 
   > .pivot-tenant-page__body {
+    display: flex;
+    flex-direction: column;
     height: 100%;
     max-height: 100%;
     padding: 0.5rem 0.75rem 0.75rem;
     overflow: hidden;
+  }
+
+  &:has(.jg-curate) > .pivot-tenant-page__body {
+    overflow: auto;
+  }
+
+  .jg-editor {
+    flex: 1 1 auto;
+    height: auto;
+    min-height: 0;
+    max-height: none;
   }
 
   .jgz {

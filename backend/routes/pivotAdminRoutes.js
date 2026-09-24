@@ -722,6 +722,12 @@ router.post(
   },
 );
 
+router.get('/carousel-accounts/:accountId/unsplash', verifyToken, requirePlatformAdmin, async (req, res) => {
+  return sendDeckResult(res, await require('../services/pivotCarouselUnsplashService').searchPhotos(req, req.params.accountId, req.query));
+});
+router.post('/carousel-accounts/:accountId/unsplash/select', verifyToken, requirePlatformAdmin, async (req, res) => {
+  return sendDeckResult(res, await require('../services/pivotCarouselUnsplashService').selectPhoto(req, req.params.accountId, req.body.photoId));
+});
 router.get('/carousel-accounts/:accountId/assets', verifyToken, requirePlatformAdmin, async (req, res) => {
   try { return sendDeckResult(res, await listAssets(req, req.params.accountId)); }
   catch (error) { logPivotRouteError('GET carousel assets', error, req); return res.status(500).json({ success: false, message: 'Could not load images.' }); }

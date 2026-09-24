@@ -100,3 +100,13 @@ test('legacy ISO dates display as bold local dates without rewriting saved copy'
   expect(container.querySelector('strong')).toHaveStyle({ fontWeight: '700' });
   expect(doc.elements[0].text).toContain(value);
 });
+
+test('blank text fields are marked and filled fields are not', () => {
+  const doc = { width: 1080, height: 1350, elements: [
+    { id: 'empty', kind: 'text', text: '', presence: 'blank', frame: { x: 10, y: 10, width: 200, height: 40 } },
+    { id: 'filled', kind: 'text', text: 'Lanterns', presence: 'custom', frame: { x: 10, y: 60, width: 200, height: 40 } },
+  ] };
+  const { container } = render(<StudioSlide doc={doc} width={200} />);
+  expect(container.querySelector('[data-element-id="empty"]')).toHaveClass('is-blank');
+  expect(container.querySelector('[data-element-id="filled"]')).not.toHaveClass('is-blank');
+});

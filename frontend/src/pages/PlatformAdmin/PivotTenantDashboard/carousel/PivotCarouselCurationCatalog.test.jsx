@@ -52,5 +52,7 @@ describe('carousel catalog rows', () => {
 
     fireEvent.click(screen.getByText('Tonight', { selector: '.pivot-curation-sheet__name' }));
     expect(onToggle).toHaveBeenCalledWith(CANDIDATES[1]);
+    fireEvent.doubleClick(screen.getByText('Tonight', { selector: '.pivot-curation-sheet__name' }));
+    expect(screen.getByRole('complementary', { name: /tonight details/i })).toBeInTheDocument();
   });
 });

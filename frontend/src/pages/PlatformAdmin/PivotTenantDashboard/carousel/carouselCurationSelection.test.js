@@ -51,10 +51,10 @@ describe('curation selection tray', () => {
     expect(slideEstimate(20).overflow).toBe(true);
   });
 
-  test('search to name is sequential and recap defaults to past / all cities', () => {
+  test('search goes to review and recap defaults to past / all cities', () => {
     expect(nextCurationStep('search')).toBe('review');
-    expect(nextCurationStep('review')).toBe('name');
-    expect(previousCurationStep('name')).toBe('review');
+    expect(nextCurationStep('review')).toBe('review');
+    expect(previousCurationStep('review')).toBe('search');
     expect(defaultQueryForFormat('sorry-you-missed-it', ['sf', 'nyc'], 'sf')).toEqual({
       temporalMode: 'past',
       sourceTenantKeys: [],

@@ -10,7 +10,7 @@ export function librarySelection(decks, requestedId) {
 }
 
 export function issueName(issue) {
-  return issue?.name || issue?.title || 'Untitled issue';
+  return issue?.name || issue?.title || 'Untitled carousel';
 }
 
 export function issueId(issue) {

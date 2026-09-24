@@ -120,7 +120,7 @@ export function describeCurationDiff(diff) {
   return parts.join(' · ');
 }
 
-export const CURATION_STEPS = Object.freeze(['search', 'review', 'name']);
+export const CURATION_STEPS = Object.freeze(['search', 'review']);
 
 export function nextCurationStep(step) {
   const index = CURATION_STEPS.indexOf(step);

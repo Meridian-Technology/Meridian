@@ -1,11 +1,43 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { formatEventWhenWithShowtimes } from '../../../../utils/pivotIsoWeek';
 import PivotImportThumb from '../../PivotLab/PivotImportThumb';
+import PivotCurationPortalPopup from '../PivotCurationPortalPopup';
 import { candidateToCatalogEvent, editorialTierLabel } from './carouselCurationCatalog';
 import { eventRefKey } from './carouselCurationSelection';
 import '../PivotCurationQueue.scss';
 
-function CatalogPickRow({ candidate, selected, onToggle }) {
+function EventDetailCard({ candidate, handleClose }) {
+  const event = candidateToCatalogEvent(candidate);
+  const snapshot = candidate.snapshot || {};
+  const when = formatEventWhenWithShowtimes(event);
+  const sourceHref = snapshot.externalLink || snapshot.sourceUrl;
+  return (
+    <aside className="pivot-curation-sheet__inspect pivot-curation-sheet__inspect--dossier" aria-label={`${event.name || 'Event'} details`}>
+      <div className="pivot-curation-sheet__inspect-media">
+        {event.image ? <img src={event.image} alt="" /> : <div className="pivot-curation-sheet__inspect-fallback" aria-hidden="true" />}
+      </div>
+      <div className="pivot-curation-sheet__inspect-body">
+        <div className="pivot-curation-sheet__inspect-head">
+          <h3 className="pivot-curation-sheet__inspect-title">{event.name || 'Untitled'}</h3>
+          <button type="button" className="linear-btn linear-btn--ghost pivot-curation-sheet__inspect-close" onClick={handleClose}>Close</button>
+        </div>
+        <p className="pivot-curation-sheet__inspect-meta">{[event.organizerName, when, event.location].filter(Boolean).join(' · ')}</p>
+        {snapshot.description ? <p className="pivot-curation-sheet__inspect-copy is-full">{snapshot.description}</p> : null}
+        {sourceHref ? <a className="pivot-curation-sheet__inspect-link" href={sourceHref} target="_blank" rel="noreferrer">Source listing</a> : null}
+      </div>
+    </aside>
+  );
+}
+
+function EventDetailPopup({ candidate, onClose }) {
+  return (
+    <PivotCurationPortalPopup isOpen onClose={onClose} className="pivot-curation-inspect-popup">
+      <EventDetailCard candidate={candidate} />
+    </PivotCurationPortalPopup>
+  );
+}
+
+function CatalogPickRow({ candidate, selected, onToggle, onInspect }) {
   const event = candidateToCatalogEvent(candidate);
   const tags = event.tags || [];
   const sourceHref = candidate.snapshot?.externalLink || candidate.snapshot?.sourceUrl;
@@ -15,6 +47,7 @@ function CatalogPickRow({ candidate, selected, onToggle }) {
     <tr
       className={selected ? 'is-selected' : ''}
       onClick={() => onToggle(candidate)}
+      onDoubleClick={(nativeEvent) => { nativeEvent.preventDefault(); onInspect(candidate); }}
     >
       <td className="pivot-curation-sheet__thumb-col">
         {sourceHref ? (
@@ -79,6 +112,7 @@ export default function PivotCarouselCurationCatalog({
   keyword,
   onToggle,
 }) {
+  const [detail, setDetail] = useState(null);
   if (!candidates.length && loading) {
     return <p className="jg-curate__empty">Loading catalog…</p>;
   }
@@ -91,6 +125,7 @@ export default function PivotCarouselCurationCatalog({
   }
 
   return (
+    <>
     <div className="pivot-curation-sheet jg-curate__sheet">
       <div className="pivot-curation-sheet__scroller">
         <table className="pivot-curation-sheet__table">
@@ -113,6 +148,7 @@ export default function PivotCarouselCurationCatalog({
                   candidate={candidate}
                   selected={selectedKeys.has(key)}
                   onToggle={onToggle}
+                  onInspect={setDetail}
                 />
               );
             })}
@@ -120,5 +156,7 @@ export default function PivotCarouselCurationCatalog({
         </table>
       </div>
     </div>
+    {detail ? <EventDetailPopup candidate={detail} onClose={() => setDetail(null)} /> : null}
+    </>
   );
 }

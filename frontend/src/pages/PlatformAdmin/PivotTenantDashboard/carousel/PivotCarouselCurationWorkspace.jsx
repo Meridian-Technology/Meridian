@@ -75,7 +75,6 @@ export default function PivotCarouselCurationWorkspace({
   const [coverVariation, setCoverVariation] = useState(1);
   const [variationPast, setVariationPast] = useState([]);
   const [eventPreset, setEventPreset] = useState('photo-note');
-  const [name, setName] = useState('');
   const [idempotencyKey] = useState(() => newIdempotencyKey());
   const [results, setResults] = useState([]);
   const [sources, setSources] = useState([]);
@@ -243,15 +242,21 @@ export default function PivotCarouselCurationWorkspace({
       return;
     }
     if (estimate.overflow) {
-      setError(`An issue can hold ${estimate.maxSlides} slides, including the cover.`);
+      setError(`A carousel can hold ${estimate.maxSlides} slides, including the cover.`);
       return;
     }
     setDiff(issue ? diffSelection(previousRefs, selected.map((item) => item.ref)) : null);
     setStep('review');
   };
 
-  const goName = async () => {
+  const finish = async () => {
+    const carouselName = theme.trim();
+    if (!issue && !carouselName) {
+      setError('Name the carousel. That title is also the cover.');
+      return;
+    }
     setLoading(true);
+    clearTimeout(saveTimer.current);
     let id = draftId || draft?.id;
     if (!id) {
       const created = await persist(null, snapshot);
@@ -264,40 +269,26 @@ export default function PivotCarouselCurationWorkspace({
       setDraft(created.data.data.draft);
       onDraftId(id);
     }
-    const result = await authenticatedRequest(`${path}/drafts/${id}/revalidate`, { method: 'POST' });
-    setLoading(false);
-    if (!result.data?.success) {
-      setError(result.data?.message || 'Could not revalidate the selection.');
+    const checked = await authenticatedRequest(`${path}/drafts/${id}/revalidate`, { method: 'POST' });
+    if (!checked.data?.success) {
+      setLoading(false);
+      setError(checked.data?.message || 'Could not revalidate the selection.');
       return;
     }
-    setDraft(result.data.data.draft);
-    setSelected(result.data.data.draft.selected || selected);
-    setRevalidation(result.data.data.revalidation);
-    setStep('name');
-  };
-
-  const finish = async () => {
-    const id = draftId || draft?.id;
-    if (!id) {
-      setError('The draft is still saving.');
-      return;
-    }
-    if (!issue && !name.trim()) {
-      setError('Name the issue after you have reviewed the batch.');
-      return;
-    }
-    setLoading(true);
-    clearTimeout(saveTimer.current);
+    const recheck = checked.data.data.revalidation;
+    setDraft(checked.data.data.draft);
+    setSelected(checked.data.data.draft.selected || selected);
+    setRevalidation(recheck);
     const persisted = await persist(id, snapshot);
     if (!persisted.data?.success) { setLoading(false); setError('Could not save your selection. Try again.'); return; }
-    const stale = revalidation && (
-      revalidation.missing?.length || revalidation.unavailable?.length || revalidation.complete === false
+    const stale = recheck && (
+      recheck.missing?.length || recheck.unavailable?.length || recheck.complete === false
     );
     const endpoint = issue ? (staged ? 'preview' : 'apply') : 'create';
     const result = await authenticatedRequest(`${path}/drafts/${id}/${endpoint}`, {
       method: 'POST',
       data: {
-        name: name.trim(),
+        name: carouselName || issue?.name,
         idempotencyKey,
         acceptChanges: Boolean(stale),
         issueId: issue?.id,
@@ -308,7 +299,7 @@ export default function PivotCarouselCurationWorkspace({
     });
     setLoading(false);
     if (!result.data?.success) {
-      setError(result.data?.message || 'Could not save the issue.');
+      setError(result.data?.message || 'Could not save the carousel.');
       if (result.data?.details) setRevalidation(result.data.details);
       notify?.({ title: 'Could not finish curation', message: result.data?.message || 'The request failed.', type: 'error' });
       return;
@@ -320,7 +311,7 @@ export default function PivotCarouselCurationWorkspace({
 
   const stepActions = (
     <>
-      <button type="button" className="linear-btn linear-btn--ghost" onClick={onCancel}>{staged ? 'Cancel' : 'All issues'}</button>
+      <button type="button" className="linear-btn linear-btn--ghost" onClick={onCancel}>{staged ? 'Cancel' : 'All carousels'}</button>
       {step !== 'search' && (
         <button type="button" className="linear-btn linear-btn--secondary" onClick={() => setStep(previousCurationStep(step))}>Back</button>
       )}
@@ -330,13 +321,8 @@ export default function PivotCarouselCurationWorkspace({
         </button>
       )}
       {step === 'review' && (
-        <button type="button" className="linear-btn linear-btn--primary" onClick={goName} disabled={!selected.length || estimate.overflow || loading}>
-          {issue ? 'Review changes' : 'Continue to name'}
-        </button>
-      )}
-      {step === 'name' && (
-        <button type="button" className="linear-btn linear-btn--primary" onClick={finish} disabled={loading || (!issue && !name.trim())}>
-          {issue ? (staged ? 'Apply to editor' : 'Update issue') : 'Create issue'}
+        <button type="button" className="linear-btn linear-btn--primary" onClick={finish} disabled={!selected.length || estimate.overflow || loading || (!issue && !theme.trim())}>
+          {issue ? (staged ? 'Apply to editor' : 'Update carousel') : 'Create carousel'}
         </button>
       )}
     </>
@@ -346,7 +332,7 @@ export default function PivotCarouselCurationWorkspace({
     <div className="jg-curate">
       <PivotOpsSection
         className="jg-curate__panel"
-        title={issue ? 'Edit selection' : 'New issue'}
+        title={issue ? 'Edit selection' : 'New carousel'}
         description={`${formatLabel(format)}${saving ? ' · saving draft' : ''} · ${selected.length} selected · ${estimate.slideCount} slides`}
         actions={stepActions}
       >
@@ -433,8 +419,8 @@ export default function PivotCarouselCurationWorkspace({
       {step === 'review' && (
         <div className="jg-curate__review">
           <label>
-            Optional theme
-            <input value={theme} onChange={(event) => setTheme(event.target.value)} placeholder="A catchy cover title, not the issue name" />
+            Name
+            <input value={theme} maxLength={80} onChange={(event) => setTheme(event.target.value)} placeholder="Cover title" />
           </label>
           <div className="jg-curate__presets">
             <label>
@@ -477,8 +463,10 @@ export default function PivotCarouselCurationWorkspace({
             </button>
           </div>
           <div className="jg-curate__preview">
-            <StudioSlide doc={generateCoverSlide({ theme, coverPreset, variation: coverVariation })} width={220} />
-            <StudioSlide doc={generateEventSlide(selected[0] || {}, eventPreset, { format })} width={220} />
+            <StudioSlide doc={generateCoverSlide({ theme, coverPreset, variation: coverVariation })} width={180} />
+            {selected.map((item) => (
+              <StudioSlide key={eventRefKey(item.ref)} doc={generateEventSlide(item, eventPreset, { format })} width={180} />
+            ))}
           </div>
           {estimate.overflow && (
             <p className="jg-curate__alert">This batch would create {estimate.slideCount} slides. The cap is {estimate.maxSlides}.</p>
@@ -487,6 +475,20 @@ export default function PivotCarouselCurationWorkspace({
             <p key={`${warning.code}-${warning.ref?.eventId || warning.message}`} className="jg-curate__warn">{warning.message}</p>
           ))}
           {diff && <p className="jg-curate__note">{describeCurationDiff(diff)}</p>}
+          {revalidation && (
+            <ul className="jg-curate__report">
+              {revalidation.missing?.map((ref) => (
+                <li key={eventRefKey(ref)}>Missing: {ref.sourceTenantKey}/{ref.eventId}</li>
+              ))}
+              {revalidation.unavailable?.map((row) => (
+                <li key={eventRefKey(row.ref)}>Unavailable: {row.ref.eventId} ({row.publication})</li>
+              ))}
+              {revalidation.changed?.map((row) => (
+                <li key={eventRefKey(row.ref)}>Changed: {row.ref.eventId} ({row.fields.join(', ')})</li>
+              ))}
+              {revalidation.complete === false && <li>One or more cities could not be rechecked.</li>}
+            </ul>
+          )}
           <ol className="jg-curate__batch">
             {selected.map((item) => (
               <li key={eventRefKey(item.ref)}>
@@ -509,33 +511,6 @@ export default function PivotCarouselCurationWorkspace({
               </li>
             ))}
           </ol>
-        </div>
-      )}
-
-      {step === 'name' && (
-        <div className="jg-curate__name">
-          <p>{issue ? 'Existing slides keep your edits. Removed events remain as detached slides; new events receive the selected template.' : 'The issue name is internal. It does not print on the cover.'}</p>
-          {revalidation && (
-            <ul className="jg-curate__report">
-              {revalidation.missing?.map((ref) => (
-                <li key={eventRefKey(ref)}>Missing: {ref.sourceTenantKey}/{ref.eventId}</li>
-              ))}
-              {revalidation.unavailable?.map((row) => (
-                <li key={eventRefKey(row.ref)}>Unavailable: {row.ref.eventId} ({row.publication})</li>
-              ))}
-              {revalidation.changed?.map((row) => (
-                <li key={eventRefKey(row.ref)}>Changed: {row.ref.eventId} ({row.fields.join(', ')})</li>
-              ))}
-              {revalidation.complete === false && <li>One or more cities could not be rechecked.</li>}
-              {!revalidation.missing?.length && !revalidation.unavailable?.length && !revalidation.changed?.length && revalidation.complete !== false && (
-                <li>Selection still matches the catalog.</li>
-              )}
-            </ul>
-          )}
-          {!issue && <label>
-            Issue name
-            <input value={name} onChange={(event) => setName(event.target.value)} maxLength={80} />
-          </label>}
         </div>
       )}
       </PivotOpsSection>

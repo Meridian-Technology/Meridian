@@ -355,6 +355,34 @@ export default function PivotCarouselPage({ tenantKey, cityDisplayName }) {
     }
   }, [addNotification, ensureAccount, openCuration]);
 
+  const archiveCarousel = useCallback(async (issue) => {
+    const account = issue.accountId || accountId;
+    if (!account) {
+      addNotification({ title: 'Could not archive', message: 'This carousel is not on an account yet.', type: 'error' });
+      return;
+    }
+    if (!window.confirm(`Archive “${issue.name || issue.title || 'this carousel'}”?`)) return;
+    const result = await authenticatedRequest(`/admin/pivot/carousel-accounts/${account}/issues/${issue._id}/archive`, {
+      method: 'POST',
+      data: { revision: issue.revision },
+    });
+    if (!result.data?.success) {
+      addNotification({ title: 'Could not archive', message: result.data?.message || 'The request failed.', type: 'error' });
+      return;
+    }
+    load();
+  }, [accountId, addNotification, load]);
+
+  const deleteCarousel = useCallback(async (issue) => {
+    if (!window.confirm(`Delete “${issue.name || issue.title || 'this carousel'}”? This cannot be undone.`)) return;
+    const result = await authenticatedRequest(`${decksPath(tenantKey)}/${issue._id}`, { method: 'DELETE' });
+    if (!result.data?.success) {
+      addNotification({ title: 'Could not delete', message: result.data?.message || 'The request failed.', type: 'error' });
+      return;
+    }
+    load();
+  }, [addNotification, load, tenantKey]);
+
   const saveStudioDocument = useCallback(async (document, editorial = {}) => {
     if (!draft?.accountId || !draft?._id) return { error: 'Missing issue', code: 400 };
     const result = await authenticatedRequest(
@@ -439,7 +467,7 @@ export default function PivotCarouselPage({ tenantKey, cityDisplayName }) {
       actions={draft && manifest && draft.schemaVersion !== 2 ? null : (
         <>
           {draft || requestedCurationId ? (
-            <button type="button" className="jgz__action" onClick={closeLibrary}>All issues</button>
+            <button type="button" className="jgz__action" onClick={closeLibrary}>All carousels</button>
           ) : null}
           <span className="jgz__note">4:5 · 1080×1350</span>
         </>
@@ -516,6 +544,8 @@ export default function PivotCarouselPage({ tenantKey, cityDisplayName }) {
             missingId={libraryMode === 'missing' ? missingId : null}
             onOpen={openIssue}
             onCreate={createDeck}
+            onArchive={archiveCarousel}
+            onDelete={deleteCarousel}
             busy={seeding || loading}
           />
         )}

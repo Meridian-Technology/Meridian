@@ -19,31 +19,37 @@ const ISSUES = [
   },
 ];
 
-describe('carousel issue list', () => {
+describe('carousel grid', () => {
   test('empty city only offers New', () => {
     const onCreate = jest.fn();
     render(<PivotCarouselLibrary issues={[]} onOpen={() => {}} onCreate={onCreate} />);
 
-    expect(screen.getByText('No issues yet.')).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /continue previous/i })).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'New issue' }));
+    expect(screen.getByText('No carousels yet.')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'New carousel' }));
     expect(onCreate).toHaveBeenCalled();
   });
 
-  test('shows continue previous and the rest of the past issues', () => {
+  test('fans every event image and can archive or delete a carousel', () => {
     const onOpen = jest.fn();
-    const onCreate = jest.fn();
-    render(<PivotCarouselLibrary issues={ISSUES} onOpen={onOpen} onCreate={onCreate} />);
+    const onArchive = jest.fn();
+    const onDelete = jest.fn();
+    const issues = [
+      {
+        ...ISSUES[1],
+        previewImages: ['https://cdn.example/jazz.jpg', 'https://cdn.example/room.jpg', 'https://cdn.example/street.jpg'],
+      },
+      ISSUES[0],
+    ];
+    render(<PivotCarouselLibrary issues={issues} onOpen={onOpen} onCreate={() => {}} onArchive={onArchive} onDelete={onDelete} />);
 
-    expect(screen.getByRole('button', { name: /continue previous/i })).toHaveTextContent('Jazz night');
-    expect(screen.getByRole('button', { name: /lanterns/i })).toBeInTheDocument();
-    expect(screen.queryByLabelText('Account')).not.toBeInTheDocument();
-    expect(screen.queryByText('Assign existing decks')).not.toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole('button', { name: /continue previous/i }));
+    const jazz = screen.getByRole('button', { name: /jazz night/i });
+    expect(jazz.querySelectorAll('img')).toHaveLength(3);
+    expect(screen.getByRole('button', { name: /lanterns/i }).querySelectorAll('img')).toHaveLength(1);
+    fireEvent.click(jazz);
     expect(onOpen).toHaveBeenCalledWith('new');
-
-    fireEvent.click(screen.getByRole('button', { name: 'New issue' }));
-    expect(onCreate).toHaveBeenCalled();
+    fireEvent.click(screen.getAllByRole('button', { name: 'Archive' })[0]);
+    expect(onArchive).toHaveBeenCalledWith(issues[0]);
+    fireEvent.click(screen.getAllByRole('button', { name: 'Delete' })[1]);
+    expect(onDelete).toHaveBeenCalledWith(issues[1]);
   });
 });
