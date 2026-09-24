@@ -223,8 +223,8 @@ describe('merged pagination', () => {
     });
     expect(first).toBe(second);
     expect(compareCandidates(
-      candidate('sf', 'aaa', '2026-09-05T20:00:00Z'),
       candidate('nyc', 'bbb', '2026-09-05T20:00:00Z'),
+      candidate('sf', 'aaa', '2026-09-05T20:00:00Z'),
       'date',
     )).toBeLessThan(0);
   });
