@@ -337,6 +337,12 @@ function coerceField(field, raw) {
  * `{ slide, notes }` — notes name what was changed, for the caller to surface.
  */
 function coerceSlide(raw) {
+  if (raw && (Number(raw.schemaVersion) >= 2 || (raw.kind && !raw.type) || (Array.isArray(raw.elements) && !raw.type))) {
+    return {
+      error: 'A schemaVersion 2 document cannot be trimmed into a legacy slide.',
+      code: 'SCHEMA_VERSION_UNSUPPORTED',
+    };
+  }
   const spec = slideTypeFor(raw?.type);
   if (!spec) return { error: `Unknown slide type: ${raw?.type}` };
 
