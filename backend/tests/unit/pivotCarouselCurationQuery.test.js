@@ -297,11 +297,48 @@ describe('account-scoped catalog search', () => {
     });
     expect(found.data.candidates[0].snapshot.sourceUrl).toBe('https://partiful.com/e/basement');
     expect(found.data.candidates[0].snapshot.happenedConfirmed).toBe(false);
+    expect(found.data.candidates[0].snapshot.featured).toBe(false);
 
     const blocked = await searchCurationCandidates(req, created.data.account.id, {
       sourceTenantKeys: ['chicago'],
     });
     expect(blocked.code).toBe('SOURCE_NOT_ALLOWED');
+  });
+
+  test('featured and promoted events load above the date list', async () => {
+    const created = await account();
+    await EventSf.create([
+      eventDoc({
+        name: 'Tonight',
+        start_time: new Date('2026-09-20T20:00:00Z'),
+      }),
+      eventDoc({
+        name: 'Older featured',
+        start_time: new Date('2026-09-08T20:00:00Z'),
+        pivot: { featured: true },
+      }),
+      eventDoc({
+        name: 'Promoted midweek',
+        start_time: new Date('2026-09-10T20:00:00Z'),
+        pivot: { rankingOverride: { tier: 'promote', audience: 'everyone' } },
+      }),
+    ]);
+
+    const first = await searchCurationCandidates(req, created.data.account.id, {
+      sourceTenantKeys: ['sf'],
+      limit: 2,
+    });
+    expect(first.data.candidates.map((row) => row.snapshot.name)).toEqual([
+      'Older featured',
+      'Promoted midweek',
+      'Tonight',
+    ]);
+    expect(first.data.candidates[0].snapshot.featured).toBe(true);
+    expect(first.data.candidates[1].snapshot.rankingOverride).toEqual({
+      tier: 'promote',
+      audience: 'everyone',
+    });
+    expect(first.data.continuation.hasMore).toBe(false);
   });
 
   test('pagination is stable across cities and a failed city stays retryable', async () => {

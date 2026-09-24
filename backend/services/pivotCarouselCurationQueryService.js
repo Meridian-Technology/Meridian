@@ -20,6 +20,8 @@ const {
   mongoSort,
   cursorMongoClause,
   relevanceStage,
+  pinnedMongoClause,
+  PINNED_PAGE_MAX,
   serializeCurationCandidate,
   mergeSourcePages,
   chipsFromQuery,
@@ -96,6 +98,21 @@ async function usedEventIdsByTenant(req, accountId, tenantKeys) {
   return used;
 }
 
+function excludeIds(match, ids) {
+  if (!ids.length) return match;
+  if (match._id?.$nin) {
+    match._id.$nin = [...match._id.$nin, ...ids];
+    return match;
+  }
+  if (match._id?.$in) {
+    const blocked = new Set(ids.map((id) => String(id)));
+    match._id.$in = match._id.$in.filter((id) => !blocked.has(String(id)));
+    return match;
+  }
+  match.$and = [...(match.$and || []), { _id: { $nin: ids } }];
+  return match;
+}
+
 async function queryOneSource(req, tenantKey, spec, usedEventIds, { now, capturedAt }) {
   try {
     const db = await connectToDatabase(tenantKey);
@@ -106,6 +123,23 @@ async function queryOneSource(req, tenantKey, spec, usedEventIds, { now, capture
     const afterCursor = cursorMongoClause(spec, tenantKey);
     if (afterCursor) {
       match.$and = [...(match.$and || []), afterCursor];
+    }
+
+    const toCandidate = (event) => serializeCurationCandidate(event, {
+      sourceTenantKey: tenantKey,
+      cityName,
+      spec,
+      capturedAt,
+    });
+
+    let pinned = [];
+    if (!spec.cursor) {
+      pinned = await Event.find({ $and: [match, pinnedMongoClause()] })
+        .select(EVENT_FIELDS)
+        .sort({ start_time: -1, _id: -1 })
+        .limit(PINNED_PAGE_MAX)
+        .lean();
+      excludeIds(match, pinned.map((event) => event._id));
     }
 
     const fetchLimit = spec.limit + 1;
@@ -142,12 +176,7 @@ async function queryOneSource(req, tenantKey, spec, usedEventIds, { now, capture
       tenantKey,
       status: 'ok',
       fetched: events.length,
-      candidates: events.map((event) => serializeCurationCandidate(event, {
-        sourceTenantKey: tenantKey,
-        cityName,
-        spec,
-        capturedAt,
-      })),
+      candidates: [...pinned, ...events].map(toCandidate),
     };
   } catch (err) {
     return {

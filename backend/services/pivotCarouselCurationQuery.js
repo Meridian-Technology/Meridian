@@ -12,11 +12,21 @@ const {
   isValidTimeZone,
   zonedCivilToUtc,
 } = require('../utilities/pivotFieldParsingUtils');
+const { readRankingOverride } = require('../utilities/pivotEditorialPolicy');
 const {
   CATALOG_PROVIDER_ID,
   PROVIDER_VERSION,
   PROVIDER_IDS,
 } = require('./carouselCurationProvider');
+
+const PINNED_TIERS = Object.freeze(['must_show', 'strong_promote', 'promote']);
+const PIN_RANK = Object.freeze({
+  featured: 4,
+  must_show: 3,
+  strong_promote: 2,
+  promote: 1,
+});
+const PINNED_PAGE_MAX = 40;
 
 const PAGE_DEFAULT = 24;
 const PAGE_MAX = 60;
@@ -522,6 +532,25 @@ function compareAsc(a, b) {
   return 0;
 }
 
+function editorialPin(candidate) {
+  if (candidate?.snapshot?.featured || candidate?.featured || candidate?.customFields?.pivot?.featured) {
+    return PIN_RANK.featured;
+  }
+  const tier = candidate?.snapshot?.rankingOverride?.tier
+    || candidate?.rankingOverride?.tier
+    || candidate?.customFields?.pivot?.rankingOverride?.tier;
+  return PIN_RANK[tier] || 0;
+}
+
+function pinnedMongoClause() {
+  return {
+    $or: [
+      { 'customFields.pivot.featured': true },
+      { 'customFields.pivot.rankingOverride.tier': { $in: PINNED_TIERS } },
+    ],
+  };
+}
+
 function candidateTime(candidate) {
   const value = candidate.startTime || candidate.snapshot?.startTime;
   return value ? new Date(value).getTime() : 0;
@@ -532,8 +561,12 @@ function candidateIngested(candidate) {
   return value ? new Date(value).getTime() : 0;
 }
 
-function compareCandidates(a, b, sort) {
+function compareCandidates(a, b, sort, { pin = false } = {}) {
   let cmp;
+  if (pin) {
+    cmp = compareDesc(editorialPin(a), editorialPin(b));
+    if (cmp !== 0) return cmp;
+  }
   if (sort === 'date-asc') cmp = compareAsc(candidateTime(a), candidateTime(b));
   else if (sort === 'ingested') cmp = compareDesc(candidateIngested(a), candidateIngested(b));
   else if (sort === 'relevance') {
@@ -582,6 +615,11 @@ function serializeCurationCandidate(event, { sourceTenantKey, cityName, spec, ca
       externalLink: event.externalLink || null,
       city: { tenantKey: sourceTenantKey, name: cityName || sourceTenantKey },
       publication,
+      featured: pivot.featured === true,
+      rankingOverride: (() => {
+        const override = readRankingOverride(event);
+        return override ? { tier: override.tier, audience: override.audience } : null;
+      })(),
       happenedConfirmed: false,
       recapNote: null,
     },
@@ -656,7 +694,6 @@ function mergeSourcePages(sourceResults, spec) {
   for (const row of sourceResults) {
     if (row.status === 'ok') candidates.push(...row.candidates);
   }
-  candidates.sort((a, b) => compareCandidates(a, b, spec.sort));
   const unique = [];
   const seen = new Set();
   for (const candidate of candidates) {
@@ -665,10 +702,18 @@ function mergeSourcePages(sourceResults, spec) {
     seen.add(key);
     unique.push(candidate);
   }
-  const page = unique.slice(0, spec.limit);
+  const pinFirst = !spec.cursor;
+  const pinned = pinFirst
+    ? unique.filter((row) => editorialPin(row) > 0).sort((a, b) => compareCandidates(a, b, spec.sort, { pin: true }))
+    : [];
+  const rest = unique
+    .filter((row) => !pinFirst || editorialPin(row) === 0)
+    .sort((a, b) => compareCandidates(a, b, spec.sort));
+  const restPage = rest.slice(0, spec.limit);
+  const page = [...pinned, ...restPage];
   const sourceFull = sources.some((row) => row.status === 'ok' && row.fetched > spec.limit);
-  const hasMore = unique.length > spec.limit || sourceFull;
-  const last = page[page.length - 1];
+  const hasMore = rest.length > spec.limit || sourceFull;
+  const last = restPage[restPage.length - 1] || page[page.length - 1];
   const allOk = sources.every((row) => row.status === 'ok');
   return {
     provider: { id: spec.provider, version: spec.providerVersion },
@@ -695,6 +740,7 @@ function mergeSourcePages(sourceResults, spec) {
 module.exports = {
   PAGE_DEFAULT,
   PAGE_MAX,
+  PINNED_PAGE_MAX,
   DEFAULT_QUERY,
   ALLOWED_KEYS,
   SORTS,
@@ -704,6 +750,8 @@ module.exports = {
   mongoSort,
   cursorMongoClause,
   relevanceStage,
+  editorialPin,
+  pinnedMongoClause,
   compareCandidates,
   encodeCursor,
   decodeCursor,

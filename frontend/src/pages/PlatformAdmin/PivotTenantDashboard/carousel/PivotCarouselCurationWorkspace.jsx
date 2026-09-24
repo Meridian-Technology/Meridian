@@ -5,6 +5,8 @@ import {
   removeCurationChip,
   resetCurationQuery,
 } from './carouselCurationQuery';
+import { filterCurationCandidates } from './carouselCurationCatalog';
+import PivotCarouselCurationCatalog from './PivotCarouselCurationCatalog';
 import {
   addSelection,
   addVisibleSelection,
@@ -69,7 +71,6 @@ export default function PivotCarouselCurationWorkspace({
   const [cursor, setCursor] = useState(null);
   const [complete, setComplete] = useState(true);
   const [chips, setChips] = useState([]);
-  const [preview, setPreview] = useState(null);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
@@ -190,19 +191,35 @@ export default function PivotCarouselCurationWorkspace({
   }, [path]);
 
   useEffect(() => {
-    search({ ...query, cursor: null }, false);
-    // First paint and explicit filter submits call search. A query-object
-    // identity change on every keystroke would refetch too often.
+    if (!ready || !account?.id) return undefined;
+    const delay = query.keyword ? 280 : 0;
+    const timer = setTimeout(() => {
+      search({ ...query, cursor: null }, false);
+    }, delay);
+    return () => clearTimeout(timer);
+    // Load the catalog first, then treat keyword/when as filters.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [account.id]);
-
-  const submitSearch = (event) => {
-    event?.preventDefault?.();
-    search({ ...query, cursor: null }, false);
-  };
+  }, [account.id, ready, query.keyword, query.temporalMode, format]);
 
   const updateQuery = (patch) => {
     setQuery((current) => ({ ...current, ...patch, cursor: null }));
+  };
+
+  const visible = useMemo(
+    () => filterCurationCandidates(results, query.keyword),
+    [query.keyword, results],
+  );
+
+  const toggleCandidate = (candidate) => {
+    const key = eventRefKey(candidate.ref);
+    if (selectedKeys.has(key)) {
+      setSelected(removeSelection(selected, candidate.ref));
+      setError(null);
+      return;
+    }
+    const result = addSelection(selected, candidate);
+    setSelected(result.selected);
+    setError(result.duplicate ? 'That event is already in the tray.' : null);
   };
 
   const failedSources = sources.filter((row) => row.status === 'failed');
@@ -299,7 +316,18 @@ export default function PivotCarouselCurationWorkspace({
 
       {step === 'search' && (
         <>
-          <form className="jg-curate__filters" onSubmit={submitSearch}>
+          <div className="jg-curate__toolbar">
+            <label className="pivot-curation-sheet__search">
+              <span className="visually-hidden">Filter events</span>
+              <input
+                type="search"
+                value={query.keyword}
+                onChange={(event) => updateQuery({ keyword: event.target.value })}
+                placeholder="Filter events, hosts, locations…"
+                autoComplete="off"
+                spellCheck="false"
+              />
+            </label>
             <label>
               Format
               <select value={format} onChange={(event) => {
@@ -312,10 +340,6 @@ export default function PivotCarouselCurationWorkspace({
               </select>
             </label>
             <label>
-              Search
-              <input value={query.keyword} onChange={(event) => updateQuery({ keyword: event.target.value })} placeholder="Name, host, venue" />
-            </label>
-            <label>
               When
               <select value={query.temporalMode} onChange={(event) => updateQuery({ temporalMode: event.target.value })}>
                 <option value="upcoming">Upcoming</option>
@@ -323,86 +347,14 @@ export default function PivotCarouselCurationWorkspace({
                 <option value="any">Any date</option>
               </select>
             </label>
-            <label>
-              From
-              <input type="date" value={query.dateFrom || ''} onChange={(event) => updateQuery({ dateFrom: event.target.value || null })} />
-            </label>
-            <label>
-              To
-              <input type="date" value={query.dateTo || ''} onChange={(event) => updateQuery({ dateTo: event.target.value || null })} />
-            </label>
-            <label>
-              Host
-              <input value={query.host} onChange={(event) => updateQuery({ host: event.target.value })} />
-            </label>
-            <label>
-              Venue
-              <input value={query.venue} onChange={(event) => updateQuery({ venue: event.target.value })} />
-            </label>
-            <label>
-              Image
-              <select value={query.image} onChange={(event) => updateQuery({ image: event.target.value })}>
-                <option value="any">Any</option>
-                <option value="present">Has image</option>
-                <option value="missing">No image</option>
-              </select>
-            </label>
-            <label>
-              Used
-              <select value={query.previouslyUsedInAccount} onChange={(event) => updateQuery({ previouslyUsedInAccount: event.target.value })}>
-                <option value="any">Any</option>
-                <option value="exclude">Not used yet</option>
-                <option value="only">Already used</option>
-              </select>
-            </label>
-            <label>
-              Sort
-              <select value={query.sort} onChange={(event) => updateQuery({ sort: event.target.value })}>
-                <option value="date">Date</option>
-                <option value="date-asc">Date ascending</option>
-                <option value="ingested">Recently ingested</option>
-                <option value="relevance">Relevance</option>
-              </select>
-            </label>
-            <fieldset className="jg-curate__cities">
-              <legend>Cities</legend>
-              {(account.sourceTenantKeys || []).map((key) => (
-                <label key={key}>
-                  <input
-                    type="checkbox"
-                    checked={!query.sourceTenantKeys.length || query.sourceTenantKeys.includes(key)}
-                    onChange={(event) => {
-                      const current = query.sourceTenantKeys.length ? query.sourceTenantKeys : [...account.sourceTenantKeys];
-                      const next = event.target.checked
-                        ? [...new Set([...current, key])]
-                        : current.filter((item) => item !== key);
-                      updateQuery({ sourceTenantKeys: next.length === account.sourceTenantKeys.length ? [] : next });
-                    }}
-                  />
-                  {key}
-                </label>
-              ))}
-            </fieldset>
-            <div className="jg-curate__filter-actions">
-              <button type="submit" disabled={loading}>Search</button>
-              <button type="button" onClick={() => {
-                const reset = { ...resetCurationQuery(), ...defaultQueryForFormat(format, account.sourceTenantKeys, account.ownerTenantKey) };
-                setQuery(reset);
-                search(reset, false);
-              }}>Reset</button>
-            </div>
-          </form>
+          </div>
 
           <div className="jg-curate__chips">
-            {chips.map((chip) => (
+            {chips.filter((chip) => chip.id !== 'keyword' && chip.id !== 'temporal').map((chip) => (
               <button
                 key={chip.id}
                 type="button"
-                onClick={() => {
-                  const next = removeCurationChip(query, chip.id);
-                  setQuery(next);
-                  search(next, false);
-                }}
+                onClick={() => setQuery(removeCurationChip(query, chip.id))}
               >
                 {chip.label} ×
               </button>
@@ -420,42 +372,17 @@ export default function PivotCarouselCurationWorkspace({
 
           <div className="jg-curate__results">
             <div className="jg-curate__result-bar">
-              <button type="button" onClick={() => setSelected(addVisibleSelection(selected, results).selected)}>
+              <button type="button" onClick={() => setSelected(addVisibleSelection(selected, visible).selected)}>
                 Select visible
               </button>
             </div>
-            <ul className="jg-curate__grid">
-              {results.map((candidate) => {
-                const key = eventRefKey(candidate.ref);
-                const on = selectedKeys.has(key);
-                return (
-                  <li key={key} className={on ? 'is-selected' : ''}>
-                    <button type="button" className="jg-curate__card" onClick={() => setPreview(candidate)}>
-                      <span className="jg-curate__thumb">
-                        {candidate.snapshot.image
-                          ? <img src={candidate.snapshot.image} alt="" />
-                          : <b>no photo</b>}
-                      </span>
-                      <strong>{candidate.snapshot.name}</strong>
-                      <em>{candidate.snapshot.city?.name || candidate.ref.sourceTenantKey} · {when(candidate.snapshot.startTime)}</em>
-                      {candidate.inspectUnreleased && <i>unreleased</i>}
-                    </button>
-                    <button
-                      type="button"
-                      className="jg-curate__pick"
-                      onClick={() => {
-                        const result = addSelection(selected, candidate);
-                        setSelected(result.selected);
-                        if (result.duplicate) setError('That event is already in the tray.');
-                        else setError(null);
-                      }}
-                    >
-                      {on ? 'Added' : 'Add'}
-                    </button>
-                  </li>
-                );
-              })}
-            </ul>
+            <PivotCarouselCurationCatalog
+              candidates={visible}
+              selectedKeys={selectedKeys}
+              loading={loading}
+              keyword={query.keyword}
+              onToggle={toggleCandidate}
+            />
             {cursor && (
               <button type="button" className="jg-curate__more" onClick={() => search({ ...query, cursor }, true)} disabled={loading}>
                 More
@@ -563,28 +490,6 @@ export default function PivotCarouselCurationWorkspace({
           ))}
         </ol>
       </aside>
-
-      {preview && (
-        <div className="jg-curate__preview" role="dialog" aria-label="Event detail">
-          <button type="button" className="jg-curate__quiet" onClick={() => setPreview(null)}>Close</button>
-          {preview.snapshot.image && <img src={preview.snapshot.image} alt="" />}
-          <h3>{preview.snapshot.name}</h3>
-          <p>{preview.snapshot.host}</p>
-          <p>{preview.snapshot.location}</p>
-          <p>{preview.snapshot.city?.name} · {when(preview.snapshot.startTime)}</p>
-          {preview.snapshot.sourceUrl && <a href={preview.snapshot.sourceUrl} target="_blank" rel="noreferrer">Source listing</a>}
-          <p>{preview.snapshot.description}</p>
-          <button
-            type="button"
-            onClick={() => {
-              setSelected(addSelection(selected, preview).selected);
-              setPreview(null);
-            }}
-          >
-            Add to issue
-          </button>
-        </div>
-      )}
 
       <footer className="jg-curate__foot">
         {step !== 'search' && (

@@ -37,24 +37,33 @@
     border: 1px solid #e7b19a;
   }
   &__note { color: #6d675f; }
-  &__filters {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
-    gap: 12px;
-    align-items: end;
-  }
-  &__cities {
-    border: 1px solid #1a1714;
-    padding: 8px 10px;
+  &__toolbar {
     display: flex;
     flex-wrap: wrap;
-    gap: 8px;
-    label { flex-direction: row; align-items: center; }
+    gap: 12px;
+    align-items: end;
+    .pivot-curation-sheet__search { flex: 1 1 260px; }
   }
-  &__filter-actions { display: flex; gap: 8px; }
-  &__filter-actions button:first-child,
-  &__foot button:last-child,
-  &__pick {
+  &__empty { margin: 16px 0; color: #6d675f; }
+  &__sheet {
+    margin-top: 8px;
+    .pivot-lab__thumb {
+      width: 44px;
+      height: 44px;
+      object-fit: cover;
+      border-radius: 6px;
+      display: block;
+    }
+    .pivot-lab__thumb--empty {
+      width: 44px;
+      height: 44px;
+      display: grid;
+      place-items: center;
+      background: #efe8dc;
+      color: #6d675f;
+    }
+  }
+  &__foot button:last-child {
     background: #1a1714;
     color: #faf6ef;
   }
