@@ -1,0 +1,31 @@
+.jg-event-lab {
+  .jg-cover-lab__intro { padding-block: 28px; }
+  .jg-cover-lab__intro h1 { font-size: clamp(44px, 5vw, 70px); }
+  .jg-cover-lab__intro h1 em { font-family: 'Les Flos Sans', sans-serif; }
+  .jgv-directions { display: grid; grid-template-columns: repeat(3, 1fr); gap: 22px; margin: 30px 0; }
+  .jgv-directions h2 { font-size: 18px; margin: 0 0 10px; }
+  .jgv-directions h2 > span { margin-right: 8px; font: 11px 'Space Mono', monospace; color: #c3431f; }
+  .jgv-directions p { font-size: 13px; line-height: 1.6; color: #69645d; margin: 0; }
+  .jgv-example-row { margin-bottom: 30px; }
+  .jgv-example-row > h2 { display: flex; gap: 16px; justify-content: space-between; border-top: 1px solid #c9c5bd; padding-top: 18px; margin: 0 0 16px; font-size: 16px; }
+  .jgv-example-row > h2 span { font: 10px 'Space Mono', monospace; color: #69645d; }
+  .jgv-pair-controls { display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-end; padding: 26px 0; }
+  .jgv-pair-controls label { display: flex; flex-direction: column; gap: 7px; font-size: 11px; }
+  .jgv-pair-controls select { min-width: 190px; border: 1px solid #bdb6ab; padding: 10px 32px 10px 12px; border-radius: 0; color: #1a1714; background: #faf6ef; font: 13px 'Instrument Sans', sans-serif; }
+  .jgv-pair-controls button { background: #1a1714; color: #faf6ef; border: 0; padding: 11px 18px; font-size: 13px; }
+  .jgv-pair-controls p { max-width: 285px; margin: 0 0 2px auto; color: #69645d; font-size: 12px; line-height: 1.5; }
+  .jgv-pair-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; max-width: 940px; margin: auto; }
+}
+@media (max-width: 640px) {
+  .jg-event-lab {
+    .jgv-directions { grid-template-columns: 1fr; gap: 18px; }
+    .jgv-example-row > h2 { flex-direction: column; gap: 6px; }
+    .jg-cover-lab__gallery { grid-template-columns: 1fr; gap: 16px; }
+    .jgv-pair-controls label { flex: 1 1 calc(50% - 8px); min-width: 0; }
+    .jgv-pair-controls button { width: 100%; }
+    .jgv-pair-controls select { min-width: 0; width: 100%; }
+    .jgv-pair-controls p { max-width: none; margin-left: 0; }
+    .jgv-pair-grid { gap: 8px; }
+    .jgv-pair-grid .jg-cover-lab__caption > div { flex-direction: column; align-items: flex-start; gap: 4px; }
+  }
+}

@@ -11,6 +11,7 @@ import PivotTenantDropDeckPage from './PivotTenantDropDeckPage';
 import PivotTenantCatalogPage from './PivotTenantCatalogPage';
 import PivotVoicePage from './PivotVoicePage';
 import PivotCarouselPage from './carousel/PivotCarouselPage';
+import PivotCoverLab from './carousel/PivotCoverLab';
 import PivotTenantLaunchPage from './PivotTenantLaunchPage';
 import PivotNotificationsPage from '../PivotNotifications/PivotNotificationsPage';
 import PivotComputeJobs from './PivotComputeJobs';
@@ -227,6 +228,13 @@ function PivotTenantDashboard() {
           cityDisplayName={cityDisplayName}
         />
       ),
+    });
+
+    // Temporary design review surface. Append to preserve existing page bookmarks.
+    items.push({
+      label: 'Cover lab (temp)',
+      icon: 'mdi:palette-outline',
+      element: <PivotCoverLab key={tenantKey} tenantKey={tenantKey} />,
     });
 
     return items;

@@ -48,6 +48,7 @@ const EventQRRedirect = lazy(() => import('./pages/QR/EventQRRedirect'));
 const Admin = lazy(() => import('./pages/Admin/Admin'));
 const PlatformAdmin = lazy(() => import('./pages/PlatformAdmin/PlatformAdmin'));
 const PivotTenantDashboard = lazy(() => import('./pages/PlatformAdmin/PivotTenantDashboard/PivotTenantDashboard'));
+const PivotCoverLab = lazy(() => import('./pages/PlatformAdmin/PivotTenantDashboard/carousel/PivotCoverLab'));
 const PivotCarouselFrame = lazy(() => import('./pages/PlatformAdmin/PivotTenantDashboard/carousel/PivotCarouselFrame'));
 const PivotFleetDashboard = lazy(() => import('./pages/PlatformAdmin/PivotTenantDashboard/PivotFleetDashboard'));
 const JustGoCreatorShell = lazy(() => import('./pages/JustGoCreator/JustGoCreatorShell'));
@@ -218,6 +219,8 @@ function App() {
                                 <Router>
                                     <ProfileCreationProvider>
                                     <Routes>
+                                        {/* Static design studies only; no tenant data or auth bypass in production. */}
+                                        {process.env.NODE_ENV === 'development' && <Route path="/dev/justgo-cover-lab" element={<PivotCoverLab />} />}
                                         <Route path='/' element={<Layout/>}>
                                             {/* publicly accessible pages */}
                                             {justGoHost ? (
