@@ -289,6 +289,73 @@ async function deleteSavedCurationSearch(req, accountId, searchId) {
   return { data: { deleted: true, id: String(doc._id) } };
 }
 
+async function loadCurationSnapshots(req, account, refs, options = {}) {
+  const allowed = new Set(account.sourceTenantKeys);
+  const grouped = new Map();
+  for (const raw of refs || []) {
+    const tenantKey = String(raw?.sourceTenantKey || raw?.ref?.sourceTenantKey || '').trim().toLowerCase();
+    const eventId = String(raw?.eventId || raw?.ref?.eventId || '').trim();
+    if (!tenantKey || !eventId) continue;
+    if (!allowed.has(tenantKey)) {
+      return fail('That source tenant is not allowed for this account.', 403, 'SOURCE_NOT_ALLOWED');
+    }
+    if (!grouped.has(tenantKey)) grouped.set(tenantKey, []);
+    grouped.get(tenantKey).push(eventId);
+  }
+
+  const capturedAt = options.now instanceof Date ? options.now : new Date();
+  const spec = {
+    provider: 'catalog',
+    providerVersion: 1,
+    publication: 'inspect-unreleased',
+  };
+  const byKey = new Map();
+  const failures = [];
+
+  const sources = [...grouped.keys()];
+  const rows = await mapPool(sources, SOURCE_CONCURRENCY, async (tenantKey) => {
+    try {
+      const db = await connectToDatabase(tenantKey);
+      const { Event } = getModels({ db }, 'Event');
+      const tenant = await getTenantByKey(req, tenantKey);
+      const events = await Event.find({
+        _id: { $in: grouped.get(tenantKey) },
+        isDeleted: { $ne: true },
+      }).select(EVENT_FIELDS).lean();
+      return {
+        tenantKey,
+        status: 'ok',
+        events: events.map((event) => serializeCurationCandidate(event, {
+          sourceTenantKey: tenantKey,
+          cityName: tenant?.location || tenant?.name || tenantKey,
+          spec,
+          capturedAt,
+        })),
+      };
+    } catch (err) {
+      return {
+        tenantKey,
+        status: 'failed',
+        error: err.message || 'Unable to load this city.',
+        retryable: true,
+        events: [],
+      };
+    }
+  });
+
+  for (const row of rows) {
+    if (row.status !== 'ok') {
+      failures.push(row);
+      continue;
+    }
+    for (const candidate of row.events) {
+      byKey.set(`${candidate.ref.sourceTenantKey}:${candidate.ref.eventId}`, candidate);
+    }
+  }
+
+  return { data: { byKey, failures, capturedAt } };
+}
+
 module.exports = {
   SOURCE_CONCURRENCY,
   SAVED_SEARCH_MAX,
@@ -298,4 +365,5 @@ module.exports = {
   saveCurationSearch,
   deleteSavedCurationSearch,
   usedEventIdsByTenant,
+  loadCurationSnapshots,
 };

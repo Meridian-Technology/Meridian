@@ -44,6 +44,14 @@ const {
   saveCurationSearch,
   deleteSavedCurationSearch,
 } = require('../services/pivotCarouselCurationQueryService');
+const {
+  createCurationDraft,
+  getCurationDraft,
+  updateCurationDraft,
+  revalidateCurationDraft,
+  createIssueFromCurationDraft,
+  applyCurationDraftToIssue,
+} = require('../services/pivotCarouselCurationDraftService');
 const { requirePlatformAdmin } = require('../middlewares/requirePlatformAdmin');
 const {
   rebuildWeeklySnapshot,
@@ -912,6 +920,110 @@ router.delete(
     } catch (err) {
       logPivotRouteError('DELETE carousel saved search', err, req);
       return res.status(500).json({ success: false, message: 'Unable to delete the saved search.' });
+    }
+  },
+);
+
+router.post(
+  '/carousel-accounts/:accountId/curation/drafts',
+  verifyToken,
+  requirePlatformAdmin,
+  async (req, res) => {
+    try {
+      return sendDeckResult(res, await createCurationDraft(req, req.params.accountId, req.body || {}), 201);
+    } catch (err) {
+      logPivotRouteError('POST carousel curation draft', err, req);
+      return res.status(500).json({ success: false, message: 'Unable to save the curation draft.' });
+    }
+  },
+);
+
+router.get(
+  '/carousel-accounts/:accountId/curation/drafts/:draftId',
+  verifyToken,
+  requirePlatformAdmin,
+  async (req, res) => {
+    try {
+      return sendDeckResult(res, await getCurationDraft(req, req.params.accountId, req.params.draftId));
+    } catch (err) {
+      logPivotRouteError('GET carousel curation draft', err, req);
+      return res.status(500).json({ success: false, message: 'Unable to load the curation draft.' });
+    }
+  },
+);
+
+router.patch(
+  '/carousel-accounts/:accountId/curation/drafts/:draftId',
+  verifyToken,
+  requirePlatformAdmin,
+  async (req, res) => {
+    try {
+      return sendDeckResult(res, await updateCurationDraft(
+        req,
+        req.params.accountId,
+        req.params.draftId,
+        req.body || {},
+      ));
+    } catch (err) {
+      logPivotRouteError('PATCH carousel curation draft', err, req);
+      return res.status(500).json({ success: false, message: 'Unable to save the curation draft.' });
+    }
+  },
+);
+
+router.post(
+  '/carousel-accounts/:accountId/curation/drafts/:draftId/revalidate',
+  verifyToken,
+  requirePlatformAdmin,
+  async (req, res) => {
+    try {
+      return sendDeckResult(res, await revalidateCurationDraft(
+        req,
+        req.params.accountId,
+        req.params.draftId,
+        req.body || {},
+      ));
+    } catch (err) {
+      logPivotRouteError('POST carousel curation revalidate', err, req);
+      return res.status(500).json({ success: false, message: 'Unable to revalidate the selection.' });
+    }
+  },
+);
+
+router.post(
+  '/carousel-accounts/:accountId/curation/drafts/:draftId/create',
+  verifyToken,
+  requirePlatformAdmin,
+  async (req, res) => {
+    try {
+      return sendDeckResult(res, await createIssueFromCurationDraft(
+        req,
+        req.params.accountId,
+        req.params.draftId,
+        req.body || {},
+      ), 201);
+    } catch (err) {
+      logPivotRouteError('POST carousel curation create', err, req);
+      return res.status(500).json({ success: false, message: 'Unable to create the issue.' });
+    }
+  },
+);
+
+router.post(
+  '/carousel-accounts/:accountId/curation/drafts/:draftId/apply',
+  verifyToken,
+  requirePlatformAdmin,
+  async (req, res) => {
+    try {
+      return sendDeckResult(res, await applyCurationDraftToIssue(
+        req,
+        req.params.accountId,
+        req.params.draftId,
+        req.body || {},
+      ));
+    } catch (err) {
+      logPivotRouteError('POST carousel curation apply', err, req);
+      return res.status(500).json({ success: false, message: 'Unable to update the issue selection.' });
     }
   },
 );

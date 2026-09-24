@@ -524,4 +524,5 @@ module.exports = {
   createEditableCopy,
   convertLegacySlide,
   loadAccount,
+  assertSources,
 };

@@ -64,6 +64,11 @@ function serializeSlide(slide) {
   };
 }
 
+function coverImageOf(row) {
+  const event = row.slides?.[0]?.events?.[0];
+  return event?.imageOverride?.url || event?.snapshot?.image || row.document?.slides?.[0]?.elements?.find((element) => element.kind === 'image')?.asset?.src || null;
+}
+
 function serializeDeck(doc, { withSlides = true } = {}) {
   const row = doc?.toObject ? doc.toObject() : doc;
   const base = {
@@ -79,12 +84,23 @@ function serializeDeck(doc, { withSlides = true } = {}) {
     lastExportedAt: row.lastExportedAt || null,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
+    accountId: row.accountId ? String(row.accountId) : null,
+    name: row.name || row.title,
+    format: row.format || null,
+    status: row.status || 'active',
+    schemaVersion: row.schemaVersion || 1,
+    revision: row.revision || 1,
+    coverType: row.slides?.[0]?.type || row.document?.slides?.[0]?.preset?.id || null,
+    coverImage: coverImageOf(row),
   };
   if (!withSlides) return base;
   return {
     ...base,
     voice: row.voice || { entries: {}, tokens: {} },
     slides: (row.slides || []).map(serializeSlide),
+    document: row.document || null,
+    curation: row.curation || null,
+    sources: row.sources || [],
   };
 }
 
