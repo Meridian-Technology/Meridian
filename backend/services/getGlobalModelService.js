@@ -18,6 +18,7 @@ const pivotSourceDiscoveryRunSchema = require('../schemas/pivotSourceDiscoveryRu
 const pivotContactHashSchema = require('../schemas/pivotContactHash');
 const pivotCreatorGrantSchema = require('../schemas/pivotCreatorGrant');
 const pivotCopyPackSchema = require('../schemas/pivotCopyPack');
+const pivotCarouselAssetSchema = require('../schemas/pivotCarouselAsset');
 const pivotCarouselDeckSchema = require('../schemas/pivotCarouselDeck');
 const pivotCarouselVoiceSchema = require('../schemas/pivotCarouselVoice');
 const pivotCarouselAccountSchema = require('../schemas/pivotCarouselAccount');
@@ -117,6 +118,7 @@ const getGlobalModels = (req, ...names) => {
             pivotCopyPackSchema,
             'pivot_copy_packs'
         ),
+        PivotCarouselAsset: db.model('PivotCarouselAsset', pivotCarouselAssetSchema, 'pivot_carousel_assets'),
         PivotCarouselDeck: db.model(
             'PivotCarouselDeck',
             pivotCarouselDeckSchema,

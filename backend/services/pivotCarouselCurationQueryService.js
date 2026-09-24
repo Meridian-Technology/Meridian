@@ -128,6 +128,7 @@ async function queryOneSource(req, tenantKey, spec, usedEventIds, { now, capture
     const toCandidate = (event) => serializeCurationCandidate(event, {
       sourceTenantKey: tenantKey,
       cityName,
+      timezone: tenant?.pivotDropTimezone || tenant?.timezone,
       spec,
       capturedAt,
     });
@@ -357,6 +358,7 @@ async function loadCurationSnapshots(req, account, refs, options = {}) {
         events: events.map((event) => serializeCurationCandidate(event, {
           sourceTenantKey: tenantKey,
           cityName: tenant?.location || tenant?.name || tenantKey,
+          timezone: tenant?.pivotDropTimezone || tenant?.timezone,
           spec,
           capturedAt,
         })),

@@ -39,7 +39,7 @@ const generateSecureFileName = (originalName, prefix = '') => {
     return `${prefix}${timestamp}-${randomString}${extension}`;
 };
 
-const uploadImageToS3 = async (file, folderName, customFileName = null) => {
+const uploadImageToS3 = async (file, folderName, customFileName = null, options = {}) => {
     if (!file) {
         throw new Error('No file provided.');
     }
@@ -50,7 +50,7 @@ const uploadImageToS3 = async (file, folderName, customFileName = null) => {
     }
 
     // Validate file size again (double-check)
-    if (file.size > MAX_FILE_SIZE) {
+    if (file.size > (options.maxBytes || MAX_FILE_SIZE)) {
         throw new Error('File size exceeds limit.');
     }
 

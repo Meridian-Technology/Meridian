@@ -1,3 +1,4 @@
+const { studioUpload, listAssets, uploadAsset } = require('../services/pivotCarouselAssetService');
 const express = require('express');
 const { verifyToken } = require('../middlewares/verifyToken');
 const {
@@ -720,6 +721,19 @@ router.post(
     }
   },
 );
+
+router.get('/carousel-accounts/:accountId/assets', verifyToken, requirePlatformAdmin, async (req, res) => {
+  try { return sendDeckResult(res, await listAssets(req, req.params.accountId)); }
+  catch (error) { logPivotRouteError('GET carousel assets', error, req); return res.status(500).json({ success: false, message: 'Could not load images.' }); }
+});
+router.post('/carousel-accounts/:accountId/assets', verifyToken, requirePlatformAdmin, studioUpload, async (req, res) => {
+  try { return sendDeckResult(res, await uploadAsset(req, req.params.accountId, req.file)); }
+  catch (error) { logPivotRouteError('POST carousel assets', error, req); return res.status(500).json({ success: false, message: 'Image upload failed. Try again.' }); }
+});
+router.post('/carousel-accounts/:accountId/curation/drafts/:draftId/preview', verifyToken, requirePlatformAdmin, async (req, res) => {
+  try { return sendDeckResult(res, await require('../services/pivotCarouselCurationDraftService').previewCurationDraft(req, req.params.accountId, req.params.draftId, req.body)); }
+  catch (error) { logPivotRouteError('POST curation preview', error, req); return res.status(500).json({ success: false, message: 'Could not preview the selection.' }); }
+});
 
 router.get(
   '/carousel-accounts/:accountId',

@@ -42,10 +42,11 @@ async function mintExportToken(req, tenantKey, deckId, scope = {}) {
 
   const { PivotCarouselDeck } = getGlobalModels(req, 'PivotCarouselDeck');
   const deck = await PivotCarouselDeck.findOne({ _id: deckId, tenantKey: key })
-    .select('slides title updatedAt')
+    .select('slides title updatedAt schemaVersion')
     .lean();
   if (!deck) return { error: 'Deck not found.', status: 404, code: 'DECK_NOT_FOUND' };
 
+  if (deck.schemaVersion === 2) return { error: 'Editable issues require the forthcoming exact-revision export pipeline.', status: 409, code: 'V2_EXPORT_UNAVAILABLE' };
   const revision = deckRevision(deck);
   const token = jwt.sign(
     {
@@ -105,6 +106,7 @@ async function readDeckForExport(req, token, deckId) {
     PivotCarouselVoice.findOne({ tenantKey: claims.tenantKey }).lean(),
   ]);
   if (!deck) return { error: 'Deck not found.', status: 404, code: 'DECK_NOT_FOUND' };
+  if (deck.schemaVersion === 2) return { error: 'Editable issues require the forthcoming exact-revision export pipeline.', status: 409, code: 'V2_EXPORT_UNAVAILABLE' };
   if (claims.deckRevision && !sameDeckRevision(deckRevision(deck), claims.deckRevision)) {
     return {
       error: 'That deck changed after this export was claimed.',

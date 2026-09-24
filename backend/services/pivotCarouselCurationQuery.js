@@ -593,7 +593,7 @@ function cursorValueFor(candidate, sort) {
   return start ? new Date(start).toISOString() : '';
 }
 
-function serializeCurationCandidate(event, { sourceTenantKey, cityName, spec, capturedAt }) {
+function serializeCurationCandidate(event, { sourceTenantKey, cityName, timezone, spec, capturedAt }) {
   const slot = serializeForSlot(event);
   const pivot = event.customFields?.pivot || {};
   const publication = pivot.ingestStatus || null;
@@ -613,7 +613,7 @@ function serializeCurationCandidate(event, { sourceTenantKey, cityName, spec, ca
       description: event.description || '',
       sourceUrl: pivot.sourceUrl || null,
       externalLink: event.externalLink || null,
-      city: { tenantKey: sourceTenantKey, name: cityName || sourceTenantKey },
+      city: { tenantKey: sourceTenantKey, name: cityName || sourceTenantKey, timezone: timezone || 'UTC' },
       publication,
       featured: pivot.featured === true,
       rankingOverride: (() => {

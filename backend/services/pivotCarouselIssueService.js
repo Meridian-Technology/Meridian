@@ -12,17 +12,11 @@ const { getTenantByKey } = require('./tenantConfigService');
 const { isPivotTenant } = require('../utilities/pivotDropSchedule');
 const { FORMATS } = require('../schemas/pivotCarouselAccount');
 const { slideTypeFor } = require('../constants/zineSlideTypes');
-
-const ISSUE_LIMITS = Object.freeze({
-  maxSlides: 20,
-  maxElementsPerSlide: 64,
-  minFrame: 8,
-  maxFrame: 4320,
-  minCropScale: 1,
-  maxCropScale: 8,
-  maxTextLength: 8000,
-  maxDocumentBytes: 1_500_000,
-});
+const {
+  LIMITS: ISSUE_LIMITS,
+  prepareDocument,
+  materializeVoice,
+} = require('./pivotCarouselDocument');
 
 const PAGE_DEFAULT = 20;
 const PAGE_MAX = 50;
@@ -66,48 +60,20 @@ function walkElements(node, visit) {
 }
 
 function validateDocument(document) {
-  if (document == null) return null;
-  if (document.schemaVersion !== 2) {
-    return fail('Editable issues use schemaVersion 2.', 422, 'SCHEMA_VERSION_UNSUPPORTED');
-  }
-  const encoded = JSON.stringify(document);
-  if (Buffer.byteLength(encoded) > ISSUE_LIMITS.maxDocumentBytes) {
-    return fail('The issue document is too large.', 422, 'DOCUMENT_TOO_LARGE', { limits: ISSUE_LIMITS });
-  }
-  const slides = Array.isArray(document.slides) ? document.slides : [];
-  if (slides.length > ISSUE_LIMITS.maxSlides) {
-    return fail(
-      `An issue can hold ${ISSUE_LIMITS.maxSlides} slides.`,
-      422,
-      'SLIDE_CAP',
-      { limits: ISSUE_LIMITS },
-    );
-  }
-  for (const slide of slides) {
-    const elements = [];
-    for (const element of slide.elements || []) walkElements(element, (node) => elements.push(node));
-    if (elements.length > ISSUE_LIMITS.maxElementsPerSlide) {
-      return fail('A slide has too many elements.', 422, 'ELEMENT_CAP', { limits: ISSUE_LIMITS });
-    }
-    for (const element of elements) {
-      const frame = element.frame;
-      if (!frame) return fail(`Element ${element.id || ''} is missing a frame.`, 422, 'INVALID_DOCUMENT');
-      if (frame.width < ISSUE_LIMITS.minFrame || frame.height < ISSUE_LIMITS.minFrame
-        || frame.width > ISSUE_LIMITS.maxFrame || frame.height > ISSUE_LIMITS.maxFrame) {
-        return fail(`Element ${element.id || ''} is outside the frame bounds.`, 422, 'INVALID_DOCUMENT');
-      }
-      if (element.crop) {
-        const scale = element.crop.scale ?? 1;
-        if (scale < ISSUE_LIMITS.minCropScale || scale > ISSUE_LIMITS.maxCropScale) {
-          return fail(`Element ${element.id || ''} has an invalid crop.`, 422, 'INVALID_DOCUMENT');
-        }
-      }
-      if (element.kind === 'text' && String(element.text || '').length > ISSUE_LIMITS.maxTextLength) {
-        return fail(`Element ${element.id || ''} text is too long.`, 422, 'INVALID_DOCUMENT');
-      }
-    }
-  }
+  const prepared = prepareDocument(document);
+  if (prepared.error) return prepared;
   return null;
+}
+
+async function voiceLayers(req, account, issueVoice) {
+  const { PivotCarouselVoice } = getGlobalModels(req, 'PivotCarouselVoice');
+  const city = await PivotCarouselVoice.findOne({ tenantKey: account.ownerTenantKey }).lean();
+  return {
+    version: `city:${city?.updatedAt ? new Date(city.updatedAt).toISOString() : 'none'}`,
+    city: city?.entries || {},
+    account: account.voice || {},
+    issue: issueVoice || {},
+  };
 }
 
 function reassignIds(document) {
@@ -174,6 +140,7 @@ async function loadAccount(req, accountId) {
 }
 
 async function assertSources(req, account, sources) {
+  if (sources != null && !Array.isArray(sources)) return fail('Sources must be a list.', 422, 'INVALID_CURATION');
   const allowed = new Set(account.sourceTenantKeys);
   for (const source of sources || []) {
     const key = String(source?.sourceTenantKey || '').trim().toLowerCase();
@@ -273,9 +240,16 @@ async function createCarouselIssue(req, accountId, body = {}) {
   if (slides.length > ISSUE_LIMITS.maxSlides) {
     return fail(`An issue can hold ${ISSUE_LIMITS.maxSlides} slides.`, 422, 'SLIDE_CAP', { limits: ISSUE_LIMITS });
   }
-  const documentError = validateDocument(body.document);
-  if (documentError) return documentError;
+  const prepared = prepareDocument(body.document);
+  if (prepared.error) return prepared;
+  const document = prepared.document
+    ? materializeVoice(prepared.document, await voiceLayers(req, loaded.account, body.voice))
+    : null;
 
+  const assetError = await require('./pivotCarouselAssetService').validateAssetOwnership(req, accountId, document);
+  if (assetError) return assetError;
+  const documentSourceError = await assertSources(req, loaded.account, (document?.slides || []).map(slide => slide.source).filter(Boolean));
+  if (documentSourceError) return documentSourceError;
   const { PivotCarouselDeck } = getGlobalModels(req, 'PivotCarouselDeck');
   const doc = await PivotCarouselDeck.create({
     tenantKey: loaded.account.ownerTenantKey,
@@ -284,10 +258,10 @@ async function createCarouselIssue(req, accountId, body = {}) {
     accountId: loaded.account._id,
     format,
     status: 'active',
-    schemaVersion: body.document ? 2 : 1,
+    schemaVersion: document ? 2 : 1,
     revision: 1,
     slides,
-    document: body.document || null,
+    document,
     curation: body.curation || null,
     sources: body.sources || [],
     createdBy: actorId(req),
@@ -312,21 +286,54 @@ async function writeIssue(req, accountId, issueId, body, mutate) {
   const doc = await PivotCarouselDeck.findOne({ _id: issueId, accountId });
   const conflict = checkRevision(doc.revision || 1, body.revision);
   if (conflict) return conflict;
-  const sourceError = await assertSources(req, (await loadAccount(req, accountId)).account, body.sources);
+  const account = (await loadAccount(req, accountId)).account;
+  const sourceError = await assertSources(req, account, body.sources);
   if (sourceError) return sourceError;
   if (body.document !== undefined) {
-    const documentError = validateDocument(body.document);
-    if (documentError) return documentError;
-    doc.document = body.document;
-    doc.schemaVersion = 2;
+    const prepared = prepareDocument(body.document);
+    if (prepared.error) return prepared;
+    const assetError = await require('./pivotCarouselAssetService').validateAssetOwnership(req, accountId, prepared.document);
+    if (assetError) return assetError;
+    const refs = (prepared.document?.slides || []).map(slide => slide.source).filter(Boolean);
+    const refError = await assertSources(req, account, refs);
+    if (refError) return refError;
+    doc.document = prepared.document;
+    doc.schemaVersion = prepared.document ? 2 : doc.schemaVersion;
     doc.markModified('document');
+  }
+  if (body.curation !== undefined) {
+    const curation = body.curation;
+    if (!curation || typeof curation !== 'object' || Array.isArray(curation)) return fail('Invalid curation metadata.', 422, 'INVALID_CURATION');
+    const refs = curation.refs || [];
+    if (!Array.isArray(refs) || !Array.isArray(curation.snapshots || []) || refs.length > 19) return fail('Invalid selection.', 422, 'INVALID_CURATION');
+    const scopeError = await assertSources(req, account, [...refs, ...(curation.snapshots || []).map(item => item.ref)]);
+    if (scopeError) return scopeError;
+    if (body.sources && JSON.stringify(body.sources) !== JSON.stringify(refs)) return fail('Sources must match the reviewed selection.', 422, 'INVALID_CURATION');
+    if (curation.draftId && JSON.stringify(curation) !== JSON.stringify(doc.curation)) {
+      const { PivotCarouselCurationDraft } = getGlobalModels(req, 'PivotCarouselCurationDraft');
+      if (!/^[0-9a-f]{24}$/i.test(curation.draftId)) return fail('Curation draft not found.', 422, 'INVALID_CURATION');
+      const draft = await PivotCarouselCurationDraft.findOne({ _id: curation.draftId, accountId });
+      if (!draft) return fail('Curation draft not found in this account.', 403, 'SOURCE_NOT_ALLOWED');
+      const selected = new Map((draft.selected || []).map(item => [`${item.ref.sourceTenantKey}:${item.ref.eventId}`, item]));
+      if (refs.some(ref => !selected.has(`${ref.sourceTenantKey}:${ref.eventId}`))) return fail('The selection does not match its curation draft.', 422, 'INVALID_CURATION');
+      body = { ...body, curation: { ...curation, snapshots: refs.map(ref => {
+        const item = selected.get(`${ref.sourceTenantKey}:${ref.eventId}`);
+        return { ref, snapshot: item.snapshot, recapNote: item.recapNote || '', capturedAt: item.provenance?.capturedAt || null };
+      }) } };
+    }
   }
   if (body.sources !== undefined) doc.sources = body.sources;
   await mutate(doc, loaded);
+  if (body.curation !== undefined) { doc.curation = body.curation; doc.markModified('curation'); }
   doc.revision = (doc.revision || 1) + 1;
   doc.updatedBy = actorId(req);
-  await doc.save();
-  return { data: { issue: serializeIssue(doc) } };
+  await doc.validate();
+  const changes = doc.getChanges();
+  const saved = await PivotCarouselDeck.findOneAndUpdate(
+    { _id: issueId, accountId, revision: body.revision }, changes, { new: true, runValidators: true },
+  );
+  if (!saved) return fail('The issue changed while saving. Your local edits are still available.', 409, 'REVISION_CONFLICT');
+  return { data: { issue: serializeIssue(saved) } };
 }
 
 async function renameCarouselIssue(req, accountId, issueId, body = {}) {

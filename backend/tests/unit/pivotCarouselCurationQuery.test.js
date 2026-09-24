@@ -291,7 +291,7 @@ describe('account-scoped catalog search', () => {
       { sourceTenantKey: 'nyc', eventId: String(nycEvent._id) },
       { sourceTenantKey: 'sf', eventId: String(sfEvent._id) },
     ]);
-    expect(found.data.candidates[0].snapshot.city).toEqual({
+    expect(found.data.candidates[0].snapshot.city).toMatchObject({
       tenantKey: 'nyc',
       name: 'New York',
     });

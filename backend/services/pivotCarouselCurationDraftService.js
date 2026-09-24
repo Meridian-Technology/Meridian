@@ -50,6 +50,7 @@ function serializeDraft(doc) {
     theme: row.theme || '',
     recapNotes: row.recapNotes || {},
     coverPreset: row.coverPreset,
+    coverVariation: row.coverVariation || 1,
     eventPreset: row.eventPreset,
     revision: row.revision || 1,
     status: row.status,
@@ -85,6 +86,7 @@ function parseBody(body = {}) {
     theme: body.theme !== undefined ? text(body.theme, 120) : undefined,
     recapNotes: body.recapNotes && typeof body.recapNotes === 'object' ? body.recapNotes : undefined,
     coverPreset,
+    coverVariation: [1, 2, 3].includes(Number(body.coverVariation)) ? Number(body.coverVariation) : null,
     eventPreset,
     issueId: asId(body.issueId),
     idempotencyKey: body.idempotencyKey ? text(body.idempotencyKey, 128) : null,
@@ -128,6 +130,7 @@ async function createCurationDraft(req, accountId, body = {}) {
     theme: parsed.theme || '',
     recapNotes: parsed.recapNotes || {},
     coverPreset: parsed.coverPreset || 'loose-letters',
+    coverVariation: parsed.coverVariation || 1,
     eventPreset: parsed.eventPreset || 'photo-note',
     createdBy: actorId(req),
     updatedBy: actorId(req),
@@ -165,6 +168,7 @@ async function updateCurationDraft(req, accountId, draftId, body = {}) {
   if (parsed.theme !== undefined) loaded.draft.theme = parsed.theme;
   if (parsed.recapNotes) loaded.draft.recapNotes = parsed.recapNotes;
   if (parsed.coverPreset) loaded.draft.coverPreset = parsed.coverPreset;
+  if (parsed.coverVariation) loaded.draft.coverVariation = parsed.coverVariation;
   if (parsed.eventPreset) loaded.draft.eventPreset = parsed.eventPreset;
   if (parsed.issueId) loaded.draft.issueId = parsed.issueId;
   if (parsed.idempotencyKey && !loaded.draft.idempotencyKey) {
@@ -247,6 +251,7 @@ function curationPayload(draft, selected) {
     snapshots: selected.map((item) => ({
       ref: item.ref,
       snapshot: item.snapshot,
+      recapNote: item.recapNote || '',
       capturedAt: item.provenance?.capturedAt || null,
     })),
   };
@@ -315,6 +320,9 @@ async function createIssueFromCurationDraft(req, accountId, draftId, body = {}) 
     theme: draft.theme,
     coverPreset: draft.coverPreset,
     eventPreset: draft.eventPreset,
+    format: draft.format,
+    coverVariation: draft.coverVariation || 1,
+    coverImage: draft.coverImage || null,
   });
   const created = await createCarouselIssue(req, accountId, {
     name,
@@ -441,3 +449,27 @@ module.exports = {
   serializeDraft,
   compareSelection,
 };
+
+/** Validate and preview against the caller's current editable document. No issue or draft write. */
+async function previewCurationDraft(req, accountId, draftId, body = {}) {
+  const loaded = await loadDraft(req, accountId, draftId);
+  if (loaded.error) return loaded;
+  const issueId = asId(body.issueId || loaded.draft.issueId);
+  const issueLoaded = await getCarouselIssue(req, accountId, issueId);
+  if (issueLoaded.error) return issueLoaded;
+  const issue = issueLoaded.data.issue;
+  if (body.revision !== issue.revision) return fail('The issue changed since it was opened.', 409, 'REVISION_CONFLICT');
+  const { prepareDocument } = require('./pivotCarouselDocument');
+  const prepared = prepareDocument(body.document || issue.document);
+  if (prepared.error) return prepared;
+  const snapshots = await loadCurationSnapshots(req, loaded.account, loaded.draft.selected.map(item => item.ref), {});
+  if (snapshots.error) return snapshots;
+  const report = compareSelection(loaded.draft.selected, snapshots.data.byKey, { requirePublished: loaded.draft.query?.publication !== 'inspect-unreleased' });
+  const revalidation = { missing: report.missing, changed: report.changed, unavailable: report.unavailable, failures: snapshots.data.failures, complete: snapshots.data.failures.length === 0 };
+  if ((!body.acceptChanges && (report.missing.length || report.unavailable.length)) || !revalidation.complete) return fail('Review changes to the selected events before continuing.', 409, 'SELECTION_STALE', { details: revalidation });
+  const selected = report.selected;
+  const applied = applyCurationToDocument(prepared.document, { previousRefs: body.previousRefs || issue.sources || [], selected, theme: loaded.draft.theme, coverPreset: loaded.draft.coverPreset, eventPreset: loaded.draft.eventPreset, format: loaded.draft.format });
+  if (applied.document.slides.length > ISSUE_LIMITS.maxSlides) return fail('This selection exceeds the 20-slide limit, including detached slides.', 422, 'SLIDE_CAP');
+  return { data: { document: applied.document, sources: selected.map(item => item.ref), curation: { ...curationPayload(loaded.draft, selected), diff: applied.diff }, diff: applied.diff, revalidation } };
+}
+module.exports.previewCurationDraft = previewCurationDraft;

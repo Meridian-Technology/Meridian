@@ -14,6 +14,7 @@ const pivotCarouselCurationDraftSchema = new mongoose.Schema(
     theme: { type: String, default: '', trim: true, maxlength: 120 },
     recapNotes: { type: mongoose.Schema.Types.Mixed, default: () => ({}) },
     coverPreset: { type: String, default: 'loose-letters', trim: true },
+    coverVariation: { type: Number, default: 1, min: 1, max: 3 },
     eventPreset: { type: String, default: 'photo-note', trim: true },
     revision: { type: Number, default: 1, min: 1 },
     status: { type: String, enum: ['open', 'consumed'], default: 'open' },

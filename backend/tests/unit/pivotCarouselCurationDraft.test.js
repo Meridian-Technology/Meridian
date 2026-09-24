@@ -30,6 +30,7 @@ const {
   updateCurationDraft,
   createIssueFromCurationDraft,
   applyCurationDraftToIssue,
+  previewCurationDraft,
 } = require('../../services/pivotCarouselCurationDraftService');
 
 const HOSTING_ID = new mongoose.Types.ObjectId();
@@ -87,7 +88,7 @@ describe('curation document seeding', () => {
       eventPreset: 'photo-note',
     });
     expect(document.slides.map((slide) => slide.role)).toEqual(['cover', 'event']);
-    expect(document.slides[0].elements[0].text).toBe('Lantern week');
+    expect(require('../../services/pivotCarouselPresets').titleOf(document.slides[0]).replace(/\n/g, ' ')).toBe('Lantern week');
     expect(slideEstimate(1).slideCount).toBe(2);
   });
 
@@ -101,7 +102,7 @@ describe('curation document seeding', () => {
       coverPreset: 'open-invitation',
       eventPreset: 'in-the-room',
     });
-    first.slides[1].elements.find((element) => element.role === 'event-name').text = 'Edited title';
+    first.slides[1].elements.find((element) => element.role === 'event-card').children.find((element) => element.role === 'event-name').text = 'Edited title';
     const applied = applyCurationToDocument(first, {
       previousRefs: [{ sourceTenantKey: 'sf', eventId: 'aaa' }, { sourceTenantKey: 'nyc', eventId: 'bbb' }],
       selected: [
@@ -115,7 +116,7 @@ describe('curation document seeding', () => {
     const kept = applied.document.slides.find((slide) => slide.source?.eventId === 'aaa');
     const detached = applied.document.slides.find((slide) => slide.source?.eventId === 'bbb');
     const added = applied.document.slides.find((slide) => slide.source?.eventId === 'ccc');
-    expect(kept.elements.find((element) => element.role === 'event-name').text).toBe('Edited title');
+    expect(kept.elements.find((element) => element.role === 'event-card').children.find((element) => element.role === 'event-name').text).toBe('Edited title');
     expect(detached.detached).toBe(true);
     expect(added.role).toBe('event');
     expect(applied.diff.added.map((ref) => ref.eventId)).toEqual(['ccc']);
@@ -165,6 +166,25 @@ describe('draft persistence and issue creation', () => {
       sourceTenantKeys: ['sf', 'nyc'],
     });
   }
+
+  test('selection preview preserves unsaved edits without writing the issue', async () => {
+    const created = await account(); const accountId = created.data.account.id;
+    const [first, second] = await EventSf.create([eventDoc({ name: 'First' }), eventDoc({ name: 'Second' })]);
+    const draft = (await createCurationDraft(req, accountId, { selected: [item('sf', first)] })).data.draft;
+    const issue = (await createIssueFromCurationDraft(req, accountId, draft.id, { name: 'Preview', idempotencyKey: 'preview-test' })).data.issue;
+    const nextDraft = (await createCurationDraft(req, accountId, { issueId: issue.id, selected: [item('sf', first), item('sf', second)] })).data.draft;
+    const document = JSON.parse(JSON.stringify(issue.document));
+    document.slides[1].elements[0].frame.x = 321;
+    const preview = await previewCurationDraft(req, accountId, nextDraft.id, { issueId: issue.id, revision: 1, document, previousRefs: issue.sources });
+    expect(preview.data.document.slides).toHaveLength(3);
+    expect(preview.data.document.slides[1].elements[0].frame.x).toBe(321);
+    const { getCarouselIssue, updateCarouselIssue } = require('../../services/pivotCarouselIssueService');
+    const unchanged = (await getCarouselIssue(req, accountId, issue.id)).data.issue;
+    expect(unchanged.revision).toBe(1); expect(unchanged.document.slides).toHaveLength(2);
+    const saved = await updateCarouselIssue(req, accountId, issue.id, { revision: 1, document: preview.data.document, sources: preview.data.sources, curation: preview.data.curation });
+    expect(saved.data.issue.revision).toBe(2); expect(saved.data.issue.sources).toHaveLength(2);
+    expect(saved.data.issue.document.slides[1].elements[0].frame.x).toBe(321);
+  });
 
   test('city collection and multi-city recap create one named issue each', async () => {
     const created = await account();
@@ -253,7 +273,7 @@ describe('draft persistence and issue creation', () => {
       idempotencyKey: 'idem-edit',
     });
     const keptSlide = issue.data.issue.document.slides.find((slide) => slide.source?.eventId === String(first._id));
-    keptSlide.elements.find((element) => element.role === 'event-name').text = 'Custom card copy';
+    keptSlide.elements.find((element) => element.role === 'event-card').children.find((element) => element.role === 'event-name').text = 'Custom card copy';
 
     const { PivotCarouselDeck } = require('../../services/getGlobalModelService')(req, 'PivotCarouselDeck');
     await PivotCarouselDeck.updateOne(
@@ -271,7 +291,7 @@ describe('draft persistence and issue creation', () => {
     });
     const retained = applied.data.issue.document.slides.find((slide) => slide.source?.eventId === String(first._id));
     const detached = applied.data.issue.document.slides.find((slide) => slide.source?.eventId === String(second._id));
-    expect(retained.elements.find((element) => element.role === 'event-name').text).toBe('Custom card copy');
+    expect(retained.elements.find((element) => element.role === 'event-card').children.find((element) => element.role === 'event-name').text).toBe('Custom card copy');
     expect(detached.detached).toBe(true);
     expect(applied.data.diff.added[0].eventId).toBe(String(third._id));
   });

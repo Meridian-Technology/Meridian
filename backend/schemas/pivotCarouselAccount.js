@@ -25,7 +25,7 @@ const pivotCarouselAccountSchema = new mongoose.Schema(
     defaultFormat: { type: String, enum: FORMATS, default: 'city-picks' },
     createdBy: { type: String, default: null, trim: true },
     updatedBy: { type: String, default: null, trim: true },
-    migrationKey: { type: String, default: null },
+    migrationKey: { type: String },
   },
   { timestamps: true },
 );

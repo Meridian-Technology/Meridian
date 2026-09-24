@@ -6,8 +6,12 @@
  * slide, and revising a selection must not overwrite retained event slides.
  */
 
-const { randomUUID } = require('crypto');
 const { ISSUE_LIMITS } = require('./pivotCarouselIssueService');
+const {
+  generateCoverSlide,
+  generateEventSlide,
+  shuffleCoverVariation,
+} = require('./pivotCarouselPresets');
 
 const COVER_PRESETS = Object.freeze(['loose-letters', 'open-invitation', 'kept-somewhere']);
 const EVENT_PRESETS = Object.freeze(['photo-note', 'on-the-bill', 'in-the-room']);
@@ -150,70 +154,14 @@ function diffSelection(previousRefs, nextRefs) {
   };
 }
 
-function textElement(role, value, frame) {
-  const text = String(value || '');
-  return {
-    id: randomUUID(),
-    kind: 'text',
-    role,
-    text,
-    presence: text ? 'custom' : 'blank',
-    frame,
-  };
-}
-
-function generateCoverSlide({ theme, coverPreset }) {
-  return {
-    id: randomUUID(),
-    role: 'cover',
-    preset: { id: coverPreset, family: coverPreset, round: '05', variation: 1 },
-    width: 1080,
-    height: 1350,
-    background: { fill: '#faf6ef' },
-    elements: [
-      textElement('cover-title', theme, { x: 80, y: 200, width: 920, height: 320 }),
-    ],
-  };
-}
-
-function generateEventSlide(item, eventPreset) {
-  const snap = item.snapshot || {};
-  const elements = [];
-  if (snap.image) {
-    elements.push({
-      id: randomUUID(),
-      kind: 'image',
-      role: 'event-photo',
-      frame: { x: 80, y: 80, width: 920, height: 720 },
-      crop: { focalX: 0.5, focalY: 0.5, scale: 1 },
-      asset: { src: snap.image, key: null },
-    });
-  }
-  elements.push(textElement('event-name', snap.name, { x: 80, y: 820, width: 920, height: 96 }));
-  elements.push(textElement('event-host', snap.host, { x: 80, y: 924, width: 920, height: 48 }));
-  elements.push(textElement('event-place', snap.location, { x: 80, y: 980, width: 920, height: 48 }));
-  const when = snap.startTime ? new Date(snap.startTime).toISOString() : '';
-  elements.push(textElement('event-when', when, { x: 80, y: 1036, width: 920, height: 48 }));
-  return {
-    id: randomUUID(),
-    role: 'event',
-    source: { ...item.ref },
-    preset: { id: eventPreset, round: '06' },
-    width: 1080,
-    height: 1350,
-    background: { fill: '#faf6ef' },
-    elements,
-  };
-}
-
-function generateIssueDocument({ selected, theme, coverPreset, eventPreset }) {
+function generateIssueDocument({ selected, theme, coverPreset, eventPreset, format, coverVariation = 1, coverImage = null }) {
   return {
     schemaVersion: 2,
     width: 1080,
     height: 1350,
     slides: [
-      generateCoverSlide({ theme, coverPreset }),
-      ...selected.map((item) => generateEventSlide(item, eventPreset)),
+      generateCoverSlide({ theme, coverPreset, variation: coverVariation, coverImage }),
+      ...selected.map((item) => generateEventSlide(item, eventPreset, { format })),
     ],
   };
 }
@@ -224,33 +172,34 @@ function applyCurationToDocument(document, {
   theme,
   coverPreset,
   eventPreset,
+  format,
 }) {
   const diff = diffSelection(previousRefs, selected.map((item) => item.ref));
   const slides = Array.isArray(document?.slides) ? document.slides : [];
-  const cover = slides.find((slide) => slide.role === 'cover') || generateCoverSlide({ theme, coverPreset });
+  const cover = slides.find((slide) => slide.role === 'cover') || generateCoverSlide({ theme, coverPreset, coverImage: null });
   const byRef = new Map();
   for (const slide of slides) {
-    if (slide.role === 'event' && slide.source) byRef.set(eventRefKey(slide.source), slide);
+    if (slide.role === 'event' && slide.source) { const key = eventRefKey(slide.source); byRef.set(key, [...(byRef.get(key) || []), slide]); }
   }
 
   const nextSlides = [cover];
   for (const item of selected) {
     const existing = byRef.get(eventRefKey(item.ref));
     if (existing) {
-      nextSlides.push(existing);
+      nextSlides.push(...existing);
       byRef.delete(eventRefKey(item.ref));
     } else {
-      nextSlides.push(generateEventSlide(item, eventPreset));
+      nextSlides.push(generateEventSlide(item, eventPreset, { format: format || document?.format }));
     }
   }
 
   const detachedSlideIds = [];
-  for (const slide of byRef.values()) {
+  for (const slide of [...byRef.values()].flat()) {
     nextSlides.push({ ...slide, detached: true });
     detachedSlideIds.push(slide.id);
   }
   for (const slide of slides) {
-    if (slide.role !== 'cover' && slide.role !== 'event') nextSlides.push(slide);
+    if ((slide.role === 'cover' && slide.id !== cover.id) || (slide.role === 'event' && !slide.source) || (slide.role !== 'cover' && slide.role !== 'event')) nextSlides.push(slide);
   }
 
   return {
@@ -282,4 +231,5 @@ module.exports = {
   generateEventSlide,
   generateIssueDocument,
   applyCurationToDocument,
+  shuffleCoverVariation,
 };

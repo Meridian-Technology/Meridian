@@ -132,6 +132,7 @@ function coerceSlides(rawSlides) {
 
   for (const raw of (Array.isArray(rawSlides) ? rawSlides : []).slice(0, DECK_SLIDE_MAX)) {
     const result = coerceSlide(raw);
+    if (result.code === 'SCHEMA_VERSION_UNSUPPORTED') return result;
     if (result.error) {
       notes.push(result.error);
       continue;
@@ -226,10 +227,18 @@ async function createCarouselDeck(req, tenantKey, body = {}) {
 
   // A body with slides is a seed (the editor posting its reference issue);
   // without them it is an empty deck, which opens on cover and back.
+  if (Number(body.schemaVersion) >= 2 || body.document?.schemaVersion >= 2) {
+    return {
+      error: 'Schema version 2 issues are not created through the legacy slide manifest.',
+      status: 422,
+      code: 'SCHEMA_VERSION_UNSUPPORTED',
+    };
+  }
+
   const hasSlides = Array.isArray(body.slides) && body.slides.length > 0;
-  const { slides, notes } = hasSlides
-    ? coerceSlides(body.slides)
-    : { slides: seedSlides(), notes: [] };
+  const coerced = hasSlides ? coerceSlides(body.slides) : { slides: seedSlides(), notes: [] };
+  if (coerced.code) return { error: coerced.error, status: 422, code: coerced.code };
+  const { slides, notes } = coerced;
 
   const { PivotCarouselDeck } = getGlobalModels(req, 'PivotCarouselDeck');
   const doc = await PivotCarouselDeck.create({
@@ -279,8 +288,17 @@ async function updateCarouselDeck(req, tenantKey, deckId, body = {}) {
   if (body.issue !== undefined) doc.issue = coerceIssue(body.issue);
   if (body.voice !== undefined) doc.voice = coerceVoice(body.voice);
 
+  if ((doc.schemaVersion || 1) >= 2 && (body.slides !== undefined || body.document !== undefined)) {
+    return {
+      error: 'Schema version 2 issues are saved as documents, not trimmed into legacy slides.',
+      status: 422,
+      code: 'SCHEMA_VERSION_UNSUPPORTED',
+    };
+  }
+
   if (body.slides !== undefined) {
     const coerced = coerceSlides(body.slides);
+    if (coerced.code) return { error: coerced.error, status: 422, code: coerced.code };
     doc.slides = coerced.slides;
     notes.push(...coerced.notes);
   }
