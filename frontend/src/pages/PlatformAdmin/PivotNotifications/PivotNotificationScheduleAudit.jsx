@@ -258,6 +258,7 @@ function PivotNotificationScheduleAudit({
       </section>
 
       {canEnqueue ? (
+        <>
         <form className="pivot-notification-schedule-audit__run" onSubmit={handleEnqueue}>
         {definition?.tenantKey || scopedTenant ? null : (
           <label className="linear-field">
@@ -330,6 +331,7 @@ function PivotNotificationScheduleAudit({
             )}
           </section>
         ) : null}
+        </>
       ) : null}
     </div>
   );
