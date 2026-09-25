@@ -21,6 +21,7 @@ const {
   deleteMeridianNotificationDefinition,
   upsertMeridianNotificationOverride,
 } = require('../services/meridianNotificationDefinitionService');
+const { previewNotificationEligibility } = require('../services/meridianNotificationEligibilityService');
 
 const router = express.Router();
 
@@ -122,6 +123,23 @@ router.get(
         to: req.query.to,
         limit: req.query.limit,
         cursor: req.query.cursor,
+      });
+      return res.json({ success: true, data });
+    } catch (error) {
+      return handleMeridianJobAdminError(res, error);
+    }
+  },
+);
+
+router.get(
+  '/admin/meridian/jobs/notifications/eligibility',
+  verifyToken,
+  requirePlatformAdmin,
+  async (req, res) => {
+    try {
+      const data = await previewNotificationEligibility(req, {
+        handlerKey: req.query.handlerKey,
+        tenantKey: req.query.tenantKey,
       });
       return res.json({ success: true, data });
     } catch (error) {
