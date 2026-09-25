@@ -9,7 +9,7 @@ const {
 process.once('SIGTERM', () => stopMeridianJobWorkerLoop());
 process.once('SIGINT', () => stopMeridianJobWorkerLoop());
 
-const PORT = process.env.PORT || 5001;
+const PORT = process.env.MERIDIAN_API_PORT || process.env.PORT || 5001;
 
 const { server } = createApp();
 server.listen(PORT, () => {

@@ -12,7 +12,7 @@ const WebSocketContext = createContext(null);
 const SOCKET_URL =
   process.env.NODE_ENV === 'production'
     ? (window.location.origin || 'https://www.meridian.study')
-    : 'http://localhost:5001';
+    : (process.env.REACT_APP_API_URL || 'http://localhost:5001');
 
 const EVENT_ROOM_JOIN = 'join-event';
 const EVENT_ROOM_LEAVE = 'leave-event';

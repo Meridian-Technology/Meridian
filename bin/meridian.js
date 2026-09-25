@@ -36,6 +36,7 @@ const {
 const { promptYesNo, promptChoice } = require('./lib/prompts');
 const { collisionAction, isValidBranchName } = require('./lib/branch-options');
 const { setEventsRef, getEventsRef } = require('./lib/lockfile');
+const { readDevPorts, writeDevPorts, clearDevPorts } = require('./lib/dev-ports');
 const {
   ensureGhAvailable,
   prExists,
@@ -68,7 +69,8 @@ function usage() {
   console.log(dim('  ├─ switch       ') + 'Switch both repos to existing branch');
   console.log(dim('  ├─ sync         ') + 'Sync lockfile to current Events main');
   console.log(dim('  ├─ ship         ') + 'Ship full-stack feature (Events PR → merge → sync → Meridian PR)');
-  console.log(dim('  └─ symlink      ') + 'Replace backend/events with symlink to Events-Backend (for dev)');
+  console.log(dim('  ├─ symlink      ') + 'Replace backend/events with symlink to Events-Backend (for dev)');
+  console.log(dim('  └─ ports        ') + 'Point the dev frontend at an API port');
   console.log('');
   console.log(cyan('  Examples'));
   console.log(dim('  meridian start MER-123-Org-Forms'));
@@ -78,6 +80,7 @@ function usage() {
   console.log(dim('  meridian start relay/my-run ') + cyan('--yes --any-branch --resume') + dim('   (resume remote branch)'));
   console.log(dim('  meridian switch MER-123-Org-Forms'));
   console.log(dim('  meridian symlink'));
+  console.log(dim('  meridian ports --api 19202 --web 19201'));
   console.log(dim('  meridian ship'));
   console.log('');
   console.log(dim('  Branch names: MER-<number>-<slug> (e.g. MER-123-Org-Forms)'));
@@ -235,6 +238,61 @@ function isEventsSymlink(meridianPath) {
     return fs.existsSync(eventsPath) && fs.lstatSync(eventsPath).isSymbolicLink();
   } catch {
     return false;
+  }
+}
+
+function flagValue(args, name) {
+  const inline = args.find((arg) => arg.startsWith(`${name}=`));
+  if (inline) return inline.slice(name.length + 1);
+  const index = args.indexOf(name);
+  if (index === -1) return undefined;
+  return args[index + 1];
+}
+
+function cmdPorts(args) {
+  const { meridianPath } = resolveWorkspaceForSetup();
+  if (args.includes('--reset')) {
+    const cleared = clearDevPorts(meridianPath);
+    console.log('');
+    console.log(green('  Cleared dev frontend ports'));
+    console.log(dim(`  Removed ${cleared.file}`));
+    console.log(dim('  The dev frontend falls back to http://127.0.0.1:5001'));
+    console.log('');
+    return;
+  }
+  const apiPort = flagValue(args, '--api');
+  const webPort = flagValue(args, '--web');
+  if (!apiPort) {
+    const current = readDevPorts(meridianPath);
+    console.log('');
+    if (!current.apiPort) {
+      console.log(yellow('  Dev frontend is using the default API'));
+      console.log(dim('  http://127.0.0.1:5001'));
+    } else {
+      console.log(green('  Dev frontend API'));
+      console.log(dim(`  http://127.0.0.1:${current.apiPort}`));
+      if (current.webPort) console.log(dim(`  Web port ${current.webPort}`));
+    }
+    console.log('');
+    console.log(dim('  meridian ports --api <port> [--web <port>]'));
+    console.log(dim('  Restart the frontend after changing this. Production builds ignore the file.'));
+    console.log('');
+    return;
+  }
+  try {
+    const written = writeDevPorts(meridianPath, { apiPort, webPort });
+    console.log('');
+    console.log(green('  Dev frontend now calls'));
+    console.log(dim(`  http://127.0.0.1:${written.apiPort}`));
+    if (written.webPort) console.log(dim(`  Web port ${written.webPort}`));
+    console.log(dim(`  ${written.file}`));
+    console.log(dim('  Restart the frontend. Production builds ignore this file.'));
+    console.log('');
+  } catch (error) {
+    console.error('');
+    console.error(red(`  ${error.message}`));
+    console.error('');
+    process.exit(1);
   }
 }
 
@@ -808,6 +866,9 @@ async function main() {
       break;
     case 'symlink':
       cmdSymlink();
+      break;
+    case 'ports':
+      cmdPorts(args.slice(1));
       break;
     case 'ship':
       await cmdShip();

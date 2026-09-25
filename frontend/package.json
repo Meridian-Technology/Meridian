@@ -104,7 +104,6 @@
     "test:groups:validate": "node ../scripts/ci/test-groups.js validate frontend",
     "test:coverage": "CI=true node scripts/test.js --watch=false --runInBand --coverage"
   },
-  "proxy": "http://localhost:5001/",
   "eslintConfig": {
     "extends": [
       "react-app",
