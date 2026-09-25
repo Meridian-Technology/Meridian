@@ -155,7 +155,7 @@ async function sendEventDiscoveryPushesForTenant(req, options = {}) {
   }
 
   const dryRun = options.dryRun === true;
-  if (!dryRun) {
+  if (!dryRun && options.eligibilityOnly !== true) {
     const quiet = quietHoursSendBlockForDelivery(options, {
       now: options.now || new Date(),
       timeZone: tenant.pivotDropTimezone,
@@ -189,6 +189,23 @@ async function sendEventDiscoveryPushesForTenant(req, options = {}) {
   });
   const capped = capDeliveryRows(users, MAX_RUN_RECIPIENTS);
   const recipients = capped.deliveries;
+  if (options.eligibilityOnly === true) {
+    return {
+      data: {
+        tenantKey,
+        sent: 0,
+        failed: 0,
+        eligible: users.length,
+        overflow: capped.recipientOverflowCount,
+        people: recipients.map((user) => ({
+          userId: user._id?.toString?.() || String(user._id || ''),
+          username: user.username || null,
+          name: user.name || null,
+        })),
+        deliveries: [],
+      },
+    };
+  }
   const copyPack = await getMergedCopyPackOrEmpty(req, { tenantKey });
   const copy = resolveDefinitionNotificationCopy({
     pack: copyPack,

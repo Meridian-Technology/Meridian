@@ -70,6 +70,9 @@ function PivotNotificationScheduleAudit({
     dryRun: true,
   });
   const [enqueueing, setEnqueueing] = useState(false);
+  const [eligibility, setEligibility] = useState(null);
+  const [eligibilityLoading, setEligibilityLoading] = useState(false);
+  const [eligibilityError, setEligibilityError] = useState('');
 
   const {
     data: runsResponse,
@@ -136,6 +139,28 @@ function PivotNotificationScheduleAudit({
       type: res.data?.created !== false ? 'success' : 'info',
     });
     onQueued?.();
+  };
+
+  const handleEligibility = async () => {
+    if (!handlerKey || !runDraft.tenantKey) return;
+    setEligibilityLoading(true);
+    setEligibilityError('');
+    const { data: res, error: reqError } = await authenticatedRequest(
+      '/admin/meridian/jobs/notifications/eligibility',
+      {
+        params: {
+          handlerKey,
+          tenantKey: runDraft.tenantKey,
+        },
+      },
+    );
+    setEligibilityLoading(false);
+    if (reqError || !res?.success) {
+      setEligibility(null);
+      setEligibilityError(res?.message || reqError || 'Unable to check who is eligible');
+      return;
+    }
+    setEligibility(res.data || null);
   };
 
   const canEnqueue = Boolean(SCHEDULE_HANDLER_LABELS[handlerKey]);
@@ -266,6 +291,14 @@ function PivotNotificationScheduleAudit({
           <span>Dry run</span>
         </label>
         <button
+          type="button"
+          className="linear-btn"
+          disabled={!runDraft.tenantKey || eligibilityLoading}
+          onClick={handleEligibility}
+        >
+          {eligibilityLoading ? 'Checking…' : "Who's eligible"}
+        </button>
+        <button
           type="submit"
           className="linear-btn linear-btn--primary"
           disabled={!runDraft.tenantKey || enqueueing}
@@ -273,6 +306,30 @@ function PivotNotificationScheduleAudit({
           {enqueueing ? 'Queuing…' : 'Queue run'}
         </button>
         </form>
+        {eligibilityError ? (
+          <p className="pivot-notification-schedule-audit__error" role="alert">{eligibilityError}</p>
+        ) : null}
+        {eligibility ? (
+          <section className="pivot-notification-schedule-audit__people" aria-label="Who is eligible right now">
+            <h3>Eligible right now</h3>
+            <p>
+              {eligibility.count} {eligibility.count === 1 ? 'person matches' : 'people match'} this schedule. Nothing was sent.
+              {eligibility.overflow ? ` Showing the first ${eligibility.people?.length || 0}.` : ''}
+            </p>
+            {eligibility.people?.length ? (
+              <ul>
+                {eligibility.people.map((row) => (
+                  <li key={row.userId}>
+                    <strong>{deliveryName(row)}</strong>
+                    <span>{row.username ? `@${row.username}` : ''}</span>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="pivot-notification-schedule-audit__empty">Nobody matches right now.</p>
+            )}
+          </section>
+        ) : null}
       ) : null}
     </div>
   );
