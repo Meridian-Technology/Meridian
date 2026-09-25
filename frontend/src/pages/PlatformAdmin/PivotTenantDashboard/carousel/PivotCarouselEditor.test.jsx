@@ -7,6 +7,7 @@ import React from 'react';
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import PivotCarouselEditor from './PivotCarouselEditor';
 
+jest.mock('../../../../hooks/useFetch', () => ({ authenticatedRequest: jest.fn() }));
 jest.mock('./PivotCarouselVoicePanel', () => () => null);
 jest.mock('./PivotCarouselEventPicker', () => () => null);
 jest.mock('./PivotCarouselAddSlide', () => () => null);
@@ -88,6 +89,13 @@ function renderEditor(props = {}) {
 }
 
 describe('full screen', () => {
+  test('offers a way back to all carousels', () => {
+    const onBack = jest.fn();
+    renderEditor({ onBack });
+    fireEvent.click(screen.getByRole('button', { name: 'All carousels' }));
+    expect(onBack).toHaveBeenCalledTimes(1);
+  });
+
   test('offers a control that asks the page to enter full screen', () => {
     const { onToggleFocus } = renderEditor();
     fireEvent.click(screen.getByRole('button', { name: 'full screen' }));
@@ -136,6 +144,7 @@ describe('full screen', () => {
       exportState: { uiEnabled: true, startExport },
     });
     fireEvent.click(screen.getAllByRole('button', { name: 'export' })[0]);
+    fireEvent.click(screen.getByRole('button', { name: 'Relay' }));
     expect(screen.getByTestId('export-picker')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'export this slide' }));
     expect(startExport).toHaveBeenCalledWith([1]);

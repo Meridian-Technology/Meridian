@@ -1,6 +1,7 @@
 import React, { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import stickerDark from '../../../../../assets/pivot/JustGoDieCutDark.png';
 import stickerLight from '../../../../../assets/pivot/JustGoDieCutLight.png';
+import appStoreBadge from '../../../../../assets/pivot/download-on-the-app-store.svg';
 import { formatWhen } from '../../../../../shared/carouselStudio/date';
 import { textStyle } from '../../../../../shared/carouselStudio/layout';
 import { reflowCard } from '../../../../../shared/carouselStudio/document';
@@ -19,12 +20,23 @@ function cropStyle(element) {
     transform: `translate(${(crop.panX || 0) * Math.max(0, (crop.scale || 1) - 1) * 50}%, ${(crop.panY || 0) * Math.max(0, (crop.scale || 1) - 1) * 50}%) scale(${crop.scale || 1}) rotate(${element.style?.imageRotation || 0}deg)`,
     filter: `saturate(1.06) contrast(1.03) brightness(${element.style?.brightness ?? 1})` };
 }
+export function readEditableText(node) {
+  return String(node?.innerText ?? node?.textContent ?? '').replace(/\u00a0/g, ' ').replace(/\n$/, '');
+}
+function selectContents(node) {
+  const selection = window.getSelection();
+  if (!selection) return;
+  const range = document.createRange();
+  range.selectNodeContents(node);
+  selection.removeAllRanges();
+  selection.addRange(range);
+}
 function TextBlock({ element, editing, editingLabel, onEdit, onMeasure, timezone }) {
   const ref = useRef(null);
   const labelRef = useRef(null);
-  useLayoutEffect(() => { if (editingLabel && labelRef.current) { labelRef.current.focus(); const range = document.createRange(); range.selectNodeContents(labelRef.current); const selection = window.getSelection(); selection.removeAllRanges(); selection.addRange(range); } }, [editingLabel]);
   const styleKey = JSON.stringify(element.style);
   const value = element.presence === 'blank' ? '' : String(element.text || '');
+  const label = String(element.label || '');
   useLayoutEffect(() => {
     const node = ref.current;
     if (!node) return undefined;
@@ -34,13 +46,22 @@ function TextBlock({ element, editing, editingLabel, onEdit, onMeasure, timezone
     };
     measure();
     document.fonts?.ready?.then(measure);
-    if (editing) {
-      node.focus();
-      const selection = window.getSelection(); const range = document.createRange();
-      range.selectNodeContents(node); selection.removeAllRanges(); selection.addRange(range);
-    }
     return () => { alive = false; };
   }, [value, editing, element.id, element.frame.width, styleKey, element.label, onMeasure]);
+  useLayoutEffect(() => {
+    if (!editing || !ref.current) return undefined;
+    ref.current.textContent = value;
+    ref.current.focus();
+    selectContents(ref.current);
+    return undefined;
+  }, [editing, element.id]);
+  useLayoutEffect(() => {
+    if (!editingLabel || !labelRef.current) return undefined;
+    labelRef.current.textContent = label;
+    labelRef.current.focus();
+    selectContents(labelRef.current);
+    return undefined;
+  }, [editingLabel, element.id]);
   const paint = textStyle(element);
   const isDate = element.role === 'event-date';
   const dateContent = !editing && /date|logistics/.test(element.role || '') ? value.split('\n').map((line, index) => {
@@ -48,17 +69,17 @@ function TextBlock({ element, editing, editingLabel, onEdit, onMeasure, timezone
     return <React.Fragment key={index}>{index > 0 ? '\n' : null}{iso || isDate ? <strong style={{ fontWeight: 700 }}>{iso ? formatWhen({ startTime: line.trim(), timezone }) : line}</strong> : line}</React.Fragment>;
   }) : null;
   return <>
-    {element.label && <div ref={labelRef} data-text-label="true" className="studio-art__label" contentEditable={editingLabel || undefined} suppressContentEditableWarning onBlur={editingLabel ? event => onEdit?.(element.id, event.currentTarget.innerText ?? event.currentTarget.textContent, 'label') : undefined}>{element.label}</div>}
+    {element.label && <div ref={labelRef} data-text-label="true" className="studio-art__label" contentEditable={editingLabel || undefined} suppressContentEditableWarning onBlur={editingLabel ? event => onEdit?.(element.id, readEditableText(event.currentTarget), 'label') : undefined}>{editingLabel ? null : element.label}</div>}
     <div ref={ref} className={`studio-art__text${editing ? ' is-editing' : ''}`} style={paint}
       contentEditable={editing || undefined} suppressContentEditableWarning
-      onBlur={editing ? event => onEdit?.(element.id, event.currentTarget.innerText ?? event.currentTarget.textContent) : undefined}
+      onBlur={editing ? event => onEdit?.(element.id, readEditableText(event.currentTarget)) : undefined}
       onPaste={editing ? event => {
         event.preventDefault();
         const value = event.clipboardData.getData('text/plain');
         const selection = window.getSelection();
         if (selection?.rangeCount) { const range = selection.getRangeAt(0); range.deleteContents(); const text = document.createTextNode(value); range.insertNode(text); range.setStartAfter(text); range.collapse(true); selection.removeAllRanges(); selection.addRange(range); }
       } : undefined}
-    >{!editing && element.style?.lettering ? value.split('\n').map((line, lineIndex) => <div className="studio-art__letter-line" key={lineIndex}><span style={{ background: element.style.textBackground || undefined }}>{Array.from(line).map((letter, i) => <span key={i} style={{ transform: `translateY(${[0, 2.16, -1.62, 2.16, 0, -1.62, 2.16][i % 7]}px) rotate(${[-2, 1, -1, 2, -2, 1, 2][i % 7]}deg)` }}>{letter === ' ' ? '\u00a0' : letter}</span>)}</span></div>) : dateContent || (!editing && !value && onEdit && element.placeholder ? <span className="studio-art__text-placeholder">{element.placeholder}</span> : null) || (element.style?.textBackground && !editing ? <span className="studio-art__paper-text" style={{ background: element.style.textBackground }}>{value}</span> : value)}</div>
+    >{editing ? null : element.style?.lettering ? value.split('\n').map((line, lineIndex) => <div className="studio-art__letter-line" key={lineIndex}><span style={{ background: element.style.textBackground || undefined }}>{Array.from(line).map((letter, i) => <span key={i} style={{ transform: `translateY(${[0, 2.16, -1.62, 2.16, 0, -1.62, 2.16][i % 7]}px) rotate(${[-2, 1, -1, 2, -2, 1, 2][i % 7]}deg)` }}>{letter === ' ' ? '\u00a0' : letter}</span>)}</span></div>) : dateContent || (!value && onEdit && element.placeholder ? <span className="studio-art__text-placeholder">{element.placeholder}</span> : null) || (element.style?.textBackground ? <span className="studio-art__paper-text" style={{ background: element.style.textBackground }}>{value}</span> : value)}</div>
   </>;
 }
 function ElementNode({ element, index, editingId, onEdit, onMeasure, onImageRequest, timezone, inheritedLocked = false }) {
@@ -73,6 +94,7 @@ function ElementNode({ element, index, editingId, onEdit, onMeasure, onImageRequ
     data-frame={`${element.frame.x},${element.frame.y},${element.frame.width},${element.frame.height}`} data-rotation={element.rotation || 0} style={style}>
     {element.kind === 'card' ? (element.children || []).map((child, childIndex) => <ElementNode key={child.id} element={child} index={childIndex} editingId={editingId} onEdit={onEdit} onMeasure={onMeasure} onImageRequest={onImageRequest} timezone={timezone} inheritedLocked={locked} />)
       : element.kind === 'text' ? <TextBlock element={element} editing={!locked && editingId === element.id} editingLabel={!locked && editingId === `${element.id}:label`} onEdit={onEdit} onMeasure={onMeasure} timezone={timezone} />
+        : element.role === 'back-badge' ? <img draggable={false} className="studio-art__badge" src={element.asset?.src || appStoreBadge} alt={element.asset?.alt || 'Download on the App Store'} />
         : element.kind === 'image' ? <div className={`studio-art__photo-mask${element.style?.mask ? ` studio-art__photo-mask--${element.style.mask}` : ''}`}>
           {element.asset?.src ? <img src={element.asset.src} alt={element.asset.alt || ''} draggable={false} style={cropStyle(element)} /> : onImageRequest ? <button type="button" data-add-photo="true" className="studio-art__missing" disabled={locked} onClick={event => { event.stopPropagation(); onImageRequest(element.id); }}><span>＋</span><span>Add a photograph</span></button> : <div className="studio-art__missing"><span>＋</span><span>Add a photograph</span></div>}
         </div>

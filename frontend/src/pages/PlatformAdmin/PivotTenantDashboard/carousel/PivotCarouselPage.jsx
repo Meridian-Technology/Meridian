@@ -16,6 +16,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { authenticatedRequest } from '../../../../hooks/useFetch';
+import useAuth from '../../../../hooks/useAuth';
 import { useNotification } from '../../../../NotificationContext';
 import PivotTenantPage from '../PivotTenantPage';
 import PivotCarouselEditor from './PivotCarouselEditor';
@@ -25,6 +26,7 @@ import StudioEditor from './studio/StudioEditor';
 import { librarySelection } from './carouselLibrary';
 import { candidateToSelection } from './carouselCurationSelection';
 import useCarouselExport from './useCarouselExport';
+import PivotCarouselExportPanel from './PivotCarouselExportPanel';
 import {
   ZineBack,
   ZineCard,
@@ -107,6 +109,7 @@ function EditionTools({
 
 export default function PivotCarouselPage({ tenantKey, cityDisplayName }) {
   const { addNotification } = useNotification();
+  const { user } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
   const requestedDeckId = searchParams.get('deckId');
   const requestedCurationId = searchParams.get('curation');
@@ -295,7 +298,11 @@ export default function PivotCarouselPage({ tenantKey, cityDisplayName }) {
     [draft, deck, edition, inkPlate, showIssueNumber],
   );
 
-  const exportState = useCarouselExport({ tenantKey, deck, dirty });
+  const exportState = useCarouselExport({
+    tenantKey,
+    deck,
+    dirty: draft?.schemaVersion === 2 ? false : dirty,
+  });
 
   const ensureAccount = useCallback(async () => {
     if (accountId) {
@@ -383,14 +390,20 @@ export default function PivotCarouselPage({ tenantKey, cityDisplayName }) {
     load();
   }, [addNotification, load, tenantKey]);
 
-  const saveStudioDocument = useCallback(async (document, editorial = {}) => {
+  const saveStudioDocument = useCallback(async (document, editorial = {}, revision) => {
     if (!draft?.accountId || !draft?._id) return { error: 'Missing issue', code: 400 };
     const result = await authenticatedRequest(
       `/admin/pivot/carousel-accounts/${draft.accountId}/issues/${draft._id}`,
-      { method: 'PATCH', data: { revision: draft.revision, document, ...editorial } },
+      { method: 'PATCH', data: { revision: Number.isInteger(revision) ? revision : draft.revision, document, curation: editorial.curation, sources: editorial.sources } },
     );
     if (result.error || result.data?.success === false) {
-      return { error: result.error || result.data?.message, code: result.code || result.data?.code };
+      return {
+        error: result.error || result.data?.message,
+        code: result.errorCode || result.data?.code || result.code,
+        status: result.code,
+        issue: result.errorData?.issue,
+        storedRevision: result.errorData?.storedRevision,
+      };
     }
     const saved = result.data?.data?.issue;
     if (!saved) return { error: 'Save failed', code: 500 };
@@ -404,6 +417,32 @@ export default function PivotCarouselPage({ tenantKey, cityDisplayName }) {
       updatedAt: saved.updatedAt,
     }));
     return { document: saved.document, revision: saved.revision, editorial: { curation: saved.curation, sources: saved.sources } };
+  }, [draft]);
+
+  const reloadStudioIssue = useCallback(async () => {
+    if (!draft?.accountId || !draft?._id) return null;
+    const result = await authenticatedRequest(`/admin/pivot/carousel-accounts/${draft.accountId}/issues/${draft._id}`);
+    const issue = result.data?.data?.issue;
+    if (!issue) return { error: result.error || 'The saved issue could not be loaded.' };
+    setDraft((current) => ({ ...current, ...issue, _id: issue.id }));
+    return issue;
+  }, [draft]);
+
+  const saveStudioCopy = useCallback(async (name, document, editorial = {}) => {
+    if (!draft?.accountId) return { error: 'Missing account' };
+    const result = await authenticatedRequest(`/admin/pivot/carousel-accounts/${draft.accountId}/issues`, {
+      method: 'POST',
+      data: {
+        name,
+        format: draft.format,
+        document,
+        curation: editorial.curation,
+        sources: editorial.sources,
+      },
+    });
+    const issue = result.data?.data?.issue;
+    if (!issue) return { error: result.error || result.data?.message || 'The copy could not be saved.' };
+    return issue;
   }, [draft]);
 
   const startEditSelection = useCallback(async () => {
@@ -492,6 +531,7 @@ export default function PivotCarouselPage({ tenantKey, cityDisplayName }) {
             tools={editionTools}
             focused={focused}
             onToggleFocus={toggleFocus}
+            onBack={closeLibrary}
           />
         </div>
         ) : requestedCurationId && (accounts.find((account) => account.id === accountId) || accounts[0]) ? (
@@ -530,14 +570,36 @@ export default function PivotCarouselPage({ tenantKey, cityDisplayName }) {
             notify={addNotification}
           />
         ) : draft?.schemaVersion === 2 ? (
-          <StudioEditor
-            key={draft._id}
-            issue={draft}
-            onSave={saveStudioDocument}
-            account={accounts.find(row => row.id === draft.accountId)}
-            onEditSelection={startEditSelection}
-            onBack={closeLibrary}
-          />
+          <>
+            <StudioEditor
+              key={draft._id}
+              issue={draft}
+              userId={user?._id || user?.id || null}
+              onSave={saveStudioDocument}
+              onSaveCopy={saveStudioCopy}
+              onReload={reloadStudioIssue}
+              onOpenIssue={openIssue}
+              onExport={() => exportState.startExport()}
+              account={accounts.find(row => row.id === draft.accountId)}
+              onEditSelection={startEditSelection}
+              onBack={closeLibrary}
+            />
+            <PivotCarouselExportPanel
+              open={Boolean(exportState.panelOpen)}
+              onClose={exportState.closePanel}
+              onOpen={exportState.openPanel}
+              job={exportState.job}
+              uiState={exportState.uiState}
+              progressLabel={exportState.progressLabel}
+              failureLabel={exportState.failureLabel}
+              revisionStale={exportState.revisionStale}
+              artifactsExpired={exportState.artifactsExpired}
+              onCancel={exportState.cancelExport}
+              onRetry={exportState.retryExport}
+              onDownload={exportState.downloadArtifact}
+              busy={exportState.busy}
+            />
+          </>
         ) : (
           <PivotCarouselLibrary
             issues={library}

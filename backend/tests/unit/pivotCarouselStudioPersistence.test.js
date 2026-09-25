@@ -3,9 +3,13 @@ jest.mock('../../services/tenantConfigService', () => ({ getTenantByKey: jest.fn
 jest.mock('../../services/imageUploadService', () => ({ uploadImageToS3: jest.fn(async (_file, folder, name) => `https://assets.example/${folder}/${name}`) }));
 const sharp = require('sharp');
 const { uploadImageToS3 } = require('../../services/imageUploadService');
-const { uploadAsset, listAssets } = require('../../services/pivotCarouselAssetService');
+const { uploadAsset, listAssets, fitExportImage } = require('../../services/pivotCarouselAssetService');
 const { createCarouselAccount, createCarouselIssue, getCarouselIssue, updateCarouselIssue } = require('../../services/pivotCarouselIssueService');
-const { mintExportToken } = require('../../services/pivotCarouselExportService');
+const { createCheckpoint, restoreCheckpoint, listCheckpoints, RETENTION } = require('../../services/pivotCarouselRevisionService');
+const { mintExportToken, prepareLocalExport, readDeckForExport, deckRevision } = require('../../services/pivotCarouselExportService');
+const { pinExportRevision } = require('../../services/pivotCarouselRevisionService');
+const { buildCarouselExportContextSnapshot } = require('../../services/pivotCarouselComputeContextService');
+const { validateContextSnapshot } = require('../../utilities/pivotAdminComputeJobContract');
 const makeDoc = asset => ({ schemaVersion: 2, width: 1080, height: 1350, slides: [{ id: 's', elements: [{ id: 'p', kind: 'image', frame: { x: 0, y: 0, width: 640, height: 640 }, asset }] }] });
 describe('studio persistence boundaries', () => {
   let mongo; let req; let accountId; let otherId; let file;
@@ -60,5 +64,122 @@ describe('studio persistence boundaries', () => {
     expect(stored.revision).toBe(2);
     expect(stored.document.slides[0].background.color).toBe(stored.curation.theme === 'First' ? '#ffffff' : '#000000');
     expect((await mintExportToken(req, 'sf', issue.id)).code).toBe('V2_EXPORT_UNAVAILABLE');
+    expect(results.find(result => result.code === 'REVISION_CONFLICT').issue.revision).toBe(2);
+  });
+  test('named checkpoints survive retention and restore as a new revision', async () => {
+    let issue = (await createCarouselIssue(req, accountId, { name: 'History', document: makeDoc({ src: 'https://example.test/photo.png' }) })).data.issue;
+    const checkpoint = await createCheckpoint(req, accountId, issue.id, { name: 'Before the rush', revision: 1 });
+    expect(checkpoint.data.checkpoint.headRevision).toBe(1);
+    for (let revision = 1; revision <= RETENTION.autosaveSnapshotsPerIssue + 3; revision += 1) {
+      const current = (await getCarouselIssue(req, accountId, issue.id)).data.issue;
+      const next = await updateCarouselIssue(req, accountId, issue.id, {
+        revision: current.revision,
+        document: makeDoc({ src: `https://example.test/${revision}.png` }),
+      });
+      expect(next.data.issue.revision).toBe(current.revision + 1);
+    }
+    const listed = await listCheckpoints(req, accountId, issue.id);
+    expect(listed.data.checkpoints.map(row => row.name)).toEqual(['Before the rush']);
+    expect(listed.data.retention.namedCheckpoints).toBe('retain');
+    const getGlobalModels = require('../../services/getGlobalModelService');
+    const { PivotCarouselRevision } = getGlobalModels(req, 'PivotCarouselRevision');
+    const saves = await PivotCarouselRevision.countDocuments({ issueId: issue.id, kind: 'save' });
+    expect(saves).toBeLessThanOrEqual(RETENTION.autosaveSnapshotsPerIssue + 1);
+    const restored = await restoreCheckpoint(req, accountId, issue.id, checkpoint.data.checkpoint.id, {
+      revision: (await getCarouselIssue(req, accountId, issue.id)).data.issue.revision,
+    });
+    expect(restored.data.issue.document.slides[0].elements[0].asset.src).toBe('https://example.test/photo.png');
+    expect(restored.data.issue.revision).toBeGreaterThan(checkpoint.data.checkpoint.headRevision);
+    const again = await listCheckpoints(req, accountId, issue.id);
+    expect(again.data.checkpoints[0]).toMatchObject({ name: 'Before the rush', headRevision: 1 });
+  });
+  test('a queued export keeps the pinned revision after the issue and voice change', async () => {
+    process.env.JWT_SECRET = 'carousel-export-pin-test';
+    global.fetch = jest.fn(async () => ({
+      ok: true,
+      headers: { get: () => 'image/png' },
+      arrayBuffer: async () => file.buffer,
+    }));
+    const queued = makeDoc({ src: 'https://example.test/photo.png' });
+    queued.slides[0].elements.push({ id: 'title', kind: 'text', text: 'queued copy', presence: 'custom', frame: { x: 40, y: 40, width: 400, height: 80 } });
+    const issue = (await createCarouselIssue(req, accountId, { name: 'Pinned', document: queued })).data.issue;
+    const getGlobalModels = require('../../services/getGlobalModelService');
+    const { PivotCarouselDeck, PivotCarouselVoice, PivotCarouselRevision } = getGlobalModels(req, 'PivotCarouselDeck', 'PivotCarouselVoice', 'PivotCarouselRevision');
+    const deck = await PivotCarouselDeck.findById(issue.id).lean();
+    const source = deckRevision(deck);
+    const pin = await pinExportRevision(req, deck, source);
+    expect(pin.data.pin.document.slides[0].elements[0].asset.key).toMatch(/^pivot-carousel\/accounts\//);
+    const edited = JSON.parse(JSON.stringify(queued));
+    edited.slides[0].elements[1].text = 'edited later';
+    await updateCarouselIssue(req, accountId, issue.id, { revision: 1, document: edited });
+    await PivotCarouselVoice.create({ tenantKey: 'sf', entries: { title: 'live voice' } });
+    const job = {
+      externalJobId: 'job:carousel-sf-pin',
+      tenantKey: 'sf',
+      cityKey: 'sf',
+      implementationRevision: 'platform-admin-ui',
+      options: { deckId: issue.id, deckRevision: source },
+      lease: { attemptId: '507f1f77bcf86cd799439012' },
+    };
+    const context = await buildCarouselExportContextSnapshot(req, { job, now: new Date('2026-09-24T20:00:00.000Z') });
+    expect(validateContextSnapshot(context.data.snapshot)).toEqual({ valid: true });
+    expect(context.data.snapshot.contractVersion).toBe('1');
+    expect(context.data.snapshot.deckRevision).toBe(source);
+    const exported = await readDeckForExport(req, context.data.snapshot.renderToken, issue.id);
+    expect(exported.data.cityVoice).toEqual({});
+    expect(exported.data.deck.document.slides[0].elements[1].text).toBe('queued copy');
+    expect(exported.data.deck.document.slides[0].elements[0].asset.src).not.toBe('https://example.test/photo.png');
+    await expect(buildCarouselExportContextSnapshot(req, {
+      job: { ...job, tenantKey: 'nyc', cityKey: 'nyc' },
+      now: new Date('2026-09-24T20:00:00.000Z'),
+    })).rejects.toThrow(/not found/i);
+    global.fetch = jest.fn(async () => ({ ok: false, headers: { get: () => '' }, arrayBuffer: async () => Buffer.alloc(0) }));
+    const again = await pinExportRevision(req, deck, source);
+    expect(again.code).toBe('ASSET_UNAVAILABLE');
+    expect(await PivotCarouselRevision.countDocuments({ issueId: issue.id, kind: 'export' })).toBe(1);
+  });
+  test('an export pin shrinks a photograph that is over the upload limit', async () => {
+    const raw = Buffer.alloc(1900 * 1900 * 3, 180);
+    const big = await sharp(raw, { raw: { width: 1900, height: 1900, channels: 3 } }).png({ compressionLevel: 0 }).toBuffer();
+    expect(big.length).toBeGreaterThan(8 * 1024 * 1024);
+    const fitted = await fitExportImage(big);
+    expect(fitted.mimetype).toBe('image/jpeg');
+    expect(fitted.buffer.length).toBeLessThanOrEqual(8 * 1024 * 1024);
+  });
+  test('an export pin accepts a photograph whose server type does not match its bytes', async () => {
+    process.env.JWT_SECRET = 'carousel-export-pin-test';
+    global.fetch = jest.fn(async () => ({
+      ok: true,
+      headers: { get: () => 'image/jpeg' },
+      arrayBuffer: async () => file.buffer,
+    }));
+    const issue = (await createCarouselIssue(req, accountId, {
+      name: 'Mislabeled',
+      document: makeDoc({ src: 'https://images.example/night.jpg' }),
+    })).data.issue;
+    const prepared = await prepareLocalExport(req, 'sf', issue.id);
+    expect(prepared.data.token).toEqual(expect.any(String));
+    const rendered = await readDeckForExport(req, prepared.data.token, issue.id);
+    expect(rendered.data.deck.document.slides[0].elements[0].asset.key).toMatch(/^pivot-carousel\/accounts\//);
+    expect(rendered.data.deck.document.slides[0].elements[0].asset.src).not.toBe('https://images.example/night.jpg');
+  });
+  test('a command-line token stays on the saved revision after the issue changes', async () => {
+    process.env.JWT_SECRET = 'carousel-export-pin-test';
+    const document = {
+      schemaVersion: 2,
+      width: 1080,
+      height: 1350,
+      slides: [{ id: 's', elements: [{ id: 't', kind: 'text', text: 'queued copy', presence: 'custom', frame: { x: 0, y: 0, width: 200, height: 40 } }] }],
+    };
+    const issue = (await createCarouselIssue(req, accountId, { name: 'Local', document })).data.issue;
+    const prepared = await prepareLocalExport(req, 'sf', issue.id);
+    expect(prepared.data.slideCount).toBe(1);
+    expect(prepared.data.token).toEqual(expect.any(String));
+    const edited = JSON.parse(JSON.stringify(document));
+    edited.slides[0].elements[0].text = 'edited later';
+    await updateCarouselIssue(req, accountId, issue.id, { revision: 1, document: edited });
+    const rendered = await readDeckForExport(req, prepared.data.token, issue.id);
+    expect(rendered.data.deck.document.slides[0].elements[0].text).toBe('queued copy');
+    expect(rendered.data.cityVoice).toEqual({});
   });
 });

@@ -279,13 +279,13 @@ async function getCarouselIssue(req, accountId, issueId) {
   return { data: { issue: serializeIssue(doc) } };
 }
 
-async function writeIssue(req, accountId, issueId, body, mutate) {
+async function writeIssue(req, accountId, issueId, body, mutate, snapshotMeta = null) {
   const loaded = await getCarouselIssue(req, accountId, issueId);
   if (loaded.error) return loaded;
   const { PivotCarouselDeck } = getGlobalModels(req, 'PivotCarouselDeck');
   const doc = await PivotCarouselDeck.findOne({ _id: issueId, accountId });
   const conflict = checkRevision(doc.revision || 1, body.revision);
-  if (conflict) return conflict;
+  if (conflict) return { ...conflict, issue: serializeIssue(doc) };
   const account = (await loadAccount(req, accountId)).account;
   const sourceError = await assertSources(req, account, body.sources);
   if (sourceError) return sourceError;
@@ -332,7 +332,21 @@ async function writeIssue(req, accountId, issueId, body, mutate) {
   const saved = await PivotCarouselDeck.findOneAndUpdate(
     { _id: issueId, accountId, revision: body.revision }, changes, { new: true, runValidators: true },
   );
-  if (!saved) return fail('The issue changed while saving. Your local edits are still available.', 409, 'REVISION_CONFLICT');
+  if (!saved) {
+    const current = await PivotCarouselDeck.findOne({ _id: issueId, accountId });
+    return fail('The issue changed while saving. Your local edits are still available.', 409, 'REVISION_CONFLICT', {
+      storedRevision: current?.revision,
+      presentedRevision: body.revision,
+      issue: current ? serializeIssue(current) : undefined,
+    });
+  }
+  try {
+    await require('./pivotCarouselRevisionService').recordHeadSnapshot(req, saved, snapshotMeta || {});
+  } catch (err) {
+    // The head write already committed. A missing history row must not look
+    // like a failed save, or the next attempt would conflict with itself.
+    console.error('carousel revision snapshot failed', err);
+  }
   return { data: { issue: serializeIssue(saved) } };
 }
 
@@ -345,7 +359,7 @@ async function renameCarouselIssue(req, accountId, issueId, body = {}) {
   });
 }
 
-async function updateCarouselIssue(req, accountId, issueId, body = {}) {
+async function updateCarouselIssue(req, accountId, issueId, body = {}, snapshotMeta = null) {
   if (body.format && !FORMATS.includes(body.format)) {
     return fail('Unknown issue format.', 400, 'FORMAT_INVALID');
   }
@@ -355,7 +369,7 @@ async function updateCarouselIssue(req, accountId, issueId, body = {}) {
       doc.curation = body.curation;
       doc.markModified('curation');
     }
-  });
+  }, snapshotMeta);
 }
 
 async function archiveCarouselIssue(req, accountId, issueId, body = {}) {
@@ -527,6 +541,7 @@ module.exports = {
   restoreCarouselIssue,
   duplicateCarouselIssue,
   validateDocument,
+  checkRevision,
   listCarouselAccounts,
   createEditableCopy,
   convertLegacySlide,

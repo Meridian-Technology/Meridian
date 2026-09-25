@@ -1,5 +1,5 @@
 /* eslint-disable testing-library/no-node-access -- Canvas gestures must assert the rendered geometry wrappers. */
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import StudioEditor from './StudioEditor';
 import { authenticatedRequest } from '../../../../../hooks/useFetch';
 jest.mock('@iconify/react', () => ({ Icon: () => null }));
@@ -9,6 +9,18 @@ const shape = { id: 'mark', kind: 'shape', layout: 'free', rotation: 0, frame: {
 const makeIssue = (elements = [shape]) => ({ _id: 'i', name: 'Lanterns', revision: 1, document: { schemaVersion: 2, width: 1080, height: 1350, slides: [{ id: 's', role: 'event', width: 1080, height: 1350, elements }] } });
 const node = () => screen.getByTestId('editor-stage').querySelector('[data-element-id="mark"]');
 beforeAll(() => { window.PointerEvent = MouseEvent; });
+test('typed text stays when the field closes', () => {
+  const text = { id: 'mark', kind: 'text', text: 'Hello', presence: 'custom', frame: { x: 40, y: 50, width: 200, height: 80 } };
+  render(<StudioEditor issue={makeIssue([text])} />);
+  fireEvent.doubleClick(node());
+  const field = document.querySelector('.studio-art__text.is-editing');
+  field.textContent = 'Hello there';
+  fireEvent.change(screen.getByLabelText('Zoom'), { target: { value: '0.4' } });
+  expect(field.textContent).toBe('Hello there');
+  fireEvent.pointerDown(screen.getByTestId('editor-stage'), { button: 0, clientX: 1, clientY: 1 });
+  fireEvent.pointerUp(screen.getByTestId('editor-stage'), { button: 0, clientX: 1, clientY: 1 });
+  expect(node().textContent).toBe('Hello there');
+});
 test('a completed drag moves the rendered frame and creates exactly one undo transaction', () => {
   render(<StudioEditor issue={makeIssue()} />);
   fireEvent.pointerDown(node(), { clientX: 50, clientY: 50, pointerId: 1, button: 0 });
@@ -47,7 +59,7 @@ test('typing shortcuts remain in the text field; v2 export explains its unavaila
   fireEvent.change(screen.getByLabelText('width'), { target: { value: '180' } });
   fireEvent.keyDown(screen.getByLabelText('width'), { key: 'Backspace' });
   expect(node().style.width).toBe('180px'); expect(screen.getByTestId('export-issue')).toBeDisabled();
-  expect(screen.getByTestId('export-issue').title).toMatch(/exact-revision/);
+  expect(screen.getByTestId('export-issue').title).toMatch(/confirmed saved revision/);
 });
 test('a save response does not overwrite edits made while the request is pending', async () => {
   let resolve; const save = jest.fn(document => new Promise(done => { resolve = () => done({ document }); }));
@@ -154,4 +166,77 @@ test('an Unsplash background keeps its photographer credit', () => {
   expect(credits.length).toBeGreaterThan(0);
   credits.forEach(link => expect(link).toHaveAttribute('href', stock.photographerUrl));
   screen.getAllByRole('link', { name: 'Unsplash' }).forEach(link => expect(link).toHaveAttribute('href', stock.sourceUrl));
+});
+
+test('a saved issue can export through Relay or a command', async () => {
+  const onExport = jest.fn();
+  authenticatedRequest.mockImplementation(async (url) => {
+    if (String(url).includes('/export-token')) {
+      return { data: { success: true, data: { token: 'tok.en', deckId: 'deck1', slideCount: 1 } } };
+    }
+    return { data: { success: true, data: { assets: [] } } };
+  });
+  render(<StudioEditor issue={{ ...makeIssue(), tenantKey: 'sf', _id: 'deck1' }} onExport={onExport} />);
+  expect(screen.getByTestId('export-issue')).toBeEnabled();
+  expect(screen.getByTestId('export-issue').title).toMatch(/saved revision/);
+  fireEvent.click(screen.getByTestId('export-issue'));
+  fireEvent.click(screen.getByRole('button', { name: 'Relay' }));
+  expect(onExport).toHaveBeenCalled();
+  fireEvent.click(screen.getByTestId('export-issue'));
+  fireEvent.click(screen.getByRole('button', { name: 'Command line' }));
+  expect(await screen.findByLabelText('Export command')).toHaveValue(
+    `node scripts/export-carousel.js deck1 'tok.en' 1 '${window.location.origin}'`,
+  );
+  authenticatedRequest.mockImplementation(async () => ({ data: { success: true, data: { assets: [] } } }));
+});
+
+test('autosave keeps a newer edit, undo still restores, and a later save uses the new revision', async () => {
+  let resolve;
+  const save = jest.fn(() => new Promise((done) => { resolve = done; }));
+  render(<StudioEditor issue={makeIssue()} onSave={save} autosaveMs={800} />);
+  fireEvent.pointerDown(node(), { clientX: 10, clientY: 10 }); fireEvent.pointerUp(node());
+  fireEvent.change(screen.getByLabelText('width'), { target: { value: '180' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Save', exact: true }));
+  fireEvent.change(screen.getByLabelText('width'), { target: { value: '220' } });
+  await act(async () => resolve({ document: { schemaVersion: 2, slides: [] }, revision: 2 }));
+  expect(node().style.width).toBe('220px');
+  expect(screen.getByTestId('save-state')).toHaveTextContent('Unsaved');
+  fireEvent.click(screen.getByRole('button', { name: 'Undo', exact: true }));
+  expect(node().style.width).toBe('180px');
+  expect(save).toHaveBeenCalledWith(expect.any(Object), expect.any(Object), 1);
+});
+
+test('a conflict keeps the local edit and can reload, compare, or save a new issue', async () => {
+  const serverDocument = { schemaVersion: 2, width: 1080, height: 1350, slides: [{ id: 's', role: 'event', width: 1080, height: 1350, elements: [{ ...shape, frame: { ...shape.frame, width: 90 } }] }] };
+  const onSaveCopy = jest.fn(async () => ({ id: 'copy' }));
+  const onOpenIssue = jest.fn();
+  render(<StudioEditor issue={makeIssue()} onSave={async () => ({ error: 'Changed elsewhere', code: 'REVISION_CONFLICT', issue: { revision: 4, document: serverDocument, curation: null, sources: [] } })} onSaveCopy={onSaveCopy} onOpenIssue={onOpenIssue} />);
+  fireEvent.pointerDown(node(), { clientX: 10, clientY: 10 }); fireEvent.pointerUp(node());
+  fireEvent.change(screen.getByLabelText('width'), { target: { value: '200' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Save', exact: true }));
+  expect(await screen.findByRole('alert')).toHaveTextContent('Changed elsewhere');
+  expect(node().style.width).toBe('200px');
+  fireEvent.click(screen.getByRole('button', { name: 'Compare' }));
+  expect(screen.getByRole('dialog', { name: 'Compare versions' })).toHaveTextContent('Revision 4');
+  fireEvent.click(screen.getByRole('button', { name: 'Save as a new issue' }));
+  await waitFor(() => expect(onOpenIssue).toHaveBeenCalledWith('copy'));
+  expect(onSaveCopy).toHaveBeenCalled();
+});
+
+test('recovery is offered only for the same user, account, and issue, and is not marked saved', () => {
+  authenticatedRequest.mockResolvedValue({ data: { success: true, data: { assets: [] } } });
+  const { recoveryStorageKey } = require('./studioPersistence');
+  const issue = { ...makeIssue(), accountId: 'account', updatedAt: '2026-09-24T00:00:00.000Z' };
+  const newer = { ...issue.document, slides: [{ ...issue.document.slides[0], elements: [{ ...shape, frame: { ...shape.frame, width: 300 } }] }] };
+  const payload = { userId: 'user-a', accountId: 'account', issueId: 'i', schemaVersion: 2, document: newer, editorial: { curation: { refs: [] }, sources: [] }, savedAt: '2026-09-24T01:00:00.000Z' };
+  window.localStorage.setItem(recoveryStorageKey(payload), JSON.stringify(payload));
+  const { unmount } = render(<StudioEditor issue={issue} userId="user-b" autosaveMs={60000} />);
+  expect(screen.queryByRole('button', { name: 'Restore local edits' })).not.toBeInTheDocument();
+  unmount();
+  render(<StudioEditor issue={issue} userId="user-a" autosaveMs={60000} />);
+  fireEvent.click(screen.getByRole('button', { name: 'Restore local edits' }));
+  expect(screen.getByText(/not saved on the server yet/)).toBeInTheDocument();
+  expect(screen.getByTestId('save-state')).toHaveTextContent('Unsaved');
+  expect(node().style.width).toBe('300px');
+  window.localStorage.clear();
 });

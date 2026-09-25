@@ -98,7 +98,8 @@ describe('studio editor commands', () => {
     doc = insertSlide(doc, 0, 'cover');
     doc = insertSlide(doc, 1, 'back');
     expect(doc.slides.map((slide) => slide.role)).toEqual(['cover', 'back']);
-    expect(canExportDocument(doc)).toBe(false);
+    expect(doc.slides[1].preset.id).toBe('paper-close');
+    expect(canExportDocument(doc)).toBe(true);
     const coverId = doc.slides[0].id;
     doc = duplicateSlide(doc, coverId);
     expect(doc.slides).toHaveLength(3);

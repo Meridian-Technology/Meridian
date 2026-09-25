@@ -19,6 +19,8 @@ import PivotCarouselEventPicker from './PivotCarouselEventPicker';
 import PivotCarouselAddSlide from './PivotCarouselAddSlide';
 import PivotCarouselExportPanel from './PivotCarouselExportPanel';
 import PivotCarouselExportPicker from './PivotCarouselExportPicker';
+import PivotCarouselPopup from './PivotCarouselPopup';
+import CarouselExportChoice from './CarouselExportChoice';
 
 /** Fixed types cannot be added, removed or moved — they open and close the deck. */
 function isFixed(manifest, type) {
@@ -127,6 +129,7 @@ export default function PivotCarouselEditor({
   tools = null,
   focused = false,
   onToggleFocus,
+  onBack,
 }) {
   const [selected, setSelected] = useState(0);
   const [adding, setAdding] = useState(false);
@@ -140,6 +143,7 @@ export default function PivotCarouselEditor({
   const [pickingSlot, setPickingSlot] = useState(null);
   const [eventsOpen, setEventsOpen] = useState(false);
   const [exportPicking, setExportPicking] = useState(false);
+  const [exportChoice, setExportChoice] = useState(false);
   const lastStageTap = useRef(0);
 
   const toggleEditingFromSlide = useCallback((event) => {
@@ -159,9 +163,13 @@ export default function PivotCarouselEditor({
   }, []);
 
   useEffect(() => {
-    if (!focused && !eventsOpen && !exportPicking) return undefined;
+    if (!focused && !eventsOpen && !exportPicking && !exportChoice) return undefined;
     const onKey = (event) => {
       if (event.key !== 'Escape') return;
+      if (exportChoice) {
+        setExportChoice(false);
+        return;
+      }
       if (exportPicking) {
         setExportPicking(false);
         return;
@@ -174,7 +182,7 @@ export default function PivotCarouselEditor({
     };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
-  }, [focused, eventsOpen, exportPicking, onToggleFocus]);
+  }, [focused, eventsOpen, exportPicking, exportChoice, onToggleFocus]);
 
   const index = Math.min(selected, Math.max(deck.slides.length - 1, 0));
   const slide = deck.slides[index];
@@ -341,6 +349,11 @@ export default function PivotCarouselEditor({
 
   const requestExport = () => {
     if (dirty || exportState?.creating) return;
+    setExportChoice(true);
+  };
+
+  const chooseRelay = () => {
+    setExportChoice(false);
     const count = deck.slides.length;
     if (count <= 1) {
       exportState?.startExport(count === 1 ? [1] : undefined);
@@ -391,6 +404,17 @@ export default function PivotCarouselEditor({
     <div className={`jgz-editor${focused ? ' is-focused' : ''}`}>
       <div className="jgz-editor__bar">
         <div className="jgz-editor__bar-main">
+          {onBack ? (
+            <button
+              type="button"
+              className="jgz__action"
+              onClick={() => {
+                if (!dirty || window.confirm('Leave this carousel and discard unsaved changes?')) onBack();
+              }}
+            >
+              All carousels
+            </button>
+          ) : null}
           {onToggleFocus ? (
             <button
               type="button"
@@ -658,6 +682,15 @@ export default function PivotCarouselEditor({
         busy={exportState?.busy}
         showStrip={!focused}
       />
+
+      <PivotCarouselPopup open={exportChoice} onClose={() => setExportChoice(false)}>
+        <CarouselExportChoice
+          tenantKey={tenantKey}
+          deckId={deck._id}
+          onRelay={chooseRelay}
+          onClose={() => setExportChoice(false)}
+        />
+      </PivotCarouselPopup>
 
       <PivotCarouselExportPicker
         open={exportPicking}

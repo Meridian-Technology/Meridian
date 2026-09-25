@@ -16,6 +16,7 @@
 
 import React, { useEffect, useMemo, useState } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
+import StudioSlide from './studio/StudioSlide';
 import { frameClass, resolveSlide } from './zineDeck';
 import {
   ZineBack,
@@ -90,14 +91,16 @@ export default function PivotCarouselFrame() {
     return () => { cancelled = true; };
   }, [token, deckId]);
 
+  const studio = payload?.deck?.schemaVersion === 2;
   const slide = useMemo(() => {
-    if (!payload) return null;
+    if (!payload || studio) return null;
     const slides = payload.deck.slides || [];
     const at = Math.max(0, Math.min(Number(index) - 1, slides.length - 1));
     const row = slides[at];
     if (!row) return null;
     return resolveSlide(payload.deck, row, at, payload.manifest, payload.cityVoice);
-  }, [payload, index]);
+  }, [payload, index, studio]);
+  const studioSlide = studio ? payload.deck.document?.slides?.[Math.max(0, Number(index) - 1)] : null;
 
   /*
    * Wait for the face and the photographs before signalling. Les Flos is loaded
@@ -105,7 +108,7 @@ export default function PivotCarouselFrame() {
    * fallback — the kind of error nobody notices until it is posted.
    */
   useEffect(() => {
-    if (!slide) return;
+    if (!slide && !studioSlide) return;
     let cancelled = false;
     const root = document.querySelector('.jgz-export');
     (async () => {
@@ -113,16 +116,33 @@ export default function PivotCarouselFrame() {
         document.fonts ? document.fonts.ready : Promise.resolve(),
         root ? imagesSettled(root) : Promise.resolve(),
       ]);
+      if (studioSlide) {
+        const broken = root ? [...root.querySelectorAll('img')].filter((img) => img.complete && img.naturalWidth === 0) : [];
+        if (broken.length) {
+          if (!cancelled) setError('A photograph in this revision could not be loaded.');
+          return;
+        }
+      }
       // One frame past load, so the last paint has certainly happened.
       requestAnimationFrame(() => {
         if (!cancelled) setReady(true);
       });
     })();
     return () => { cancelled = true; };
-  }, [slide]);
+  }, [slide, studioSlide]);
 
   if (error) {
     return <div className="jgz-export jgz-export--error" data-ready="1">{error}</div>;
+  }
+  if (studio) {
+    if (!studioSlide) {
+      return <div className="jgz-export jgz-export--error" data-ready="1">This revision has no slide {index}.</div>;
+    }
+    return (
+      <div className="jgz-export" data-ready={ready ? '1' : undefined} data-slide="studio" data-schema-version="2">
+        <StudioSlide doc={payload.deck.document} width={1080} slideIndex={Math.max(0, Number(index) - 1)} />
+      </div>
+    );
   }
   if (!slide) return <div className="jgz-export" />;
 

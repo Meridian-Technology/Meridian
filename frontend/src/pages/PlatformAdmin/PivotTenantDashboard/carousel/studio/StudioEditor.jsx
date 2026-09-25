@@ -1,20 +1,23 @@
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Icon } from '@iconify/react';
-import StudioSlide from './StudioSlide';
+import StudioSlide, { readEditableText } from './StudioSlide';
 import StudioImagePicker, { eventImages, PhotoCredit } from './StudioImagePicker';
 import PivotOpsStatus from '../../../../../components/PivotOps/PivotOpsStatus';
 import PivotCarouselCurationWorkspace from '../PivotCarouselCurationWorkspace';
 import { authenticatedRequest } from '../../../../../hooks/useFetch';
-import { COVER_FAMILIES, EVENT_PRESETS, applyPreset, walkElements } from '../../../../../shared/carouselStudio/presets';
+import { COVER_FAMILIES, EVENT_PRESETS, BACK_PRESETS, applyPreset, walkElements } from '../../../../../shared/carouselStudio/presets';
 import { cardOverflow } from '../../../../../shared/carouselStudio/document';
 import { textStyle } from '../../../../../shared/carouselStudio/layout';
 import { createHistory, commitTransaction, undo, redo, findElement, findParent, LIMITS } from './studioDocument';
 import * as commands from './studioEditorCommands';
 import useStudioNavigationGuard from './useStudioNavigationGuard';
+import useStudioAutosave from './useStudioAutosave';
+import { compareDocuments, exportAvailability } from './studioPersistence';
+import CarouselExportChoice from '../CarouselExportChoice';
 import './StudioEditor.scss';
 
 const HANDLES = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'];
-const TITLES = { 'loose-letters': 'Loose letters', 'open-invitation': 'Open invitation', 'kept-somewhere': 'Kept somewhere', 'photo-note': 'Photo note', 'on-the-bill': 'On the bill', 'in-the-room': 'In the room' };
+const TITLES = { 'loose-letters': 'Loose letters', 'open-invitation': 'Open invitation', 'kept-somewhere': 'Kept somewhere', 'photo-note': 'Photo note', 'on-the-bill': 'On the bill', 'in-the-room': 'In the room', 'paper-close': 'Paper close', 'orange-close': 'Orange close' };
 const typingTarget = target => Boolean(target?.closest?.('input, textarea, select, [contenteditable="true"]'));
 const clone = value => JSON.parse(JSON.stringify(value));
 function Button({ icon, children, title, ...props }) {
@@ -26,7 +29,12 @@ function FileButton({ label, disabled, onFile }) {
 function editorDocument(issue) {
   return { ...clone(issue.document), editorial: { curation: clone(issue.curation || { refs: issue.sources || [] }), sources: clone(issue.sources || []) } };
 }
-export default function StudioEditor({ issue, onSave, onEditSelection, account, onBack }) {
+function snapshotOf(value) {
+  const snapshot = clone(value);
+  const { editorial, ...document } = snapshot;
+  return { document, editorial };
+}
+export default function StudioEditor({ issue, onSave, onSaveCopy, onReload, onOpenIssue, onExport, onEditSelection, account, onBack, userId, autosaveMs }) {
   const [history, setHistory] = useState(() => createHistory(editorDocument(issue)));
   const historyRef = useRef(history); historyRef.current = history;
   const doc = history.present; const docRef = useRef(doc); docRef.current = doc;
@@ -38,10 +46,15 @@ export default function StudioEditor({ issue, onSave, onEditSelection, account, 
   const [panel, setPanel] = useState('design');
   const [mode, setMode] = useState('select');
   const [editingId, setEditingId] = useState(null);
+  const pendingText = useRef(null);
   const [guides, setGuides] = useState([]);
   const [notice, setNotice] = useState('');
-  const [saveState, setSaveState] = useState('saved');
   const [savedJson, setSavedJson] = useState(() => JSON.stringify(editorDocument(issue)));
+  const [checkpointsOpen, setCheckpointsOpen] = useState(false);
+  const [exportOpen, setExportOpen] = useState(false);
+  const [checkpoints, setCheckpoints] = useState([]);
+  const [checkpointName, setCheckpointName] = useState('');
+  const [compareOpen, setCompareOpen] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [accountAssets, setAccountAssets] = useState([]);
   const [curationId, setCurationId] = useState(null);
@@ -61,6 +74,35 @@ export default function StudioEditor({ issue, onSave, onEditSelection, account, 
   const locked = primary && commands.isElementLocked(slide, primaryId);
   const dirty = JSON.stringify(doc) !== savedJson;
   useStudioNavigationGuard(dirty);
+  const adopt = useCallback((savedIssue) => {
+    const next = editorDocument({ ...issue, ...savedIssue });
+    setHistory(createHistory(next));
+    setSavedJson(JSON.stringify(next));
+    setSelected([]);
+  }, [issue]);
+  const autosave = useStudioAutosave({
+    userId,
+    accountId: issue.accountId,
+    issueId: issue._id || issue.id,
+    serverUpdatedAt: issue.updatedAt,
+    serverDocument: issue.document,
+    serverEditorial: { curation: issue.curation || null, sources: issue.sources || [] },
+    initialRevision: issue.revision || 1,
+    getSnapshot: () => snapshotOf(docRef.current),
+    onSave,
+    autosaveMs,
+    onResult: ({ outcome, result }) => {
+      if (outcome === 'saved' && result.replaceDocument) {
+        const saved = { ...(result.document || result.captured.document), editorial: result.editorial || result.captured.editorial };
+        setSavedJson(JSON.stringify(saved));
+        setHistory((current) => (JSON.stringify(snapshotOf(current.present)) === JSON.stringify(result.captured) ? { ...current, present: saved } : current));
+        setNotice('');
+      } else if (outcome === 'conflict') setNotice(result.error || 'This issue changed in another session. Your edits are still here.');
+      else if (outcome === 'offline') setNotice('You are offline. These edits stay on this device until the connection returns.');
+      else if (outcome === 'failed') setNotice('The save failed. Your edits are still here. Try again.');
+    },
+  });
+  const { saveState, conflict, recovery, noteEdit, flush, dismissRecovery, clearConflict, revisionRef } = autosave;
   const dirtyRef = useRef(dirty); dirtyRef.current = dirty;
   const center = primary && commands.visualCenter(slide, primaryId);
   const bounds = selected.length > 1 ? commands.selectionBounds(slide, selected) : null;
@@ -69,8 +111,8 @@ export default function StudioEditor({ issue, onSave, onEditSelection, account, 
   const commit = useCallback((next, label) => {
     for (const slide of commands.slidesOf(next)) { let count = 0; walkElements(slide.elements, () => { count += 1; }); if (count > LIMITS.maxElements) { setNotice('A slide can contain up to 64 objects. Remove an object before adding another.'); return; } }
     setHistory(current => commitTransaction(current, next, label));
-    setSaveState(current => current === 'saving' || current === 'conflict' ? current : 'unsaved');
-  }, []);
+    noteEdit(snapshotOf(next));
+  }, [noteEdit]);
   const beginControl = () => { controlStart.current = historyRef.current; };
   const endControl = () => { const before = controlStart.current; controlStart.current = null; if (before) setHistory(current => commitTransaction(before, current.present, 'Adjust control')); };
   const controlGesture = { onPointerDown: beginControl, onPointerUp: endControl, onPointerCancel: () => { const before = controlStart.current; controlStart.current = null; if (before) setHistory(before); } };
@@ -131,6 +173,14 @@ export default function StudioEditor({ issue, onSave, onEditSelection, account, 
   }, []);
   const begin = (event, kind = 'move', handle) => {
     if (event.button != null && event.button !== 0) return;
+    const field = document.activeElement;
+    if (field?.isContentEditable && rootRef.current?.contains(field)) {
+      if (field.contains(event.target)) return;
+      const editedId = field.closest('[data-element-id]')?.dataset.elementId;
+      if (editedId) pendingText.current = { id: editedId, field: field.hasAttribute('data-text-label') ? 'label' : 'text', text: readEditableText(field) };
+      field.blur();
+      return;
+    }
     if (typingTarget(event.target) || event.target.closest('[data-add-photo]')) return;
     const currentSlide = commands.slideById(docRef.current, slideId);
     let targetId = mode === 'background-crop' ? null : handle ? primaryId : event.target.closest('[data-element-id]')?.dataset.elementId;
@@ -193,7 +243,7 @@ export default function StudioEditor({ issue, onSave, onEditSelection, account, 
     drag.current = null; setGuides([]);
     if (active.capture?.hasPointerCapture?.(active.pointerId)) active.capture.releasePointerCapture(active.pointerId);
     setHistory(current => active.moved ? commitTransaction({ ...current, present: active.start }, active.latest, active.kind) : { ...current, present: active.start });
-    if (active.moved) setSaveState('unsaved');
+    if (active.moved) noteEdit(snapshotOf(active.latest));
   };
   const doubleClick = event => {
     const id = event.target.closest('[data-element-id]')?.dataset.elementId;
@@ -219,18 +269,67 @@ export default function StudioEditor({ issue, onSave, onEditSelection, account, 
       change(commands.moveInSlideSpace, selected, event.key === 'ArrowLeft' ? -step : event.key === 'ArrowRight' ? step : 0, event.key === 'ArrowUp' ? -step : event.key === 'ArrowDown' ? step : 0);
     }
   };
-  const save = async () => {
-    if (!onSave || saveState === 'saving') return;
-    const snapshot = clone(docRef.current); const { editorial, ...document } = snapshot;
-    setSaveState('saving'); setNotice('');
-    try {
-      const result = await onSave(document, editorial);
-      if (!result || result.error) { setSaveState(result?.code === 409 || result?.code === 'REVISION_CONFLICT' ? 'conflict' : 'failed'); setNotice(result?.error || 'The issue could not be saved. Your edits are still here.'); return; }
-      const saved = { ...(result.document || document), editorial: result.editorial || editorial };
-      setSavedJson(JSON.stringify(saved));
-      setHistory(current => JSON.stringify(current.present) === JSON.stringify(snapshot) ? { ...current, present: saved } : current);
-      setSaveState('saved');
-    } catch (_) { setSaveState('failed'); setNotice('The save failed. Your edits are still here. Try again.'); }
+  const save = () => flush();
+  const acceptRecovery = () => {
+    if (!recovery?.document) return;
+    const next = { ...clone(recovery.document), editorial: clone(recovery.editorial || { curation: {}, sources: [] }) };
+    setHistory(createHistory(next));
+    dismissRecovery();
+    noteEdit(snapshotOf(next));
+    setNotice('Recovered edits from this browser. They are not saved on the server yet.');
+  };
+  const reloadServer = async () => {
+    if (conflict?.serverIssue?.document) {
+      adopt(conflict.serverIssue);
+      clearConflict(conflict.serverIssue.revision);
+      setCompareOpen(false);
+      setNotice('Reloaded the saved issue. Your other edits were kept only in this dialog until now.');
+      return;
+    }
+    const loaded = await onReload?.();
+    if (loaded?.document) {
+      adopt(loaded);
+      clearConflict(loaded.revision);
+      setCompareOpen(false);
+    }
+  };
+  const saveCopy = async () => {
+    const { document, editorial } = snapshotOf(docRef.current);
+    const name = `${issue.name || issue.title || 'Issue'} recovered`.slice(0, 80);
+    const created = await onSaveCopy?.(name, document, editorial);
+    if (created?.id) {
+      dismissRecovery();
+      onOpenIssue?.(created.id);
+    } else setNotice(created?.error || 'The copy could not be saved. Your edits are still here.');
+  };
+  const openCheckpoints = async () => {
+    setCheckpointsOpen(true);
+    if (!issue.accountId) return;
+    const result = await authenticatedRequest(`/admin/pivot/carousel-accounts/${issue.accountId}/issues/${issue._id || issue.id}/checkpoints`);
+    if (result.data?.success) setCheckpoints(result.data.data.checkpoints || []);
+  };
+  const saveCheckpoint = async () => {
+    const name = checkpointName.trim();
+    if (!name || !issue.accountId) return;
+    if (dirty) await flush();
+    const result = await authenticatedRequest(`/admin/pivot/carousel-accounts/${issue.accountId}/issues/${issue._id || issue.id}/checkpoints`, {
+      method: 'POST', data: { name, revision: revisionRef.current },
+    });
+    if (!result.data?.success) { setNotice(result.error || result.data?.message || 'The checkpoint could not be saved.'); return; }
+    setCheckpointName('');
+    setCheckpoints((current) => [result.data.data.checkpoint, ...current]);
+    setNotice(`Checkpoint “${name}” saved. The editable issue was not replaced.`);
+  };
+  const restoreCheckpoint = async (checkpoint) => {
+    if (dirty && !window.confirm('Restore replaces unsaved edits with a new saved revision.')) return;
+    const result = await authenticatedRequest(`/admin/pivot/carousel-accounts/${issue.accountId}/issues/${issue._id || issue.id}/checkpoints/${checkpoint.id}/restore`, {
+      method: 'POST', data: { revision: revisionRef.current },
+    });
+    if (!result.data?.success) { setNotice(result.error || result.data?.message || 'The checkpoint could not be restored.'); return; }
+    adopt(result.data.data.issue);
+    clearConflict(result.data.data.issue.revision);
+    setCheckpointsOpen(false);
+    setNotice(`Restored “${checkpoint.name}” as revision ${result.data.data.issue.revision}.`);
   };
   const upload = async (file, apply) => {
     const check = commands.validateUpload(file); if (!check.ok) { setNotice(check.error); return check.error; }
@@ -267,7 +366,9 @@ export default function StudioEditor({ issue, onSave, onEditSelection, account, 
   const addSlide = role => { const next = commands.insertSlide(doc, index + 1, role); commit(next, 'Add slide'); selectSlide(next.slides[index + 1]?.id); setPanel('templates'); };
   const allElements = []; walkElements(slide?.elements, element => allElements.push(element));
   const overflowingCards = allElements.filter(element => cardOverflow(element) > 1);
-  const status = saveState === 'saved' ? (dirty ? 'Unsaved' : 'Saved') : { unsaved: dirty ? 'Unsaved' : 'Saved', saving: 'Saving…', conflict: 'Conflict', failed: 'Save failed' }[saveState];
+  const status = saveState === 'saved' ? (dirty ? 'Unsaved' : 'Saved') : { unsaved: dirty ? 'Unsaved' : 'Saved', saving: 'Saving…', offline: 'Offline', conflict: 'Conflict', failed: 'Save failed' }[saveState];
+  const exportState = exportAvailability({ dirty, saveState, confirmedRevision: revisionRef.current });
+  const comparison = compareOpen && conflict?.serverIssue?.document ? compareDocuments(snapshotOf(doc).document, conflict.serverIssue.document) : null;
   const assets = [...new Map([...accountAssets, ...commands.assetsInDocument(doc)].map(asset => [asset.id || asset.key || asset.src, asset])).values()];
   const paint = primary?.kind === 'text' ? textStyle(primary) : null;
   const showHandles = center && !locked && selected.length === 1 && mode === 'select';
@@ -275,7 +376,7 @@ export default function StudioEditor({ issue, onSave, onEditSelection, account, 
   return <div className="jg-editor pivot-ops" ref={rootRef} tabIndex={0} onKeyDown={keyDown} onPointerMove={move} onPointerUp={finish} onPointerCancel={cancelGesture} onLostPointerCapture={() => { if (drag.current) cancelGesture(); }}>
     <header className="jg-editor__bar">
       <div className="jg-editor__identity">{onBack && <Button icon="lucide:arrow-left" aria-label="Back to issues" onClick={() => { if (!dirty || window.confirm('Leave this issue and discard unsaved changes?')) onBack(); }} />}<div><h1>{issue.name || issue.title || 'Untitled issue'}</h1><span>{issue.format === 'sorry-you-missed-it' ? 'Sorry you missed it' : 'City picks'} · {slides.length} slides</span></div></div>
-      <div className="jg-editor__actions"><span data-testid="save-state"><PivotOpsStatus tone={saveState === 'failed' || saveState === 'conflict' ? 'danger' : dirty ? 'warn' : 'success'}>{status}</PivotOpsStatus></span><Button icon="lucide:list-filter" onClick={editSelection} disabled={!account && !onEditSelection}>Edit selection</Button><Button className="is-primary" onClick={save} disabled={!dirty || saveState === 'saving' || uploading}>Save</Button><Button data-testid="export-issue" disabled title="Editable issue exports are coming with exact-revision export support.">Export</Button></div>
+      <div className="jg-editor__actions"><span data-testid="save-state"><PivotOpsStatus tone={saveState === 'failed' || saveState === 'conflict' || saveState === 'offline' ? 'danger' : dirty ? 'warn' : 'success'}>{status}</PivotOpsStatus></span><Button icon="lucide:list-filter" onClick={editSelection} disabled={!account && !onEditSelection}>Edit selection</Button><Button icon="lucide:history" onClick={openCheckpoints}>Checkpoints</Button><Button className="is-primary" onClick={save} disabled={!dirty || saveState === 'saving' || saveState === 'conflict' || uploading}>Save</Button><Button data-testid="export-issue" disabled={!exportState.enabled} title={exportState.reason} onClick={() => setExportOpen(true)}>Export</Button></div>
     </header>
 
     <div className="jg-editor__toolbar">
@@ -289,7 +390,7 @@ export default function StudioEditor({ issue, onSave, onEditSelection, account, 
       </aside>
       <main className="jg-editor__canvas" ref={canvasRef} data-testid="editor-canvas" onPointerDown={event => { if (event.target === event.currentTarget) setSelected([]); }}>
         {slide ? <div className="jg-editor__stage" ref={stageRef} data-testid="editor-stage" style={{ width: 1080 * zoom, height: 1350 * zoom }} onPointerDown={event => { if (!event.target.closest('[data-handle]')) begin(event); }} onDoubleClick={doubleClick} onDragStart={event => event.preventDefault()}>
-          <StudioSlide doc={doc} width={1080 * zoom} slideIndex={index} editingId={editingId} onMeasure={onMeasure} onImageRequest={id => setImageTarget({ id, slideId: slide.id })} onEdit={(id, text, field = 'text') => { setEditingId(null); setMode('select'); if (text.length > LIMITS.maxTextLength) { setNotice('Text cannot exceed 8,000 characters. Your previous text was kept.'); return; } if (findElement(slide, id)?.[field] !== text) change(field === 'label' ? commands.setFieldLabel : commands.setSlideText, id, text); }} />
+          <StudioSlide doc={doc} width={1080 * zoom} slideIndex={index} editingId={editingId} onMeasure={onMeasure} onImageRequest={id => setImageTarget({ id, slideId: slide.id })} onEdit={(id, text, field = 'text') => { const pending = pendingText.current; pendingText.current = null; const next = pending && pending.id === id && pending.field === field ? pending.text : text; setEditingId(null); setMode('select'); if (next.length > LIMITS.maxTextLength) { setNotice('Text cannot exceed 8,000 characters. Your previous text was kept.'); return; } if (findElement(slide, id)?.[field] !== next) change(field === 'label' ? commands.setFieldLabel : commands.setSlideText, id, next); }} />
           {guides.map(guide => <span key={`${guide.axis}-${guide.at}`} className={`jg-editor__guide jg-editor__guide--${guide.axis}`} style={guide.axis === 'x' ? { left: guide.at * zoom } : { top: guide.at * zoom }} />)}
           {center && primary && <div data-testid="editor-chrome" className={`jg-editor__chrome${locked ? ' is-locked' : ''}`} style={bounds ? { left: bounds.x * zoom, top: bounds.y * zoom, width: bounds.width * zoom, height: bounds.height * zoom } : { left: (center.x - primary.frame.width / 2) * zoom, top: (center.y - primary.frame.height / 2) * zoom, width: primary.frame.width * zoom, height: primary.frame.height * zoom, transform: `rotate(${center.rotation}deg)` }}>
             {showHandles && HANDLES.map(handle => <button type="button" key={handle} data-handle={handle} aria-label={`Resize ${handle}`} className={`jg-editor__handle jg-editor__handle--${handle}`} onPointerDown={event => begin(event, 'resize', handle)} />)}
@@ -313,7 +414,7 @@ export default function StudioEditor({ issue, onSave, onEditSelection, account, 
           {allElements.some(element => element.presence === 'removed') && <section><h2>Removed fields</h2>{allElements.filter(element => element.presence === 'removed').map(element => <Button key={element.id} onClick={() => change(commands.restoreField, element.id)}>Restore {element.role?.replace('event-', '').replaceAll('-', ' ') || 'field'}</Button>)}</section>}
         </>}
         {panel === 'templates' && <><section><h2>Templates</h2><p>Choose a starting composition. Your copy, photos, and added objects are kept.</p>{slide?.preset && <div className="jg-editor__button-row"><Button onClick={() => applyTemplate(slide.preset.id, slide.preset.variation)}>Reset layout</Button>{slide.role === 'cover' && <Button icon="lucide:shuffle" onClick={() => applyTemplate(slide.preset.id, (slide.preset.variation || 1) % 3 + 1)}>Shuffle</Button>}</div>}</section>
-          <div className="jg-editor__template-grid">{(slide?.role === 'cover' ? COVER_FAMILIES.flatMap(id => [1, 2, 3].map(variation => ({ id, variation }))) : EVENT_PRESETS.map(id => ({ id, variation: 1 }))).map(({ id, variation }) => {
+          <div className="jg-editor__template-grid">{(slide?.role === 'cover' ? COVER_FAMILIES.flatMap(id => [1, 2, 3].map(variation => ({ id, variation }))) : slide?.role === 'back' ? BACK_PRESETS.map((id, index) => ({ id, variation: index + 1 })) : EVENT_PRESETS.map(id => ({ id, variation: 1 }))).map(({ id, variation }) => {
             const preview = commands.slidesOf(doc).length ? applyPreset(slide, id, variation) : null;
             return <button type="button" aria-label={`${TITLES[id]}${slide?.role === 'cover' ? ` variation ${variation}` : ''}`} key={`${id}-${variation}`} disabled={!slide} className={slide?.preset?.id === id && slide?.preset?.variation === variation ? 'is-active' : ''} onClick={() => applyTemplate(id, variation)}><StudioSlide doc={preview} width={110} /><span>{TITLES[id]}{slide?.role === 'cover' ? ` · ${variation}` : ''}</span></button>;
           })}</div><Button disabled={slides.length >= 20} onClick={() => addSlide('cover')}>Add cover</Button><Button disabled={slides.length >= 20} onClick={() => addSlide('back')}>Add back</Button></>}
@@ -323,6 +424,11 @@ export default function StudioEditor({ issue, onSave, onEditSelection, account, 
     </div>
     <footer className="jg-editor__footer"><span>{notice || (mode === 'crop' || mode === 'background-crop' ? 'Crop mode · Drag to pan · Escape to finish' : 'Drag to move · Shift-click to select more · Alt to bypass snapping')}</span><div className="jg-editor__photo-credits">{assets.filter(asset => asset.provider === 'unsplash').map(asset => <PhotoCredit key={asset.id || asset.src} asset={asset} />)}</div><span>1080 × 1350 · 4:5</span></footer>
     {imageTarget && <StudioImagePicker accountId={issue.accountId} events={eventImages(doc)} assets={accountAssets} onChoose={chooseImage} onUpload={file => upload(file, chooseImage)} onClose={() => setImageTarget(null)} />}
-    {curationId && account && <div className="jg-editor__curation" role="dialog" aria-modal="true" aria-label="Edit selection"><PivotCarouselCurationWorkspace account={account} draftId={curationId} issue={{ id: issue._id || issue.id, revision: issue.revision, ...doc.editorial, document: doc }} onDraftId={setCurationId} staged onApplied={data => { commit({ ...data.document, editorial: { curation: data.curation, sources: data.sources } }, 'Edit selection'); setCurationId(null); setNotice('Selection updated locally. Save to keep it.'); }} onCancel={() => setCurationId(null)} /></div>}
+    {curationId && account && <div className="jg-editor__curation" role="dialog" aria-modal="true" aria-label="Edit selection"><PivotCarouselCurationWorkspace account={account} draftId={curationId} issue={{ id: issue._id || issue.id, revision: revisionRef.current, ...doc.editorial, document: doc }} onDraftId={setCurationId} staged onApplied={data => { commit({ ...data.document, editorial: { curation: data.curation, sources: data.sources } }, 'Edit selection'); setCurationId(null); setNotice('Selection updated locally. Save to keep it.'); }} onCancel={() => setCurationId(null)} /></div>}
+    {recovery && <div className="jg-editor__banner" role="status"><p>This browser has newer unsaved edits than the saved issue. Restoring them does not save to the server.</p><Button onClick={acceptRecovery}>Restore local edits</Button><Button onClick={dismissRecovery}>Keep saved issue</Button></div>}
+    {conflict && <div className="jg-editor__banner" role="alert"><p>{conflict.message} Both copies are kept. Autosave is paused.</p><Button onClick={reloadServer}>Reload saved issue</Button><Button onClick={() => setCompareOpen(true)} disabled={!conflict.serverIssue?.document}>Compare</Button><Button onClick={saveCopy} disabled={!onSaveCopy}>Save as a new issue</Button></div>}
+    {compareOpen && comparison && <div className="jg-editor__curation" role="dialog" aria-modal="true" aria-label="Compare versions"><h2>This browser and the saved issue</h2><p>{comparison.localSlides} slides here, {comparison.serverSlides} slides saved. Revision {conflict.storedRevision} is on the server.</p>{comparison.changes.map(change => <p key={change.id}>{change.role}: {change.local ?? 'removed'} → {change.server ?? 'not on server'}</p>)}{comparison.hiddenChanges > 0 && <p>{comparison.hiddenChanges} more differences are not listed.</p>}<Button onClick={() => setCompareOpen(false)}>Close</Button></div>}
+    {exportOpen && <div className="jg-editor__curation" role="dialog" aria-modal="true" aria-label="Export"><CarouselExportChoice tenantKey={issue.tenantKey || issue.ownerTenantKey} deckId={issue._id || issue.id} onRelay={() => { setExportOpen(false); onExport?.(); }} onClose={() => setExportOpen(false)} /></div>}
+    {checkpointsOpen && <div className="jg-editor__curation" role="dialog" aria-modal="true" aria-label="Checkpoints"><h2>Checkpoints</h2><p>A checkpoint is a named copy. Restoring it saves a new revision and leaves the checkpoint unchanged.</p><label>Name<input aria-label="Checkpoint name" value={checkpointName} onChange={event => setCheckpointName(event.target.value)} /></label><Button onClick={saveCheckpoint} disabled={!checkpointName.trim() || saveState === 'conflict'}>Save checkpoint</Button><ul>{checkpoints.map(checkpoint => <li key={checkpoint.id}>{checkpoint.name} · revision {checkpoint.headRevision} <Button onClick={() => restoreCheckpoint(checkpoint)}>Restore as new revision</Button></li>)}</ul><Button onClick={() => setCheckpointsOpen(false)}>Close</Button></div>}
   </div>;
 }

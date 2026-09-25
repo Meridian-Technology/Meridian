@@ -6,6 +6,7 @@ const px = (value) => Math.round(value * CQW);
 
 const COVER_FAMILIES = Object.freeze(['loose-letters', 'open-invitation', 'kept-somewhere']);
 const EVENT_PRESETS = Object.freeze(['photo-note', 'on-the-bill', 'in-the-room']);
+const BACK_PRESETS = Object.freeze(['paper-close', 'orange-close']);
 
 const COVER_GEOMETRY = Object.freeze({
   'loose-letters': {
@@ -225,6 +226,28 @@ function generateEventSlide(item = {}, eventPreset = 'photo-note', { format } = 
   slide.source = item.ref ? { ...item.ref } : null;
   return slide;
 }
+function generateBackSlide(presetId = 'paper-close', copy = {}) {
+  const orange = presetId === 'orange-close';
+  const ink = orange ? PAPER : INK;
+  const quiet = orange ? '#f3d2c4' : '#9a938a';
+  const kicker = copy.kicker ?? "1 events here, 143 more you're going to miss";
+  const line = copy.line ?? 'find the rest in the app';
+  const sub = copy.sub ?? 'link in bio';
+  const url = copy.url ?? 'justgo.lol';
+  const end = copy.end ?? 'end';
+  const mark = { ...stickerNode(orange ? 'light' : 'dark', { x: 22, y: 8, width: 56, height: 56 * 362 / 629 }), role: 'back-mark' };
+  const badge = { ...base('image', 'back-badge', { x: 31, y: 78, width: 38, height: 38 * 40 / 119.664 }), lockAspect: true, asset: { id: 'app-store-badge', alt: 'Download on the App Store' } };
+  return finishSlide('back', orange ? 'orange-close' : 'paper-close', orange ? 2 : 1, orange ? ORANGE : PAPER, [
+    mark,
+    textNode('back-kicker', kicker, { x: 8, y: 46, width: 84, height: 5 }, { fontFamily: 'Space Mono', fontSizePx: px(2.2), textAlign: 'center', color: quiet }),
+    textNode('back-line', line, { x: 6, y: 54, width: 88, height: 12 }, { fontFamily: 'Les Flos Sans', fontSizePx: px(6.6), fontWeight: 700, lineHeight: 1.02, letterSpacingPx: px(-0.08), textAlign: 'center', color: ink }),
+    textNode('back-sub', sub, { x: 20, y: 68, width: 60, height: 5 }, { fontFamily: 'Space Mono', fontSizePx: px(2.4), textAlign: 'center', color: quiet }),
+    badge,
+    textNode('back-url', url, { x: 8, y: 114, width: 22, height: 4 }, { fontFamily: 'Space Mono', fontSizePx: px(2), textAlign: 'left', color: ink }),
+    { ...base('shape', 'back-rule', { x: 32, y: 115.4, width: 36, height: 0.8 }), style: { fill: quiet } },
+    textNode('back-end', end, { x: 72, y: 114, width: 20, height: 4 }, { fontFamily: 'Space Mono', fontSizePx: px(2), textAlign: 'right', color: ink }),
+  ]);
+}
 function walkElements(elements, callback) {
   for (const element of elements || []) { callback(element); walkElements(element.children, callback); }
 }
@@ -236,8 +259,13 @@ function titleOf(slide) {
 function applyPreset(slide, presetId, variation = 1) {
   const old = new Map(); walkElements(slide.elements, element => old.set(element.role, element));
   const isCover = COVER_FAMILIES.includes(presetId);
+  const isBack = BACK_PRESETS.includes(presetId);
   const photo = old.get(isCover ? 'cover-photo' : 'event-photo') || old.get('photo');
-  const fresh = isCover ? generateCoverSlide({ theme: titleOf(slide), coverPreset: presetId, variation, coverImage: photo?.asset }) : generateEventSlide({ ref: slide.source, snapshot: { name: old.get('event-name')?.text || old.get('title')?.text || '' }, recapNote: old.get('event-description')?.text || old.get('description')?.text || '' }, presetId);
+  const fresh = isCover
+    ? generateCoverSlide({ theme: titleOf(slide), coverPreset: presetId, variation, coverImage: photo?.asset })
+    : isBack
+      ? generateBackSlide(presetId, { kicker: old.get('back-kicker')?.text, line: old.get('back-line')?.text, sub: old.get('back-sub')?.text, url: old.get('back-url')?.text, end: old.get('back-end')?.text })
+      : generateEventSlide({ ref: slide.source, snapshot: { name: old.get('event-name')?.text || old.get('title')?.text || '' }, recapNote: old.get('event-description')?.text || old.get('description')?.text || '' }, presetId);
   const legacyLogistics = old.get('event-logistics') || old.get('logistics');
   walkElements(fresh.elements, element => {
     const previous = old.get(element.role);
@@ -248,7 +276,10 @@ function applyPreset(slide, presetId, variation = 1) {
       element.text = previous.text; element.presence = previous.presence; element.voice = previous.voice;
       if (previous.label != null) element.label = previous.label;
     }
-    if (element.kind === 'image') { element.asset = clone(previous.asset || {}); element.crop = clone(previous.crop || element.crop); }
+    if (element.kind === 'image') {
+      element.asset = clone(previous.asset || {});
+      if (previous.crop || element.crop) element.crop = clone(previous.crop || element.crop);
+    }
   });
   if (legacyLogistics?.kind === 'text') {
     // Preserve old combined authored logistics exactly; never reinterpret editorial copy.
@@ -258,7 +289,7 @@ function applyPreset(slide, presetId, variation = 1) {
       }
     });
   }
-  const knownRoles = new Set(['cover-title', 'cover-photo', 'cover-detail', 'cover-caption', 'cover-location', 'cover-print-caption', 'event-photo', 'event-card', 'event-name', 'event-description', 'event-logistics', 'title', 'description', 'logistics', 'photo', 'sticker']);
+  const knownRoles = new Set(['cover-title', 'cover-photo', 'cover-detail', 'cover-caption', 'cover-location', 'cover-print-caption', 'event-photo', 'event-card', 'event-name', 'event-description', 'event-logistics', 'title', 'description', 'logistics', 'photo', 'sticker', 'back-kicker', 'back-mark', 'back-line', 'back-sub', 'back-url', 'back-end', 'back-rule', 'back-badge', 'back-card']);
   const extras = [];
   const collect = (elements, ancestors = []) => (elements || []).forEach(element => {
     const generated = element.presetOwned === true || (element.presetOwned !== false && knownRoles.has(element.role));
@@ -290,4 +321,4 @@ function shuffleCoverVariation(document, { variation } = {}) {
   if (!cover) return document;
   return { ...document, slides: document.slides.map(slide => slide.id === cover.id ? applyPreset(slide, slide.preset?.family || 'loose-letters', variation || (slide.preset?.variation || 1) % 3 + 1) : slide) };
 }
-module.exports = { COVER_FAMILIES, EVENT_PRESETS, COVER_GEOMETRY, EVENT_GEOMETRY, generateCoverSlide, generateEventSlide, shuffleCoverVariation, applyPreset, titleOf, walkElements, formatWhen };
+module.exports = { COVER_FAMILIES, EVENT_PRESETS, BACK_PRESETS, COVER_GEOMETRY, EVENT_GEOMETRY, generateCoverSlide, generateEventSlide, generateBackSlide, shuffleCoverVariation, applyPreset, titleOf, walkElements, formatWhen };

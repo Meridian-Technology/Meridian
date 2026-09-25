@@ -1,4 +1,4 @@
-import { generateCoverSlide, generateEventSlide, applyPreset, titleOf, walkElements } from '../../../../../shared/carouselStudio/presets';
+import { generateCoverSlide, generateEventSlide, generateBackSlide, applyPreset, titleOf, walkElements } from '../../../../../shared/carouselStudio/presets';
 import { normalizeSlide, reflowCard } from '../../../../../shared/carouselStudio/document';
 import { insertSticker, applySlidePreset, moveInSlideSpace, copyElements, pasteElements, deleteElements, selectionBounds, groupElements, resizeElement, setNumericFrame } from './studioEditorCommands';
 import { createHistory, commitTransaction, undo } from './studioDocument';
@@ -63,4 +63,20 @@ test('event seeding leaves source descriptions out and formats dates in the sour
   expect(fields.find(e => e.role === 'event-description')).toMatchObject({ text: '', presence: 'blank', placeholder: 'Write your blurb' });
   const date = fields.find(e => e.role === 'event-date'); expect(date.text).toMatch(/Sep 24/); expect(date.text).toMatch(/6:00 PM PDT/); expect(date.style.fontWeight).toBe(700);
   expect(JSON.stringify(slide)).not.toContain('Source paragraph');
+});
+
+test('a back slide has two closing layouts and keeps edited copy', () => {
+  const paper = generateBackSlide('paper-close');
+  const orange = generateBackSlide('orange-close');
+  expect(paper.background.color).toBe('#faf6ef');
+  expect(orange.background.color).toBe('#ff4f1f');
+  expect(paper.elements.find(element => element.role === 'back-mark').kind).toBe('sticker');
+  expect(paper.elements.find(element => element.role === 'back-line').text).toBe('find the rest in the app');
+  expect(paper.elements.some(element => element.role === 'back-badge')).toBe(true);
+  expect(orange.elements.find(element => element.role === 'back-mark').asset.finish).toBe('light');
+  paper.elements.find(element => element.role === 'back-line').text = 'see you monday';
+  const next = applyPreset(paper, 'orange-close', 2);
+  let line; walkElements(next.elements, element => { if (element.role === 'back-line') line = element; });
+  expect(line.text).toBe('see you monday');
+  expect(next.preset.id).toBe('orange-close');
 });

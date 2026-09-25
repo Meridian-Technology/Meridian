@@ -17,7 +17,7 @@ const { searchCarouselCatalog } = require('../services/pivotCarouselCatalogServi
 const { setSlideImage } = require('../services/pivotCarouselDeckService');
 const { upload } = require('../services/imageUploadService');
 const {
-  mintExportToken,
+  prepareLocalExport,
   readDeckForExport,
 } = require('../services/pivotCarouselExportService');
 const {
@@ -34,6 +34,11 @@ const {
   duplicateCarouselIssue,
   createEditableCopy,
 } = require('../services/pivotCarouselIssueService');
+const {
+  listCheckpoints,
+  createCheckpoint,
+  restoreCheckpoint,
+} = require('../services/pivotCarouselRevisionService');
 const {
   migrateCarouselDecksToAccounts,
   rollbackCarouselAccountMigration,
@@ -439,6 +444,7 @@ function sendDeckResult(res, result, okStatus = 200) {
         storedRevision: result.storedRevision,
         presentedRevision: result.presentedRevision,
       } : {}),
+      ...(result.issue ? { issue: result.issue } : {}),
       ...(result.details ? { details: result.details } : {}),
     });
   }
@@ -531,7 +537,7 @@ router.post(
   requirePlatformAdmin,
   async (req, res) => {
     try {
-      const result = await mintExportToken(req, req.params.tenantKey, req.params.deckId);
+      const result = await prepareLocalExport(req, req.params.tenantKey, req.params.deckId);
       return sendDeckResult(res, result, 201);
     } catch (err) {
       logPivotRouteError('POST carousel export-token', err, req);
@@ -810,6 +816,54 @@ router.patch(
     } catch (err) {
       logPivotRouteError('PATCH carousel issue', err, req);
       return res.status(500).json({ success: false, message: 'Unable to save the issue.' });
+    }
+  },
+);
+
+router.get(
+  '/carousel-accounts/:accountId/issues/:issueId/checkpoints',
+  verifyToken,
+  requirePlatformAdmin,
+  async (req, res) => {
+    try {
+      return sendDeckResult(res, await listCheckpoints(req, req.params.accountId, req.params.issueId));
+    } catch (err) {
+      logPivotRouteError('GET carousel checkpoints', err, req);
+      return res.status(500).json({ success: false, message: 'Unable to list checkpoints.' });
+    }
+  },
+);
+
+router.post(
+  '/carousel-accounts/:accountId/issues/:issueId/checkpoints',
+  verifyToken,
+  requirePlatformAdmin,
+  async (req, res) => {
+    try {
+      return sendDeckResult(res, await createCheckpoint(req, req.params.accountId, req.params.issueId, req.body), 201);
+    } catch (err) {
+      logPivotRouteError('POST carousel checkpoint', err, req);
+      return res.status(500).json({ success: false, message: 'Unable to save the checkpoint.' });
+    }
+  },
+);
+
+router.post(
+  '/carousel-accounts/:accountId/issues/:issueId/checkpoints/:checkpointId/restore',
+  verifyToken,
+  requirePlatformAdmin,
+  async (req, res) => {
+    try {
+      return sendDeckResult(res, await restoreCheckpoint(
+        req,
+        req.params.accountId,
+        req.params.issueId,
+        req.params.checkpointId,
+        req.body,
+      ));
+    } catch (err) {
+      logPivotRouteError('POST carousel checkpoint restore', err, req);
+      return res.status(500).json({ success: false, message: 'Unable to restore the checkpoint.' });
     }
   },
 );

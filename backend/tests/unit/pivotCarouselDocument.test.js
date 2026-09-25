@@ -111,6 +111,15 @@ describe('carousel document v2', () => {
     expect(reset.document.slides[0].elements[0].children.find((child) => child.id === 'title').text).toBe('account line');
   });
 
+  test('a back slide with a hairline rule still saves', () => {
+    const { generateBackSlide } = require('../../../frontend/src/shared/carouselStudio/presets');
+    const slide = generateBackSlide('paper-close');
+    slide.elements.find((element) => element.role === 'back-rule').frame.height = 2;
+    const prepared = prepareDocument({ schemaVersion: 2, width: 1080, height: 1350, slides: [slide] });
+    expect(prepared.error).toBeUndefined();
+    expect(prepared.document.slides[0].elements.find((element) => element.role === 'back-rule').frame.height).toBe(8);
+  });
+
   test('unsupported versions fail and are not coerced', () => {
     expect(migrateDocument({ schemaVersion: 1, slides: [] }).code).toBe('SCHEMA_VERSION_UNSUPPORTED');
     expect(migrateDocument({ schemaVersion: 3 }).code).toBe('SCHEMA_VERSION_UNSUPPORTED');

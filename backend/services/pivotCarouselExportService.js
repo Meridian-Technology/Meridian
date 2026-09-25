@@ -46,14 +46,24 @@ async function mintExportToken(req, tenantKey, deckId, scope = {}) {
     .lean();
   if (!deck) return { error: 'Deck not found.', status: 404, code: 'DECK_NOT_FOUND' };
 
-  if (deck.schemaVersion === 2) return { error: 'Editable issues require the forthcoming exact-revision export pipeline.', status: 409, code: 'V2_EXPORT_UNAVAILABLE' };
-  const revision = deckRevision(deck);
+  let pin = null;
+  if (deck.schemaVersion === 2) {
+    if (!scope.revisionId) {
+      return { error: 'Editable issues export from a pinned revision.', status: 409, code: 'V2_EXPORT_UNAVAILABLE' };
+    }
+    pin = await require('./pivotCarouselRevisionService').findExportPinById(req, deck._id, scope.revisionId);
+    if (!pin || pin.sourceRevision !== scope.sourceRevision) {
+      return { error: 'That export pin is not on this issue.', status: 404, code: 'EXPORT_PIN_NOT_FOUND' };
+    }
+  }
+  const revision = pin ? scope.sourceRevision : deckRevision(deck);
   const token = jwt.sign(
     {
       purpose: PURPOSE,
       tenantKey: key,
       deckId: String(deck._id),
       ...(revision ? { deckRevision: revision } : {}),
+      ...(pin ? { schemaVersion: 2, revisionId: String(pin._id) } : {}),
       ...(scope.jobId ? { jobId: String(scope.jobId) } : {}),
       ...(scope.attemptId ? { attemptId: String(scope.attemptId) } : {}),
     },
@@ -67,11 +77,38 @@ async function mintExportToken(req, tenantKey, deckId, scope = {}) {
       tenantKey: key,
       deckId: String(deck._id),
       deckRevision: revision,
-      slideCount: (deck.slides || []).length,
+      slideCount: pin ? (pin.document?.slides || []).length : (deck.slides || []).length,
       expiresInSeconds: 600,
       expiresAt: new Date(Date.now() + 600 * 1000).toISOString(),
     },
   };
+}
+
+/**
+ * Token for the local render script. An editable issue is pinned first, so the
+ * command renders the saved revision even if the issue changes while Chrome runs.
+ */
+async function prepareLocalExport(req, tenantKey, deckId) {
+  const key = String(tenantKey || '').trim().toLowerCase();
+  const tenant = await getTenantByKey(req, key);
+  if (!tenant) return { error: 'Tenant not found.', status: 404 };
+  if (!isPivotTenant(tenant)) {
+    return { error: 'Carousels are only available for Pivot city tenants.', status: 403 };
+  }
+
+  const { PivotCarouselDeck } = getGlobalModels(req, 'PivotCarouselDeck');
+  const deck = await PivotCarouselDeck.findOne({ _id: deckId, tenantKey: key }).lean();
+  if (!deck) return { error: 'Deck not found.', status: 404, code: 'DECK_NOT_FOUND' };
+
+  let scope = {};
+  if ((deck.schemaVersion || 1) === 2) {
+    const revision = deckRevision(deck);
+    if (!revision) return { error: 'This issue is missing a revision.', status: 409, code: 'DECK_REVISION_INVALID' };
+    const pin = await require('./pivotCarouselRevisionService').pinExportRevision(req, deck, revision);
+    if (pin.error) return pin;
+    scope = { revisionId: String(pin.data.pin._id), sourceRevision: revision };
+  }
+  return mintExportToken(req, key, String(deck._id), scope);
 }
 
 /**
@@ -106,7 +143,26 @@ async function readDeckForExport(req, token, deckId) {
     PivotCarouselVoice.findOne({ tenantKey: claims.tenantKey }).lean(),
   ]);
   if (!deck) return { error: 'Deck not found.', status: 404, code: 'DECK_NOT_FOUND' };
-  if (deck.schemaVersion === 2) return { error: 'Editable issues require the forthcoming exact-revision export pipeline.', status: 409, code: 'V2_EXPORT_UNAVAILABLE' };
+  if (claims.schemaVersion === 2 || claims.revisionId) {
+    const pin = await require('./pivotCarouselRevisionService').findExportPinById(req, deck._id, claims.revisionId);
+    if (!pin || pin.sourceRevision !== claims.deckRevision) {
+      return { error: 'That export pin is not on this issue.', status: 404, code: 'EXPORT_PIN_NOT_FOUND' };
+    }
+    return {
+      data: {
+        deck: {
+          ...serializeDeck(deck),
+          schemaVersion: 2,
+          revision: pin.headRevision,
+          document: pin.document,
+          slides: [],
+        },
+        cityVoice: {},
+        manifest: { types: ZINE_SLIDE_TYPES, addable: ZINE_ADDABLE_TYPES },
+      },
+    };
+  }
+  if (deck.schemaVersion === 2) return { error: 'Editable issues export from a pinned revision.', status: 409, code: 'V2_EXPORT_UNAVAILABLE' };
   if (claims.deckRevision && !sameDeckRevision(deckRevision(deck), claims.deckRevision)) {
     return {
       error: 'That deck changed after this export was claimed.',
@@ -124,4 +180,4 @@ async function readDeckForExport(req, token, deckId) {
   };
 }
 
-module.exports = { mintExportToken, readDeckForExport, deckRevision, sameDeckRevision, PURPOSE, TOKEN_TTL };
+module.exports = { mintExportToken, prepareLocalExport, readDeckForExport, deckRevision, sameDeckRevision, PURPOSE, TOKEN_TTL };

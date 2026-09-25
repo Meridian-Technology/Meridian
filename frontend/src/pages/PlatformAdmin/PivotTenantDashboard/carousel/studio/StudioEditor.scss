@@ -85,6 +85,8 @@
   &__empty h2 { font-size: 18px; font-weight: 500; }
   &__footer { flex: none; display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 9px 16px; font-size: 11px; color: var(--pivot-ops-ink-soft); background: white; border-top: 1px solid var(--pivot-ops-border); }
   &__curation { position: fixed; z-index: 1000; inset: 24px; background: var(--pivot-ops-canvas); border: 1px solid var(--pivot-ops-border); border-radius: 22px; box-shadow: 0 0 0 100vmax #1a171466; overflow: auto; padding: 20px; }
+  &__banner { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 10px 16px; background: var(--pivot-ops-warn-soft); border-bottom: 1px solid var(--pivot-ops-border); }
+  &__banner p { margin: 0; flex: 1; min-width: 180px; }
 }
 @media (max-width: 1100px) { .jg-editor__body { grid-template-columns: 144px minmax(0, 1fr) 264px; } .jg-editor__bar { flex-wrap: wrap; } .jg-editor__template-grid { grid-template-columns: 1fr; } }
 @media (max-width: 760px) { .jg-editor { height: calc(100dvh - 80px); min-height: 640px; } .jg-editor__body { grid-template-columns: 140px minmax(240px, 1fr) 260px; overflow-x: auto; } .jg-editor__footer > span:last-child { display: none; } }

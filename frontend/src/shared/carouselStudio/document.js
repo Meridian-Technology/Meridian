@@ -51,11 +51,13 @@ function reflowCard(card) {
 function normalizeElement(element, index) {
   const next = { ...element };
   next.kind = element.kind;
+  const width = Number(element.frame?.width);
+  const height = Number(element.frame?.height);
   next.frame = {
     x: Number(element.frame?.x || 0),
     y: Number(element.frame?.y || 0),
-    width: Number(element.frame?.width),
-    height: Number(element.frame?.height),
+    width: Number.isFinite(width) ? Math.max(8, width) : width,
+    height: Number.isFinite(height) ? Math.max(8, height) : height,
   };
   next.rotation = Number(element.rotation || 0);
   next.stack = Number.isFinite(element.stack) ? element.stack : index;

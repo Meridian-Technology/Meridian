@@ -1,6 +1,6 @@
 import { screenDeltaToLocal, rotateVector } from '../../../../../shared/carouselStudio/layout';
 import { cardOverflow } from '../../../../../shared/carouselStudio/document';
-import { applyPreset } from '../../../../../shared/carouselStudio/presets';
+import { applyPreset, generateBackSlide } from '../../../../../shared/carouselStudio/presets';
 /**
  * Canvas commands for the direct-manipulation editor.
  * Frames stay in logical pixels. Zoom and parent rotation are applied here,
@@ -517,7 +517,8 @@ export function insertSlide(doc, index, role = 'event') {
     ensureSlides(next);
     if (next.slides.length >= LIMITS.maxSlides) return;
     const at = Math.max(0, Math.min(index, next.slides.length));
-    next.slides.splice(at, 0, blankSlide(role));
+    const created = role === 'back' ? generateBackSlide('paper-close') : blankSlide(role);
+    next.slides.splice(at, 0, created);
   });
 }
 

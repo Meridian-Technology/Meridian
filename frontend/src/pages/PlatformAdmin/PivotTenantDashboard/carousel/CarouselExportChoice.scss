@@ -1,0 +1,21 @@
+.jgz-export-choice {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+  width: min(36rem, 100%);
+  color: #1a1714;
+
+  h2, p { margin: 0; }
+
+  textarea {
+    width: 100%;
+    min-height: 5.5rem;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, monospace;
+    font-size: 12px;
+  }
+
+  &__actions, button { font: inherit; }
+
+  &__actions { display: flex; gap: 8px; flex-wrap: wrap; }
+}
