@@ -200,15 +200,18 @@ async function bindCarouselExportRevision(req, request) {
   const deckId = trimString(request.options?.deckId).toLowerCase();
   const tenantKey = trimString(request.cityKey).toLowerCase();
   const { PivotCarouselDeck } = getGlobalModels(req, 'PivotCarouselDeck');
-  const deck = await PivotCarouselDeck.findOne({ _id: deckId, tenantKey })
-    .select('updatedAt')
-    .lean();
+  const deck = await PivotCarouselDeck.findOne({ _id: deckId, tenantKey }).lean();
   if (!deck) {
     throw serviceError('Carousel deck not found', 'DECK_NOT_FOUND', 404);
   }
   const revision = deckRevision(deck);
   if (!revision) {
     throw serviceError('Carousel deck is missing a revision', 'DECK_REVISION_INVALID');
+  }
+  if ((deck.schemaVersion || 1) === 2) {
+    const { pinExportRevision } = require('./pivotCarouselRevisionService');
+    const pin = await pinExportRevision(req, deck, revision);
+    if (pin.error) throw serviceError(pin.error, pin.code || 'EXPORT_PIN_FAILED', pin.status || 422);
   }
   return {
     ...request,

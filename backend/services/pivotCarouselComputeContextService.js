@@ -49,15 +49,22 @@ async function buildCarouselExportContextSnapshot(req, { job, now = new Date() }
 
   const { PivotCarouselDeck } = getGlobalModels(req, 'PivotCarouselDeck');
   const deck = await PivotCarouselDeck.findOne({ _id: deckId, tenantKey: job.tenantKey })
-    .select('slides updatedAt')
+    .select('slides updatedAt schemaVersion accountId')
     .lean();
   if (!deck) throw serviceError('Carousel deck not found', 'DECK_NOT_FOUND', 404);
 
-  const revision = deckRevision(deck);
-  if (!sameDeckRevision(revision, expectedRevision)) {
-    throw serviceError('Carousel deck changed after the export was requested', 'DECK_REVISION_MISMATCH', 409);
+  let pin = null;
+  if ((deck.schemaVersion || 1) === 2) {
+    pin = await require('./pivotCarouselRevisionService').findExportPin(req, deck._id, expectedRevision);
+    if (!pin) throw serviceError('Carousel export pin was not found for this revision', 'DECK_REVISION_MISMATCH', 409);
+  } else {
+    const revision = deckRevision(deck);
+    if (!sameDeckRevision(revision, expectedRevision)) {
+      throw serviceError('Carousel deck changed after the export was requested', 'DECK_REVISION_MISMATCH', 409);
+    }
   }
-  const deckSlideCount = (deck.slides || []).length;
+  const revision = pin ? expectedRevision : deckRevision(deck);
+  const deckSlideCount = pin ? (pin.document?.slides || []).length : (deck.slides || []).length;
   if (deckSlideCount < 1 || deckSlideCount > CAROUSEL_EXPORT_LIMITS.maxSlideCount) {
     throw serviceError('Carousel slide count is outside the export limits', 'CAROUSEL_SLIDE_COUNT_INVALID', 422);
   }
@@ -70,6 +77,7 @@ async function buildCarouselExportContextSnapshot(req, { job, now = new Date() }
   const renderGrant = await mintExportToken(req, job.tenantKey, deckId, {
     jobId: job.externalJobId,
     attemptId,
+    ...(pin ? { revisionId: String(pin._id), sourceRevision: expectedRevision } : {}),
   });
   if (renderGrant.error) {
     throw serviceError(renderGrant.error, renderGrant.code || 'CAROUSEL_RENDER_TOKEN_FAILED', renderGrant.status || 500);

@@ -29,6 +29,10 @@ import React from 'react';
 import Popup from '../../../../components/Popup/Popup';
 import './PivotCarouselPopup.scss';
 
+function PopupBody({ children }) {
+  return <div className="pivot-ops jgz-popup__body">{children}</div>;
+}
+
 export default function PivotCarouselPopup({ open, onClose, className = '', children }) {
   if (!open) return null;
 
@@ -39,7 +43,7 @@ export default function PivotCarouselPopup({ open, onClose, className = '', chil
       customClassName={`jgz-popup ${className}`}
       disableOutsideClick
     >
-      <div className="pivot-ops jgz-popup__body">{children}</div>
+      <PopupBody>{children}</PopupBody>
     </Popup>
   );
 }

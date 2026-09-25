@@ -1,3 +1,4 @@
+const { studioUpload, listAssets, uploadAsset } = require('../services/pivotCarouselAssetService');
 const express = require('express');
 const { verifyToken } = require('../middlewares/verifyToken');
 const {
@@ -16,9 +17,47 @@ const { searchCarouselCatalog } = require('../services/pivotCarouselCatalogServi
 const { setSlideImage } = require('../services/pivotCarouselDeckService');
 const { upload } = require('../services/imageUploadService');
 const {
-  mintExportToken,
+  prepareLocalExport,
   readDeckForExport,
 } = require('../services/pivotCarouselExportService');
+const {
+  createCarouselAccount,
+  getCarouselAccount,
+  listCarouselAccounts,
+  listCarouselIssues,
+  createCarouselIssue,
+  getCarouselIssue,
+  renameCarouselIssue,
+  updateCarouselIssue,
+  archiveCarouselIssue,
+  restoreCarouselIssue,
+  duplicateCarouselIssue,
+  createEditableCopy,
+} = require('../services/pivotCarouselIssueService');
+const {
+  listCheckpoints,
+  createCheckpoint,
+  restoreCheckpoint,
+} = require('../services/pivotCarouselRevisionService');
+const {
+  migrateCarouselDecksToAccounts,
+  rollbackCarouselAccountMigration,
+} = require('../services/pivotCarouselMigrationService');
+const {
+  searchCurationCandidates,
+  curationQuerySpec,
+  listSavedCurationSearches,
+  saveCurationSearch,
+  deleteSavedCurationSearch,
+} = require('../services/pivotCarouselCurationQueryService');
+const {
+  createCurationDraft,
+  getCurationDraft,
+  updateCurationDraft,
+  revalidateCurationDraft,
+  createIssueFromCurationDraft,
+  applyCurationDraftToIssue,
+} = require('../services/pivotCarouselCurationDraftService');
 const { requirePlatformAdmin } = require('../middlewares/requirePlatformAdmin');
 const {
   rebuildWeeklySnapshot,
@@ -400,6 +439,13 @@ function sendDeckResult(res, result, okStatus = 200) {
       success: false,
       message: result.error,
       code: result.code,
+      ...(result.limits ? { limits: result.limits } : {}),
+      ...(result.storedRevision !== undefined ? {
+        storedRevision: result.storedRevision,
+        presentedRevision: result.presentedRevision,
+      } : {}),
+      ...(result.issue ? { issue: result.issue } : {}),
+      ...(result.details ? { details: result.details } : {}),
     });
   }
   return res.status(okStatus).json({ success: true, data: result.data });
@@ -491,7 +537,7 @@ router.post(
   requirePlatformAdmin,
   async (req, res) => {
     try {
-      const result = await mintExportToken(req, req.params.tenantKey, req.params.deckId);
+      const result = await prepareLocalExport(req, req.params.tenantKey, req.params.deckId);
       return sendDeckResult(res, result, 201);
     } catch (err) {
       logPivotRouteError('POST carousel export-token', err, req);
@@ -617,6 +663,441 @@ router.patch(
     } catch (err) {
       logPivotRouteError('PATCH /admin/pivot/tenants/:tenantKey/carousel-voice', err, req);
       return res.status(500).json({ success: false, message: 'Unable to save carousel voice.' });
+    }
+  },
+);
+
+/* ------------------------------------------------- carousel accounts */
+
+router.post(
+  '/carousel-accounts',
+  verifyToken,
+  requirePlatformAdmin,
+  async (req, res) => {
+    try {
+      return sendDeckResult(res, await createCarouselAccount(req, req.body), 201);
+    } catch (err) {
+      logPivotRouteError('POST /admin/pivot/carousel-accounts', err, req);
+      return res.status(500).json({ success: false, message: 'Unable to create the account.' });
+    }
+  },
+);
+
+router.get(
+  '/carousel-accounts',
+  verifyToken,
+  requirePlatformAdmin,
+  async (req, res) => {
+    try {
+      return sendDeckResult(res, await listCarouselAccounts(req, req.query));
+    } catch (err) {
+      logPivotRouteError('GET /admin/pivot/carousel-accounts', err, req);
+      return res.status(500).json({ success: false, message: 'Unable to load accounts.' });
+    }
+  },
+);
+
+router.post(
+  '/carousel-accounts/migrate',
+  verifyToken,
+  requirePlatformAdmin,
+  async (req, res) => {
+    try {
+      return sendDeckResult(res, await migrateCarouselDecksToAccounts(req, {
+        dryRun: req.body?.dryRun !== false,
+        tenantKey: req.body?.tenantKey || null,
+      }));
+    } catch (err) {
+      logPivotRouteError('POST carousel account migrate', err, req);
+      return res.status(500).json({ success: false, message: 'Unable to migrate decks.' });
+    }
+  },
+);
+
+router.post(
+  '/carousel-accounts/migrate/rollback',
+  verifyToken,
+  requirePlatformAdmin,
+  async (req, res) => {
+    try {
+      return sendDeckResult(res, await rollbackCarouselAccountMigration(req, req.body?.rollback || []));
+    } catch (err) {
+      logPivotRouteError('POST carousel account migrate rollback', err, req);
+      return res.status(500).json({ success: false, message: 'Unable to roll back the migration.' });
+    }
+  },
+);
+
+router.get('/carousel-accounts/:accountId/unsplash', verifyToken, requirePlatformAdmin, async (req, res) => {
+  return sendDeckResult(res, await require('../services/pivotCarouselUnsplashService').searchPhotos(req, req.params.accountId, req.query));
+});
+router.post('/carousel-accounts/:accountId/unsplash/select', verifyToken, requirePlatformAdmin, async (req, res) => {
+  return sendDeckResult(res, await require('../services/pivotCarouselUnsplashService').selectPhoto(req, req.params.accountId, req.body.photoId));
+});
+router.get('/carousel-accounts/:accountId/assets', verifyToken, requirePlatformAdmin, async (req, res) => {
+  try { return sendDeckResult(res, await listAssets(req, req.params.accountId)); }
+  catch (error) { logPivotRouteError('GET carousel assets', error, req); return res.status(500).json({ success: false, message: 'Could not load images.' }); }
+});
+router.post('/carousel-accounts/:accountId/assets', verifyToken, requirePlatformAdmin, studioUpload, async (req, res) => {
+  try { return sendDeckResult(res, await uploadAsset(req, req.params.accountId, req.file)); }
+  catch (error) { logPivotRouteError('POST carousel assets', error, req); return res.status(500).json({ success: false, message: 'Image upload failed. Try again.' }); }
+});
+router.post('/carousel-accounts/:accountId/curation/drafts/:draftId/preview', verifyToken, requirePlatformAdmin, async (req, res) => {
+  try { return sendDeckResult(res, await require('../services/pivotCarouselCurationDraftService').previewCurationDraft(req, req.params.accountId, req.params.draftId, req.body)); }
+  catch (error) { logPivotRouteError('POST curation preview', error, req); return res.status(500).json({ success: false, message: 'Could not preview the selection.' }); }
+});
+
+router.get(
+  '/carousel-accounts/:accountId',
+  verifyToken,
+  requirePlatformAdmin,
+  async (req, res) => {
+    try {
+      return sendDeckResult(res, await getCarouselAccount(req, req.params.accountId));
+    } catch (err) {
+      logPivotRouteError('GET /admin/pivot/carousel-accounts/:accountId', err, req);
+      return res.status(500).json({ success: false, message: 'Unable to load the account.' });
+    }
+  },
+);
+
+router.get(
+  '/carousel-accounts/:accountId/issues',
+  verifyToken,
+  requirePlatformAdmin,
+  async (req, res) => {
+    try {
+      return sendDeckResult(res, await listCarouselIssues(req, req.params.accountId, req.query));
+    } catch (err) {
+      logPivotRouteError('GET carousel issues', err, req);
+      return res.status(500).json({ success: false, message: 'Unable to load issues.' });
+    }
+  },
+);
+
+router.post(
+  '/carousel-accounts/:accountId/issues',
+  verifyToken,
+  requirePlatformAdmin,
+  async (req, res) => {
+    try {
+      return sendDeckResult(res, await createCarouselIssue(req, req.params.accountId, req.body), 201);
+    } catch (err) {
+      logPivotRouteError('POST carousel issues', err, req);
+      return res.status(500).json({ success: false, message: 'Unable to create the issue.' });
+    }
+  },
+);
+
+router.get(
+  '/carousel-accounts/:accountId/issues/:issueId',
+  verifyToken,
+  requirePlatformAdmin,
+  async (req, res) => {
+    try {
+      return sendDeckResult(res, await getCarouselIssue(req, req.params.accountId, req.params.issueId));
+    } catch (err) {
+      logPivotRouteError('GET carousel issue', err, req);
+      return res.status(500).json({ success: false, message: 'Unable to load the issue.' });
+    }
+  },
+);
+
+router.patch(
+  '/carousel-accounts/:accountId/issues/:issueId',
+  verifyToken,
+  requirePlatformAdmin,
+  async (req, res) => {
+    try {
+      const result = req.body?.name !== undefined && Object.keys(req.body).every((key) => ['name', 'revision'].includes(key))
+        ? await renameCarouselIssue(req, req.params.accountId, req.params.issueId, req.body)
+        : await updateCarouselIssue(req, req.params.accountId, req.params.issueId, req.body);
+      return sendDeckResult(res, result);
+    } catch (err) {
+      logPivotRouteError('PATCH carousel issue', err, req);
+      return res.status(500).json({ success: false, message: 'Unable to save the issue.' });
+    }
+  },
+);
+
+router.get(
+  '/carousel-accounts/:accountId/issues/:issueId/checkpoints',
+  verifyToken,
+  requirePlatformAdmin,
+  async (req, res) => {
+    try {
+      return sendDeckResult(res, await listCheckpoints(req, req.params.accountId, req.params.issueId));
+    } catch (err) {
+      logPivotRouteError('GET carousel checkpoints', err, req);
+      return res.status(500).json({ success: false, message: 'Unable to list checkpoints.' });
+    }
+  },
+);
+
+router.post(
+  '/carousel-accounts/:accountId/issues/:issueId/checkpoints',
+  verifyToken,
+  requirePlatformAdmin,
+  async (req, res) => {
+    try {
+      return sendDeckResult(res, await createCheckpoint(req, req.params.accountId, req.params.issueId, req.body), 201);
+    } catch (err) {
+      logPivotRouteError('POST carousel checkpoint', err, req);
+      return res.status(500).json({ success: false, message: 'Unable to save the checkpoint.' });
+    }
+  },
+);
+
+router.post(
+  '/carousel-accounts/:accountId/issues/:issueId/checkpoints/:checkpointId/restore',
+  verifyToken,
+  requirePlatformAdmin,
+  async (req, res) => {
+    try {
+      return sendDeckResult(res, await restoreCheckpoint(
+        req,
+        req.params.accountId,
+        req.params.issueId,
+        req.params.checkpointId,
+        req.body,
+      ));
+    } catch (err) {
+      logPivotRouteError('POST carousel checkpoint restore', err, req);
+      return res.status(500).json({ success: false, message: 'Unable to restore the checkpoint.' });
+    }
+  },
+);
+
+router.post(
+  '/carousel-accounts/:accountId/issues/:issueId/editable-copy',
+  verifyToken,
+  requirePlatformAdmin,
+  async (req, res) => {
+    try {
+      return sendDeckResult(res, await createEditableCopy(req, req.params.accountId, req.params.issueId), 201);
+    } catch (err) {
+      logPivotRouteError('POST carousel editable copy', err, req);
+      return res.status(500).json({ success: false, message: 'Unable to copy the issue.' });
+    }
+  },
+);
+
+router.post(
+  '/carousel-accounts/:accountId/issues/:issueId/duplicate',
+  verifyToken,
+  requirePlatformAdmin,
+  async (req, res) => {
+    try {
+      return sendDeckResult(res, await duplicateCarouselIssue(req, req.params.accountId, req.params.issueId), 201);
+    } catch (err) {
+      logPivotRouteError('POST carousel issue duplicate', err, req);
+      return res.status(500).json({ success: false, message: 'Unable to duplicate the issue.' });
+    }
+  },
+);
+
+router.post(
+  '/carousel-accounts/:accountId/issues/:issueId/archive',
+  verifyToken,
+  requirePlatformAdmin,
+  async (req, res) => {
+    try {
+      return sendDeckResult(res, await archiveCarouselIssue(req, req.params.accountId, req.params.issueId, req.body));
+    } catch (err) {
+      logPivotRouteError('POST carousel issue archive', err, req);
+      return res.status(500).json({ success: false, message: 'Unable to archive the issue.' });
+    }
+  },
+);
+
+router.post(
+  '/carousel-accounts/:accountId/issues/:issueId/restore',
+  verifyToken,
+  requirePlatformAdmin,
+  async (req, res) => {
+    try {
+      return sendDeckResult(res, await restoreCarouselIssue(req, req.params.accountId, req.params.issueId, req.body));
+    } catch (err) {
+      logPivotRouteError('POST carousel issue restore', err, req);
+      return res.status(500).json({ success: false, message: 'Unable to restore the issue.' });
+    }
+  },
+);
+
+router.get(
+  '/carousel-accounts/:accountId/curation/query-spec',
+  verifyToken,
+  requirePlatformAdmin,
+  async (req, res) => {
+    try {
+      return sendDeckResult(res, await curationQuerySpec(req, req.params.accountId));
+    } catch (err) {
+      logPivotRouteError('GET carousel curation query spec', err, req);
+      return res.status(500).json({ success: false, message: 'Unable to load the search contract.' });
+    }
+  },
+);
+
+router.post(
+  '/carousel-accounts/:accountId/curation/search',
+  verifyToken,
+  requirePlatformAdmin,
+  async (req, res) => {
+    try {
+      return sendDeckResult(res, await searchCurationCandidates(req, req.params.accountId, req.body || {}));
+    } catch (err) {
+      logPivotRouteError('POST carousel curation search', err, req);
+      return res.status(500).json({ success: false, message: 'Unable to search the catalog.' });
+    }
+  },
+);
+
+router.get(
+  '/carousel-accounts/:accountId/curation/saved-searches',
+  verifyToken,
+  requirePlatformAdmin,
+  async (req, res) => {
+    try {
+      return sendDeckResult(res, await listSavedCurationSearches(req, req.params.accountId));
+    } catch (err) {
+      logPivotRouteError('GET carousel saved searches', err, req);
+      return res.status(500).json({ success: false, message: 'Unable to load saved searches.' });
+    }
+  },
+);
+
+router.post(
+  '/carousel-accounts/:accountId/curation/saved-searches',
+  verifyToken,
+  requirePlatformAdmin,
+  async (req, res) => {
+    try {
+      return sendDeckResult(res, await saveCurationSearch(req, req.params.accountId, req.body || {}), 201);
+    } catch (err) {
+      logPivotRouteError('POST carousel saved search', err, req);
+      return res.status(500).json({ success: false, message: 'Unable to save the search.' });
+    }
+  },
+);
+
+router.delete(
+  '/carousel-accounts/:accountId/curation/saved-searches/:searchId',
+  verifyToken,
+  requirePlatformAdmin,
+  async (req, res) => {
+    try {
+      return sendDeckResult(res, await deleteSavedCurationSearch(
+        req,
+        req.params.accountId,
+        req.params.searchId,
+      ));
+    } catch (err) {
+      logPivotRouteError('DELETE carousel saved search', err, req);
+      return res.status(500).json({ success: false, message: 'Unable to delete the saved search.' });
+    }
+  },
+);
+
+router.post(
+  '/carousel-accounts/:accountId/curation/drafts',
+  verifyToken,
+  requirePlatformAdmin,
+  async (req, res) => {
+    try {
+      return sendDeckResult(res, await createCurationDraft(req, req.params.accountId, req.body || {}), 201);
+    } catch (err) {
+      logPivotRouteError('POST carousel curation draft', err, req);
+      return res.status(500).json({ success: false, message: 'Unable to save the curation draft.' });
+    }
+  },
+);
+
+router.get(
+  '/carousel-accounts/:accountId/curation/drafts/:draftId',
+  verifyToken,
+  requirePlatformAdmin,
+  async (req, res) => {
+    try {
+      return sendDeckResult(res, await getCurationDraft(req, req.params.accountId, req.params.draftId));
+    } catch (err) {
+      logPivotRouteError('GET carousel curation draft', err, req);
+      return res.status(500).json({ success: false, message: 'Unable to load the curation draft.' });
+    }
+  },
+);
+
+router.patch(
+  '/carousel-accounts/:accountId/curation/drafts/:draftId',
+  verifyToken,
+  requirePlatformAdmin,
+  async (req, res) => {
+    try {
+      return sendDeckResult(res, await updateCurationDraft(
+        req,
+        req.params.accountId,
+        req.params.draftId,
+        req.body || {},
+      ));
+    } catch (err) {
+      logPivotRouteError('PATCH carousel curation draft', err, req);
+      return res.status(500).json({ success: false, message: 'Unable to save the curation draft.' });
+    }
+  },
+);
+
+router.post(
+  '/carousel-accounts/:accountId/curation/drafts/:draftId/revalidate',
+  verifyToken,
+  requirePlatformAdmin,
+  async (req, res) => {
+    try {
+      return sendDeckResult(res, await revalidateCurationDraft(
+        req,
+        req.params.accountId,
+        req.params.draftId,
+        req.body || {},
+      ));
+    } catch (err) {
+      logPivotRouteError('POST carousel curation revalidate', err, req);
+      return res.status(500).json({ success: false, message: 'Unable to revalidate the selection.' });
+    }
+  },
+);
+
+router.post(
+  '/carousel-accounts/:accountId/curation/drafts/:draftId/create',
+  verifyToken,
+  requirePlatformAdmin,
+  async (req, res) => {
+    try {
+      return sendDeckResult(res, await createIssueFromCurationDraft(
+        req,
+        req.params.accountId,
+        req.params.draftId,
+        req.body || {},
+      ), 201);
+    } catch (err) {
+      logPivotRouteError('POST carousel curation create', err, req);
+      return res.status(500).json({ success: false, message: 'Unable to create the issue.' });
+    }
+  },
+);
+
+router.post(
+  '/carousel-accounts/:accountId/curation/drafts/:draftId/apply',
+  verifyToken,
+  requirePlatformAdmin,
+  async (req, res) => {
+    try {
+      return sendDeckResult(res, await applyCurationDraftToIssue(
+        req,
+        req.params.accountId,
+        req.params.draftId,
+        req.body || {},
+      ));
+    } catch (err) {
+      logPivotRouteError('POST carousel curation apply', err, req);
+      return res.status(500).json({ success: false, message: 'Unable to update the issue selection.' });
     }
   },
 );

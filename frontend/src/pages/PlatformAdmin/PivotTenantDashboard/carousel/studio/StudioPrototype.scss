@@ -1,0 +1,57 @@
+@import url('https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap');
+@import '../../../../../components/PivotBranding/pivotBrandFonts.scss';
+
+.jg-studio {
+  min-height: 100vh;
+  background: #e7e2da;
+  color: #1a1714;
+  font-family: 'Instrument Sans', sans-serif;
+  * { box-sizing: border-box; }
+  button, input { font: inherit; }
+  &__bar {
+    display: flex; justify-content: space-between; gap: 24px; align-items: end;
+    padding: 20px 28px; background: #1a1714; color: #faf6ef;
+    p { margin: 0 0 4px; font: 11px 'Space Mono', monospace; letter-spacing: .04em; }
+    h1 { margin: 0; font-size: 22px; font-weight: 500; }
+  }
+  &__tools { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  &__tools button, &__tools label {
+    border: 1px solid #faf6ef; background: transparent; color: inherit; padding: 8px 10px; cursor: pointer;
+  }
+  &__tools button:disabled { opacity: .4; cursor: default; }
+  &__workspace { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 28px; padding: 28px; align-items: start; }
+  &__stage { display: flex; justify-content: center; }
+  &__scaled { position: relative; }
+  &__chrome {
+    position: absolute; outline: 1.5px solid #156fc0; pointer-events: none; z-index: 6;
+  }
+  &__scaled [contenteditable="true"] { outline: none; cursor: text; }
+  &__handle, &__rotate {
+    position: absolute; width: 10px; height: 10px; padding: 0; border: 0; background: #fff; pointer-events: auto;
+    box-shadow: 0 0 0 1px #156fc0; cursor: nwse-resize;
+  }
+  &__handle--n, &__handle--s { left: 50%; margin-left: -5px; cursor: ns-resize; }
+  &__handle--e, &__handle--w { top: 50%; margin-top: -5px; cursor: ew-resize; }
+  &__handle--nw { left: -5px; top: -5px; }
+  &__handle--n { top: -5px; }
+  &__handle--ne { right: -5px; top: -5px; cursor: nesw-resize; }
+  &__handle--e { right: -5px; }
+  &__handle--se { right: -5px; bottom: -5px; }
+  &__handle--s { bottom: -5px; }
+  &__handle--sw { left: -5px; bottom: -5px; cursor: nesw-resize; }
+  &__handle--w { left: -5px; }
+  &__rotate {
+    left: 50%; top: -28px; margin-left: -5px; border-radius: 50%; cursor: grab;
+  }
+  &__crop {
+    position: absolute; left: 8px; top: 8px; background: #156fc0; color: #fff; font: 11px 'Space Mono', monospace; padding: 4px 6px;
+  }
+  &__side section { background: #faf6ef; padding: 16px; margin-bottom: 16px; }
+  &__side h2 { margin: 0 0 8px; font-size: 16px; }
+  &__side p, &__side dd { margin: 0; font-size: 13px; line-height: 1.4; }
+  &__side dl { margin: 12px 0 0; }
+  &__side dt { font: 10px 'Space Mono', monospace; color: #6d675f; }
+  &__side div + div { margin-top: 8px; }
+  &__export { width: 280px; margin-top: 12px; }
+  &__overflow { margin-top: 12px; color: #9a3412; }
+}

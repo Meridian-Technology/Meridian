@@ -211,7 +211,6 @@ describe('a popup that can contain another popup', () => {
  */
 describe('frame classes come from one place', () => {
   test.each([
-    'PivotCarouselPage.jsx',
     'PivotCarouselEditor.jsx',
     'PivotCarouselFrame.jsx',
     'PivotCarouselAddSlide.jsx',

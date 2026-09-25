@@ -26,10 +26,8 @@ function authErrorFromAxios(err) {
   return {
     error: message,
     code: err.response?.status,
-    ...(errorData?.result ? {
-      errorCode: errorData.code || null,
-      errorData,
-    } : {}),
+    errorCode: errorData?.code || null,
+    errorData: errorData || null,
   };
 }
 

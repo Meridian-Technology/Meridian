@@ -16,12 +16,17 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { authenticatedRequest } from '../../../../hooks/useFetch';
+import useAuth from '../../../../hooks/useAuth';
 import { useNotification } from '../../../../NotificationContext';
 import PivotTenantPage from '../PivotTenantPage';
 import PivotCarouselEditor from './PivotCarouselEditor';
+import PivotCarouselLibrary from './PivotCarouselLibrary';
+import PivotCarouselCurationWorkspace from './PivotCarouselCurationWorkspace';
+import StudioEditor from './studio/StudioEditor';
+import { librarySelection } from './carouselLibrary';
+import { candidateToSelection } from './carouselCurationSelection';
 import useCarouselExport from './useCarouselExport';
-import { ZINE_DEMO_DECK } from './zineDemoDeck';
-import { frameClass, resolveDeck } from './zineDeck';
+import PivotCarouselExportPanel from './PivotCarouselExportPanel';
 import {
   ZineBack,
   ZineCard,
@@ -104,13 +109,21 @@ function EditionTools({
 
 export default function PivotCarouselPage({ tenantKey, cityDisplayName }) {
   const { addNotification } = useNotification();
-  const [searchParams] = useSearchParams();
+  const { user } = useAuth();
+  const [searchParams, setSearchParams] = useSearchParams();
   const requestedDeckId = searchParams.get('deckId');
+  const requestedCurationId = searchParams.get('curation');
+  const requestedAccountId = searchParams.get('account');
 
   const [deck, setDeck] = useState(null);
   const [draft, setDraft] = useState(null);
   const [manifest, setManifest] = useState(null);
   const [cityVoice, setCityVoice] = useState(null);
+  const [library, setLibrary] = useState([]);
+  const [accounts, setAccounts] = useState([]);
+  const [accountId, setAccountId] = useState('');
+  const [libraryMode, setLibraryMode] = useState('list');
+  const [missingId, setMissingId] = useState(null);
   const [loading, setLoading] = useState(true);
   const [seeding, setSeeding] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -132,29 +145,50 @@ export default function PivotCarouselPage({ tenantKey, cityDisplayName }) {
     />
   );
 
-  /** Load the deck list, then open the most recently touched one. */
+  /** Open a deck only when the URL names it. Otherwise stay on the library. */
   const load = useCallback(async () => {
     if (!tenantKey) return;
     setLoading(true);
 
-    const list = await authenticatedRequest(decksPath(tenantKey));
+    const [list, accountList] = await Promise.all([
+      authenticatedRequest(decksPath(tenantKey)),
+      authenticatedRequest('/admin/pivot/carousel-accounts', { params: { ownerTenantKey: tenantKey } }),
+    ]);
     const rows = list.data?.success ? list.data.data?.decks || [] : [];
+    const accountRows = accountList.data?.success ? accountList.data.data?.accounts || [] : [];
+    setLibrary(rows);
+    setAccounts(accountRows);
+    setAccountId((current) => requestedAccountId || current || accountRows[0]?.id || '');
 
-    if (!rows.length) {
+    if (requestedCurationId) {
+      setLibraryMode('curate');
+      setMissingId(null);
+      if (!requestedDeckId) {
+        setDeck(null);
+        setDraft(null);
+        setManifest(null);
+        setCityVoice(null);
+        setFocused(false);
+        setLoading(false);
+        return;
+      }
+    }
+
+    const selection = librarySelection(rows, requestedDeckId);
+    if (!requestedCurationId) setLibraryMode(selection.mode);
+    if (selection.mode !== 'open') {
       setDeck(null);
       setDraft(null);
       setManifest(null);
       setCityVoice(null);
       setFocused(false);
+      setMissingId(selection.mode === 'missing' ? selection.requestedId : null);
       setLoading(false);
       return;
     }
 
-    const match = requestedDeckId
-      ? rows.find((row) => String(row._id) === requestedDeckId)
-      : null;
-    const target = match || rows[0];
-    const full = await authenticatedRequest(`${decksPath(tenantKey)}/${target._id}`);
+    setMissingId(null);
+    const full = await authenticatedRequest(`${decksPath(tenantKey)}/${selection.deckId}`);
     if (full.data?.success) {
       setDeck(full.data.data.deck);
       setDraft(full.data.data.deck);
@@ -163,46 +197,19 @@ export default function PivotCarouselPage({ tenantKey, cityDisplayName }) {
       setEdition(full.data.data.deck.edition || 'night');
       setInkPlate(full.data.data.deck.inkPlate !== false);
       setShowIssueNumber(full.data.data.deck.showIssueNumber !== false);
+    } else {
+      setDeck(null);
+      setDraft(null);
+      setManifest(null);
+      setLibraryMode('missing');
+      setMissingId(selection.deckId);
     }
     setLoading(false);
-  }, [tenantKey, requestedDeckId]);
+  }, [tenantKey, requestedDeckId, requestedCurationId, requestedAccountId]);
 
   useEffect(() => {
     load();
   }, [load]);
-
-  /**
-   * Seed the reference issue. It POSTs the demo deck the frontend already
-   * holds, so the round trip is the proof: what comes back from Mongo has to
-   * render identically to what went in.
-   */
-  const seedReference = useCallback(async () => {
-    setSeeding(true);
-    const result = await authenticatedRequest(decksPath(tenantKey), {
-      method: 'POST',
-      data: { ...ZINE_DEMO_DECK, title: `${ZINE_DEMO_DECK.title} (reference)` },
-    });
-    setSeeding(false);
-
-    if (!result.data?.success) {
-      addNotification({
-        title: 'Could not save the reference issue',
-        message: result.data?.message || 'The request failed.',
-        type: 'error',
-      });
-      return;
-    }
-
-    const notes = result.data.data.notes || [];
-    addNotification({
-      title: 'Reference issue saved',
-      message: notes.length
-        ? `Saved, but ${notes.length} value(s) did not fit their template: ${notes[0]}`
-        : 'Saved with nothing trimmed — every slot fit its template.',
-      type: notes.length ? 'warning' : 'success',
-    });
-    load();
-  }, [tenantKey, addNotification, load]);
 
   const saveDeck = useCallback(async () => {
     if (!draft) return;
@@ -291,47 +298,222 @@ export default function PivotCarouselPage({ tenantKey, cityDisplayName }) {
     [draft, deck, edition, inkPlate, showIssueNumber],
   );
 
-  const exportState = useCarouselExport({ tenantKey, deck, dirty });
+  const exportState = useCarouselExport({
+    tenantKey,
+    deck,
+    dirty: draft?.schemaVersion === 2 ? false : dirty,
+  });
+
+  const ensureAccount = useCallback(async () => {
+    if (accountId) {
+      const match = accounts.find((account) => account.id === accountId);
+      if (match) return match;
+    }
+    const createdAccount = await authenticatedRequest('/admin/pivot/carousel-accounts', {
+      method: 'POST',
+      data: {
+        displayName: cityDisplayName || tenantKey,
+        ownerTenantKey: tenantKey,
+        sourceTenantKeys: [tenantKey],
+      },
+    });
+    const account = createdAccount.data?.data?.account;
+    if (!account) {
+      addNotification({
+        title: 'Could not create an account',
+        message: createdAccount.data?.message || 'The request failed.',
+        type: 'error',
+      });
+      return null;
+    }
+    setAccountId(account.id);
+    setAccounts((current) => (current.some((row) => row.id === account.id) ? current : [...current, account]));
+    return account;
+  }, [accountId, accounts, addNotification, cityDisplayName, tenantKey]);
+
+  const openCuration = useCallback((id, account) => {
+    const next = new URLSearchParams(searchParams);
+    next.delete('deckId');
+    if (account?.id) next.set('account', account.id);
+    next.set('curation', id);
+    setSearchParams(next);
+  }, [searchParams, setSearchParams]);
 
   const createDeck = useCallback(async () => {
     setSeeding(true);
-    const result = await authenticatedRequest(decksPath(tenantKey), {
+    const account = await ensureAccount();
+    if (!account) {
+      setSeeding(false);
+      return;
+    }
+    const result = await authenticatedRequest(`/admin/pivot/carousel-accounts/${account.id}/curation/drafts`, {
       method: 'POST',
-      data: { title: `issue — ${cityDisplayName || tenantKey}`, issue: { city: cityDisplayName || tenantKey } },
+      data: { format: account.defaultFormat || 'city-picks' },
     });
     setSeeding(false);
     if (result.data?.success) {
-      load();
+      openCuration(result.data.data.draft.id, account);
     } else {
       addNotification({
-        title: 'Could not create the deck',
+        title: 'Could not start curation',
         message: result.data?.message || 'The request failed.',
         type: 'error',
       });
     }
-  }, [tenantKey, cityDisplayName, addNotification, load]);
+  }, [addNotification, ensureAccount, openCuration]);
 
-  /** Renders the reference issue read-only until a deck exists to edit. */
-  const preview = useMemo(
-    () => resolveDeck({ ...ZINE_DEMO_DECK, edition, inkPlate, showIssueNumber }, manifest, cityVoice),
-    [edition, inkPlate, showIssueNumber, manifest, cityVoice],
-  );
+  const archiveCarousel = useCallback(async (issue) => {
+    const account = issue.accountId || accountId;
+    if (!account) {
+      addNotification({ title: 'Could not archive', message: 'This carousel is not on an account yet.', type: 'error' });
+      return;
+    }
+    if (!window.confirm(`Archive “${issue.name || issue.title || 'this carousel'}”?`)) return;
+    const result = await authenticatedRequest(`/admin/pivot/carousel-accounts/${account}/issues/${issue._id}/archive`, {
+      method: 'POST',
+      data: { revision: issue.revision },
+    });
+    if (!result.data?.success) {
+      addNotification({ title: 'Could not archive', message: result.data?.message || 'The request failed.', type: 'error' });
+      return;
+    }
+    load();
+  }, [accountId, addNotification, load]);
+
+  const deleteCarousel = useCallback(async (issue) => {
+    if (!window.confirm(`Delete “${issue.name || issue.title || 'this carousel'}”? This cannot be undone.`)) return;
+    const result = await authenticatedRequest(`${decksPath(tenantKey)}/${issue._id}`, { method: 'DELETE' });
+    if (!result.data?.success) {
+      addNotification({ title: 'Could not delete', message: result.data?.message || 'The request failed.', type: 'error' });
+      return;
+    }
+    load();
+  }, [addNotification, load, tenantKey]);
+
+  const saveStudioDocument = useCallback(async (document, editorial = {}, revision) => {
+    if (!draft?.accountId || !draft?._id) return { error: 'Missing issue', code: 400 };
+    const result = await authenticatedRequest(
+      `/admin/pivot/carousel-accounts/${draft.accountId}/issues/${draft._id}`,
+      { method: 'PATCH', data: { revision: Number.isInteger(revision) ? revision : draft.revision, document, curation: editorial.curation, sources: editorial.sources } },
+    );
+    if (result.error || result.data?.success === false) {
+      return {
+        error: result.error || result.data?.message,
+        code: result.errorCode || result.data?.code || result.code,
+        status: result.code,
+        issue: result.errorData?.issue,
+        storedRevision: result.errorData?.storedRevision,
+      };
+    }
+    const saved = result.data?.data?.issue;
+    if (!saved) return { error: 'Save failed', code: 500 };
+    setDraft((current) => ({
+      ...current,
+      revision: saved.revision,
+      document: saved.document,
+      curation: saved.curation,
+      sources: saved.sources,
+      name: saved.name || current.name,
+      updatedAt: saved.updatedAt,
+    }));
+    return { document: saved.document, revision: saved.revision, editorial: { curation: saved.curation, sources: saved.sources } };
+  }, [draft]);
+
+  const reloadStudioIssue = useCallback(async () => {
+    if (!draft?.accountId || !draft?._id) return null;
+    const result = await authenticatedRequest(`/admin/pivot/carousel-accounts/${draft.accountId}/issues/${draft._id}`);
+    const issue = result.data?.data?.issue;
+    if (!issue) return { error: result.error || 'The saved issue could not be loaded.' };
+    setDraft((current) => ({ ...current, ...issue, _id: issue.id }));
+    return issue;
+  }, [draft]);
+
+  const saveStudioCopy = useCallback(async (name, document, editorial = {}) => {
+    if (!draft?.accountId) return { error: 'Missing account' };
+    const result = await authenticatedRequest(`/admin/pivot/carousel-accounts/${draft.accountId}/issues`, {
+      method: 'POST',
+      data: {
+        name,
+        format: draft.format,
+        document,
+        curation: editorial.curation,
+        sources: editorial.sources,
+      },
+    });
+    const issue = result.data?.data?.issue;
+    if (!issue) return { error: result.error || result.data?.message || 'The copy could not be saved.' };
+    return issue;
+  }, [draft]);
+
+  const startEditSelection = useCallback(async () => {
+    const account = accounts.find((row) => row.id === (draft?.accountId || accountId));
+    if (!account || !draft) return;
+    setSeeding(true);
+    const selected = (draft.curation?.snapshots || draft.sources || []).map((row) => (
+      row.snapshot ? row : candidateToSelection({
+        ref: row.ref || row,
+        snapshot: row.snapshot || {},
+        provenance: {},
+      })
+    ));
+    const result = await authenticatedRequest(`/admin/pivot/carousel-accounts/${account.id}/curation/drafts`, {
+      method: 'POST',
+      data: {
+        format: draft.format || account.defaultFormat || 'city-picks',
+        selected,
+        theme: draft.curation?.theme || '',
+        coverPreset: draft.curation?.coverPreset,
+        eventPreset: draft.curation?.eventPreset,
+        issueId: draft._id,
+      },
+    });
+    setSeeding(false);
+    if (!result.data?.success) {
+      addNotification({
+        title: 'Could not edit the selection',
+        message: result.data?.message || 'The request failed.',
+        type: 'error',
+      });
+      return;
+    }
+    const next = new URLSearchParams(searchParams);
+    next.set('deckId', draft._id);
+    next.set('account', account.id);
+    next.set('curation', result.data.data.draft.id);
+    setSearchParams(next);
+  }, [accountId, accounts, addNotification, draft, searchParams, setSearchParams]);
+
+  const openIssue = useCallback((id) => {
+    const next = new URLSearchParams(searchParams);
+    next.set('deckId', id);
+    setSearchParams(next);
+  }, [searchParams, setSearchParams]);
+
+  const closeLibrary = useCallback(() => {
+    const next = new URLSearchParams(searchParams);
+    next.delete('deckId');
+    next.delete('curation');
+    next.delete('account');
+    setSearchParams(next);
+  }, [searchParams, setSearchParams]);
 
   return (
     <PivotTenantPage
-      className={`pivot-carousel-page${focused ? ' is-carousel-focused' : ''}`}
+      className={`pivot-carousel-page${focused || draft?.schemaVersion === 2 ? ' is-carousel-focused' : ''}`}
       title="Carousel"
       tenantKey={tenantKey}
       cityDisplayName={cityDisplayName}
-      actions={draft && manifest ? null : (
+      actions={draft && manifest && draft.schemaVersion !== 2 ? null : (
         <>
-          {editionTools}
+          {draft || requestedCurationId ? (
+            <button type="button" className="jgz__action" onClick={closeLibrary}>All carousels</button>
+          ) : null}
           <span className="jgz__note">4:5 · 1080×1350</span>
         </>
       )}
     >
-      <div className="jgz">
-        {draft && manifest ? (
+      {draft && manifest && draft.schemaVersion !== 2 ? (
+        <div className="jgz">
           <PivotCarouselEditor
             deck={{ ...draft, edition, inkPlate, showIssueNumber }}
             manifest={manifest}
@@ -349,57 +531,86 @@ export default function PivotCarouselPage({ tenantKey, cityDisplayName }) {
             tools={editionTools}
             focused={focused}
             onToggleFocus={toggleFocus}
+            onBack={closeLibrary}
           />
-        ) : (
+        </div>
+        ) : requestedCurationId && (accounts.find((account) => account.id === accountId) || accounts[0]) ? (
+          <PivotCarouselCurationWorkspace
+            account={accounts.find((account) => account.id === accountId) || accounts[0]}
+            draftId={requestedCurationId}
+            issue={draft && requestedDeckId ? {
+              id: draft._id,
+              revision: draft.revision,
+              sources: draft.sources,
+              curation: draft.curation,
+              document: draft.document,
+            } : null}
+            onDraftId={(id) => openCuration(id, accounts.find((account) => account.id === accountId))}
+            onCreated={(data) => {
+              const next = new URLSearchParams(searchParams);
+              next.delete('curation');
+              next.set('deckId', data.issue.id);
+              if (data.issue.accountId) next.set('account', data.issue.accountId);
+              setSearchParams(next);
+            }}
+            onApplied={(data) => {
+              const next = new URLSearchParams(searchParams);
+              next.delete('curation');
+              next.set('deckId', data.issue.id);
+              setSearchParams(next);
+              addNotification({
+                title: 'Selection updated',
+                message: data.diff
+                  ? `${data.diff.added.length} added, ${data.diff.removed.length} removed. Retained slides were kept.`
+                  : 'The issue selection was saved.',
+                type: 'success',
+              });
+            }}
+            onCancel={closeLibrary}
+            notify={addNotification}
+          />
+        ) : draft?.schemaVersion === 2 ? (
           <>
-            <div className="jgz__bar">
-              <p className="jgz__standfirst">
-                {loading
-                  ? 'loading decks…'
-                  : 'no deck for this city yet. start an empty one, or save the reference issue to see the templates fully dressed and edit from there.'}
-              </p>
-
-              <div className="jgz__state">
-                <span className="jgz__flag">nothing saved</span>
-                <button
-                  type="button"
-                  className="jgz__action"
-                  onClick={createDeck}
-                  disabled={seeding || loading}
-                >
-                  new deck
-                </button>
-                <button
-                  type="button"
-                  className="jgz__action"
-                  onClick={seedReference}
-                  disabled={seeding || loading}
-                >
-                  {seeding ? 'saving…' : 'save reference issue'}
-                </button>
-              </div>
-            </div>
-
-            <ul className="jgz__sheet">
-              {preview.slides.map((slide, index) => {
-                const Frame = FRAME_COMPONENTS[slide.type];
-                if (!Frame) return null;
-                return (
-                  <li className="jgz__slot" key={slide.id}>
-                    <div className={frameClass({ edition, inkPlate })}>
-                      <Frame {...slide.props} />
-                    </div>
-                    <p className="jgz__slot-caption">
-                      <b>{String(index + 1).padStart(2, '0')} · {slide.type}</b>
-                      <span>reference</span>
-                    </p>
-                  </li>
-                );
-              })}
-            </ul>
+            <StudioEditor
+              key={draft._id}
+              issue={draft}
+              userId={user?._id || user?.id || null}
+              onSave={saveStudioDocument}
+              onSaveCopy={saveStudioCopy}
+              onReload={reloadStudioIssue}
+              onOpenIssue={openIssue}
+              onExport={() => exportState.startExport()}
+              account={accounts.find(row => row.id === draft.accountId)}
+              onEditSelection={startEditSelection}
+              onBack={closeLibrary}
+            />
+            <PivotCarouselExportPanel
+              open={Boolean(exportState.panelOpen)}
+              onClose={exportState.closePanel}
+              onOpen={exportState.openPanel}
+              job={exportState.job}
+              uiState={exportState.uiState}
+              progressLabel={exportState.progressLabel}
+              failureLabel={exportState.failureLabel}
+              revisionStale={exportState.revisionStale}
+              artifactsExpired={exportState.artifactsExpired}
+              onCancel={exportState.cancelExport}
+              onRetry={exportState.retryExport}
+              onDownload={exportState.downloadArtifact}
+              busy={exportState.busy}
+            />
           </>
+        ) : (
+          <PivotCarouselLibrary
+            issues={library}
+            missingId={libraryMode === 'missing' ? missingId : null}
+            onOpen={openIssue}
+            onCreate={createDeck}
+            onArchive={archiveCarousel}
+            onDelete={deleteCarousel}
+            busy={seeding || loading}
+          />
         )}
-      </div>
     </PivotTenantPage>
   );
 }

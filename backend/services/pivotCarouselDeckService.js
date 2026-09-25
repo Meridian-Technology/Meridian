@@ -64,6 +64,31 @@ function serializeSlide(slide) {
   };
 }
 
+function coverImageOf(row) {
+  const event = row.slides?.[0]?.events?.[0];
+  return event?.imageOverride?.url || event?.snapshot?.image || row.document?.slides?.[0]?.elements?.find((element) => element.kind === 'image')?.asset?.src || null;
+}
+
+function previewImagesOf(row) {
+  const images = [];
+  const push = (src) => { if (src && !images.includes(src)) images.push(src); };
+  const walk = (elements) => {
+    for (const element of elements || []) {
+      if (element.kind === 'image' && element.role !== 'sticker') push(element.asset?.src);
+      walk(element.children);
+    }
+  };
+  for (const slide of row.document?.slides || []) {
+    push(slide.background?.asset?.src);
+    walk(slide.elements);
+  }
+  for (const slide of row.slides || []) {
+    for (const event of slide.events || []) push(event.imageOverride?.url || event.snapshot?.image);
+  }
+  if (!images.length) push(coverImageOf(row));
+  return images;
+}
+
 function serializeDeck(doc, { withSlides = true } = {}) {
   const row = doc?.toObject ? doc.toObject() : doc;
   const base = {
@@ -79,12 +104,24 @@ function serializeDeck(doc, { withSlides = true } = {}) {
     lastExportedAt: row.lastExportedAt || null,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
+    accountId: row.accountId ? String(row.accountId) : null,
+    name: row.name || row.title,
+    format: row.format || null,
+    status: row.status || 'active',
+    schemaVersion: row.schemaVersion || 1,
+    revision: row.revision || 1,
+    coverType: row.slides?.[0]?.type || row.document?.slides?.[0]?.preset?.id || null,
+    coverImage: coverImageOf(row),
+    previewImages: previewImagesOf(row),
   };
   if (!withSlides) return base;
   return {
     ...base,
     voice: row.voice || { entries: {}, tokens: {} },
     slides: (row.slides || []).map(serializeSlide),
+    document: row.document || null,
+    curation: row.curation || null,
+    sources: row.sources || [],
   };
 }
 
@@ -116,6 +153,7 @@ function coerceSlides(rawSlides) {
 
   for (const raw of (Array.isArray(rawSlides) ? rawSlides : []).slice(0, DECK_SLIDE_MAX)) {
     const result = coerceSlide(raw);
+    if (result.code === 'SCHEMA_VERSION_UNSUPPORTED') return result;
     if (result.error) {
       notes.push(result.error);
       continue;
@@ -210,10 +248,18 @@ async function createCarouselDeck(req, tenantKey, body = {}) {
 
   // A body with slides is a seed (the editor posting its reference issue);
   // without them it is an empty deck, which opens on cover and back.
+  if (Number(body.schemaVersion) >= 2 || body.document?.schemaVersion >= 2) {
+    return {
+      error: 'Schema version 2 issues are not created through the legacy slide manifest.',
+      status: 422,
+      code: 'SCHEMA_VERSION_UNSUPPORTED',
+    };
+  }
+
   const hasSlides = Array.isArray(body.slides) && body.slides.length > 0;
-  const { slides, notes } = hasSlides
-    ? coerceSlides(body.slides)
-    : { slides: seedSlides(), notes: [] };
+  const coerced = hasSlides ? coerceSlides(body.slides) : { slides: seedSlides(), notes: [] };
+  if (coerced.code) return { error: coerced.error, status: 422, code: coerced.code };
+  const { slides, notes } = coerced;
 
   const { PivotCarouselDeck } = getGlobalModels(req, 'PivotCarouselDeck');
   const doc = await PivotCarouselDeck.create({
@@ -263,8 +309,17 @@ async function updateCarouselDeck(req, tenantKey, deckId, body = {}) {
   if (body.issue !== undefined) doc.issue = coerceIssue(body.issue);
   if (body.voice !== undefined) doc.voice = coerceVoice(body.voice);
 
+  if ((doc.schemaVersion || 1) >= 2 && (body.slides !== undefined || body.document !== undefined)) {
+    return {
+      error: 'Schema version 2 issues are saved as documents, not trimmed into legacy slides.',
+      status: 422,
+      code: 'SCHEMA_VERSION_UNSUPPORTED',
+    };
+  }
+
   if (body.slides !== undefined) {
     const coerced = coerceSlides(body.slides);
+    if (coerced.code) return { error: coerced.error, status: 422, code: coerced.code };
     doc.slides = coerced.slides;
     notes.push(...coerced.notes);
   }
