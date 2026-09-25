@@ -96,6 +96,8 @@ describe('authenticatedRequest', () => {
     expect(result).toEqual({
       error: 'At least one catalog tag is required for published events.',
       code: 400,
+      errorCode: null,
+      errorData: { message: 'At least one catalog tag is required for published events.' },
     });
   });
 });
