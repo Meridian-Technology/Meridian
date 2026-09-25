@@ -127,7 +127,8 @@ async function sendSoloSwipeRemindersForTenant(req, options = {}) {
       rules: options.rules,
       triggerConfig: options.triggerConfig,
     }).rules;
-  if (options.dryRun !== true) {
+  const eligibilityOnly = options.eligibilityOnly === true;
+  if (!eligibilityOnly && options.dryRun !== true) {
     const quiet = quietHoursSendBlockForDelivery(options, {
       now,
       timeZone: tenant.pivotDropTimezone,
@@ -149,7 +150,7 @@ async function sendSoloSwipeRemindersForTenant(req, options = {}) {
   }
 
   const crewConfig = mergePivotCrewConfig(tenant.pivotCrewConfig);
-  if (!isNudgeWindowOpen(tenant, batchWeek, crewConfig.nudges.unfinishedSwipeReminderHours, now)) {
+  if (!eligibilityOnly && !isNudgeWindowOpen(tenant, batchWeek, crewConfig.nudges.unfinishedSwipeReminderHours, now)) {
     return {
       data: {
         tenantKey,
@@ -184,6 +185,24 @@ async function sendSoloSwipeRemindersForTenant(req, options = {}) {
   });
   const capped = capDeliveryRows(eligible, MAX_RUN_RECIPIENTS);
   const recipients = capped.deliveries;
+  if (eligibilityOnly) {
+    return {
+      data: {
+        tenantKey,
+        batchWeek,
+        sent: 0,
+        failed: 0,
+        eligible: eligible.length,
+        overflow: capped.recipientOverflowCount,
+        people: recipients.map((user) => ({
+          userId: user._id?.toString?.() || String(user._id || ''),
+          username: user.username || null,
+          name: user.name || null,
+        })),
+        deliveries: [],
+      },
+    };
+  }
   const copyPack = await getMergedCopyPackOrEmpty(req, { tenantKey });
   const copy = resolveRitualNotificationCopy('swipe', copyPack);
   const copyKey = options.copyBodyKey || NOTIFICATION_COPY_KEYS.ritual.swipe.body;

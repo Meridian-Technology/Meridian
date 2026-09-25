@@ -386,6 +386,12 @@ async function loadPivotPushRecipients(tenantKey) {
     .lean();
 }
 
+async function listWeeklyDropEligibleRecipients(tenantKey) {
+  const allRecipients = await loadPivotPushRecipients(tenantKey);
+  const filtered = await filterTenantUsersForExpoPushDelivery(tenantKey, allRecipients);
+  return filtered.users || [];
+}
+
 function summarizePushAudience(users = []) {
   const summary = {
     totalUsers: users.length,
@@ -895,4 +901,5 @@ module.exports = {
   getWeeklyDropStatus,
   updateWeeklyDropConfig,
   sendWeeklyDropPush,
+  listWeeklyDropEligibleRecipients,
 };

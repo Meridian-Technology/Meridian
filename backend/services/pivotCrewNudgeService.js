@@ -310,7 +310,8 @@ async function sendCrewUnfinishedSwipeNudgesForTenant(req, options = {}) {
     return { error: 'batchWeek must be YYYY-Www.', status: 400 };
   }
 
-  if (options.dryRun !== true) {
+  const eligibilityOnly = options.eligibilityOnly === true;
+  if (!eligibilityOnly && options.dryRun !== true) {
     const quiet = quietHoursSendBlockForDelivery(options, {
       now,
       timeZone: tenant.pivotDropTimezone,
@@ -350,7 +351,7 @@ async function sendCrewUnfinishedSwipeNudgesForTenant(req, options = {}) {
   const crewConfig = mergePivotCrewConfig(tenant.pivotCrewConfig);
   const reminderHours = crewConfig.nudges.unfinishedSwipeReminderHours;
 
-  if (!ruleMode && !isNudgeWindowOpen(tenant, batchWeek, reminderHours, now)) {
+  if (!eligibilityOnly && !ruleMode && !isNudgeWindowOpen(tenant, batchWeek, reminderHours, now)) {
     return {
       data: {
         tenantKey,
@@ -412,6 +413,7 @@ async function sendCrewUnfinishedSwipeNudgesForTenant(req, options = {}) {
   let crewsNudged = 0;
   const errors = [];
   const deliveries = [];
+  const people = [];
 
   for (const weekState of eligibleStates) {
     const crewId = weekState.crewId.toString();
@@ -421,6 +423,15 @@ async function sendCrewUnfinishedSwipeNudgesForTenant(req, options = {}) {
 
     const recipients = await loadNonSwiperPushRecipients(req, crewId, batchWeek);
     if (!recipients.length) {
+      continue;
+    }
+
+    if (eligibilityOnly) {
+      people.push(...recipients.map((recipient) => ({
+        userId: recipient._id?.toString?.() || String(recipient._id || ''),
+        username: recipient.username || null,
+        name: recipient.name || null,
+      })));
       continue;
     }
 
@@ -472,6 +483,7 @@ async function sendCrewUnfinishedSwipeNudgesForTenant(req, options = {}) {
       crewsNudged,
       errors: errors.slice(0, 5),
       deliveries,
+      ...(eligibilityOnly ? { people, eligible: people.length } : {}),
     },
   };
 }
@@ -489,7 +501,8 @@ async function sendPendingConsensusNudgesForTenant(req, options = {}) {
 
   const now = options.now || new Date();
   const batchWeek = options.batchWeek || resolvePivotLiveBatchWeek(tenant, now);
-  if (options.dryRun !== true) {
+  const eligibilityOnly = options.eligibilityOnly === true;
+  if (!eligibilityOnly && options.dryRun !== true) {
     const quiet = quietHoursSendBlockForDelivery(options, {
       now,
       timeZone: tenant.pivotDropTimezone,
@@ -546,6 +559,7 @@ async function sendPendingConsensusNudgesForTenant(req, options = {}) {
   let failed = 0;
   let crewsNudged = 0;
   const deliveries = [];
+  const people = [];
 
   for (const weekState of decidingStates) {
     if (ruleMode) {
@@ -614,10 +628,14 @@ async function sendPendingConsensusNudgesForTenant(req, options = {}) {
       copyBodyKey: options.copyBodyKey,
       copyTitleFallback: options.copyTitleFallback,
       copyBodyFallback: options.copyBodyFallback,
+      eligibilityOnly,
     });
     sent += result.data?.sent || 0;
     failed += result.data?.failed || 0;
     deliveries.push(...(result.data?.deliveries || []));
+    if (eligibilityOnly) {
+      people.push(...(result.data?.people || []));
+    }
     if ((result.data?.sent || 0) > 0) {
       crewsNudged += 1;
     }
@@ -632,6 +650,7 @@ async function sendPendingConsensusNudgesForTenant(req, options = {}) {
       crewsNudged,
       crewsChecked: decidingStates.length,
       deliveries,
+      ...(eligibilityOnly ? { people, eligible: people.length } : {}),
     },
   };
 }
@@ -755,6 +774,7 @@ async function notifyPendingConsensusConfirms(
     copyBodyKey = null,
     copyTitleFallback = null,
     copyBodyFallback = null,
+    eligibilityOnly = false,
   },
 ) {
   if (!pendingUserIds.length) {
@@ -772,7 +792,22 @@ async function notifyPendingConsensusConfirms(
       .lean();
 
     if (!recipients.length) {
-      return { data: { sent: 0, failed: 0, deliveries: [] } };
+      return { data: { sent: 0, failed: 0, deliveries: [], people: [] } };
+    }
+
+    if (eligibilityOnly) {
+      return {
+        data: {
+          sent: 0,
+          failed: 0,
+          deliveries: [],
+          people: recipients.map((recipient) => ({
+            userId: recipient._id?.toString?.() || String(recipient._id || ''),
+            username: recipient.username || null,
+            name: recipient.name || null,
+          })),
+        },
+      };
     }
 
     const copyPack = await getMergedCopyPackOrEmpty(req, { tenantKey: req.school });

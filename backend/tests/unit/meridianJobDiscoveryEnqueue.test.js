@@ -30,6 +30,7 @@ const {
   executeSoloSwipeReminder,
   SOLO_SWIPE_REMINDER_HANDLER_KEY,
   ensureSoloSwipeReminderDefinition,
+  sendSoloSwipeRemindersForTenant,
 } = require('../../services/meridianJobHandlers/soloSwipeReminder');
 const {
   registerEventDiscoveryEnqueueHandler,
@@ -44,6 +45,7 @@ const {
 const {
   evaluateMeridianNotificationSchedules,
 } = require('../../services/meridianNotificationDefinitionService');
+const { previewNotificationEligibility } = require('../../services/meridianNotificationEligibilityService');
 
 const USER_A = new mongoose.Types.ObjectId();
 
@@ -301,5 +303,37 @@ describe('meridianJobDiscoveryEnqueue', () => {
       copyKey: 'notifications.ritual.swipe.body',
     });
     expect(deliveries[0].body).toBeTruthy();
+  });
+
+  it('lists solo swipe eligibility before the nudge window without sending', async () => {
+    await seedPivotTenant(req, 'nyc', 'America/New_York');
+    await ensureSoloSwipeReminderDefinition(req);
+    const now = new Date('2026-06-04T23:00:00.000Z');
+
+    const blocked = await sendSoloSwipeRemindersForTenant(req, {
+      tenantKey: 'nyc',
+      now,
+      rules: [{
+        outcome: 'send',
+        conditions: [
+          { attribute: 'hasCrew', operator: 'is', value: false },
+          { attribute: 'deckComplete', operator: 'is', value: false },
+        ],
+      }],
+    });
+    expect(blocked.data.skipped).toBe('before_nudge_window');
+
+    const preview = await previewNotificationEligibility(req, {
+      handlerKey: 'solo_swipe_reminder',
+      tenantKey: 'nyc',
+    });
+    expect(preview.people).toEqual([
+      expect.objectContaining({ userId: String(USER_A), username: 'ari', name: 'Ari' }),
+    ]);
+    expect(preview.count).toBe(1);
+    expect(sendExpoPushToRecipients).not.toHaveBeenCalled();
+
+    const { MeridianJobRun } = getGlobalModels(req, 'MeridianJobRun');
+    expect(await MeridianJobRun.countDocuments()).toBe(0);
   });
 });
