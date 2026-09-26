@@ -6,7 +6,7 @@
   button { cursor: pointer; }
   &__bar, &__toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; background: var(--pivot-ops-surface); padding: 12px 18px; border-bottom: 1px solid var(--pivot-ops-border); flex: none; }
   &__bar { min-height: 76px; }
-  &__identity, &__actions, &__toolbar > div { display: flex; align-items: center; gap: 8px; min-width: 0; }
+  &__identity, &__actions, &__toolbar > div, &__commit { display: flex; align-items: center; gap: 8px; min-width: 0; }
   &__identity h1 { margin: 0 0 4px; font: inherit; font-size: 17px; font-weight: 500; color: var(--pivot-ops-ink); }
   &__identity span { font-size: 12px; color: var(--pivot-ops-ink-soft); }
   &__toolbar { padding: 8px 16px; flex-wrap: wrap; }
@@ -88,8 +88,221 @@
   &__banner { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 10px 16px; background: var(--pivot-ops-warn-soft); border-bottom: 1px solid var(--pivot-ops-border); }
   &__banner p { margin: 0; flex: 1; min-width: 180px; }
 }
+.jg-editor__tabs .jg-editor__sheet-close { display: none; }
 @media (max-width: 1100px) { .jg-editor__body { grid-template-columns: 144px minmax(0, 1fr) 264px; } .jg-editor__bar { flex-wrap: wrap; } .jg-editor__template-grid { grid-template-columns: 1fr; } }
-@media (max-width: 760px) { .jg-editor { height: calc(100dvh - 80px); min-height: 640px; } .jg-editor__body { grid-template-columns: 140px minmax(240px, 1fr) 260px; overflow-x: auto; } .jg-editor__footer > span:last-child { display: none; } }
+
+/*
+ * Phones and portrait tablets get a stage, a filmstrip, and a panel.
+ * The three-column grid left the canvas and templates past a horizontal
+ * scroll that the slide itself swallows, because the stage sets touch-action: none.
+ */
+@media (max-width: 840px) {
+  .jg-editor {
+    max-height: none;
+    border-radius: 0;
+    border-inline: 0;
+  }
+
+  .jg-editor__bar {
+    min-height: 0;
+    flex-wrap: nowrap;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 10px;
+  }
+
+  .jg-editor__identity {
+    flex: 1 1 120px;
+    min-width: 120px;
+  }
+
+  .jg-editor__identity > div { min-width: 0; }
+  .jg-editor__identity h1 { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .jg-editor__identity span { display: none; }
+
+  .jg-editor__actions {
+    flex: 1 1 auto;
+    min-width: 0;
+    flex-wrap: nowrap;
+    justify-content: flex-end;
+    overflow-x: auto;
+  }
+
+  .jg-editor__commit {
+    display: flex;
+    flex: none;
+    gap: 8px;
+    position: sticky;
+    right: 0;
+    z-index: 1;
+    margin-left: auto;
+    background: var(--pivot-ops-surface);
+  }
+
+  .jg-editor__actions > button:not(.is-primary):not([data-testid='export-issue']) {
+    position: relative;
+    flex: none;
+    min-width: 40px;
+    padding-inline: 8px;
+
+    > span {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+      white-space: nowrap;
+      border: 0;
+    }
+  }
+
+  .jg-editor__toolbar {
+    flex-wrap: nowrap;
+    justify-content: flex-start;
+    gap: 8px;
+    overflow-x: auto;
+    padding: 6px 8px;
+  }
+
+  .jg-editor__toolbar > div { flex: none; }
+  .jg-editor__toolbar button,
+  .jg-editor__tabs button,
+  .jg-editor__rail-actions button { min-height: 40px; min-width: 40px; }
+
+  .jg-editor__body {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr) auto auto;
+    overflow: hidden;
+  }
+
+  .jg-editor__canvas { grid-row: 1; padding: 12px; }
+  .jg-editor__rail { grid-row: 2; }
+  .jg-editor__inspector { grid-row: 3; }
+
+  .jg-editor__rail {
+    flex-direction: row;
+    align-items: stretch;
+    border-right: 0;
+    border-top: 1px solid var(--pivot-ops-border);
+  }
+
+  .jg-editor__rail-title { display: none; }
+
+  .jg-editor__thumbnails {
+    display: flex;
+    flex: 1;
+    flex-direction: row;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+    overflow-x: auto;
+    overflow-y: hidden;
+    overscroll-behavior-x: contain;
+    padding: 8px;
+  }
+
+  .jg-editor__thumbnail {
+    width: auto;
+    flex: 0 0 auto;
+    margin-bottom: 0;
+    touch-action: pan-x;
+  }
+
+  .jg-editor__thumbnail-label {
+    justify-content: center;
+    font-size: 0;
+  }
+
+  .jg-editor__thumbnail-label b { font-size: 11px; }
+
+  .jg-editor__rail-actions {
+    flex: none;
+    display: grid;
+    grid-template-columns: repeat(2, 36px);
+    align-content: center;
+    justify-content: center;
+    border-top: 0;
+    border-left: 1px solid var(--pivot-ops-border);
+    padding: 6px;
+    gap: 4px;
+  }
+
+  .jg-editor__rail-actions > button:first-child {
+    position: relative;
+    flex: none;
+
+    > span {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+      white-space: nowrap;
+      border: 0;
+    }
+  }
+
+  .jg-editor__rail-actions > div { display: contents; }
+  .jg-editor__rail-actions button { min-width: 36px; min-height: 36px; padding: 6px; }
+
+  .jg-editor__inspector {
+    border-left: 0;
+    border-top: 1px solid var(--pivot-ops-border);
+  }
+
+  .jg-editor__inspector:not(.is-open) .jg-editor__panel { display: none; }
+
+  .jg-editor__inspector.is-open .jg-editor__panel {
+    flex: none;
+    max-height: min(36dvh, 300px);
+    overflow: auto;
+    padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+  }
+
+  .jg-editor__inspector:not(.is-open) .jg-editor__tabs {
+    padding-bottom: calc(6px + env(safe-area-inset-bottom, 0px));
+  }
+
+  .jg-editor__inspector.is-open .jg-editor__sheet-close { display: inline-flex; flex: none; }
+
+  .jg-editor__template-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+
+  .jg-editor__footer.is-compact {
+    padding: 6px 10px calc(6px + env(safe-area-inset-bottom, 0px));
+
+    > span { display: none; }
+  }
+
+  .jg-editor__footer.is-compact:not(:has(a)) { display: none; }
+
+  .jg-editor__curation {
+    inset: 0;
+    border-radius: 0;
+    padding: 12px;
+  }
+}
+
+@media (pointer: coarse) {
+  .jg-editor__handle,
+  .jg-editor__rotate {
+    width: 22px;
+    height: 22px;
+  }
+
+  .jg-editor__handle--nw { left: -11px; top: -11px; }
+  .jg-editor__handle--ne { right: -11px; top: -11px; }
+  .jg-editor__handle--sw { left: -11px; bottom: -11px; }
+  .jg-editor__handle--se { right: -11px; bottom: -11px; }
+  .jg-editor__handle--n,
+  .jg-editor__handle--s { left: calc(50% - 11px); }
+  .jg-editor__handle--e,
+  .jg-editor__handle--w { top: calc(50% - 11px); }
+  .jg-editor__rotate { top: -36px; left: calc(50% - 11px); border-radius: 50%; }
+}
 
 .jg-editor__thumbnail { touch-action: none; }
 .jg-editor__thumbnail.is-drop-target { box-shadow: 0 -3px 0 #ff4f1f; }

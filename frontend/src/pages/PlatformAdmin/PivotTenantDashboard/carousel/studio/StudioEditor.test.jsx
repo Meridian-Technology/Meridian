@@ -223,6 +223,20 @@ test('a conflict keeps the local edit and can reload, compare, or save a new iss
   expect(onSaveCopy).toHaveBeenCalled();
 });
 
+test('templates open in a panel that can be closed without leaving the slide', () => {
+  render(<StudioEditor issue={makeIssue()} />);
+  const inspector = screen.getByRole('complementary', { name: 'Inspector' });
+  expect(inspector).not.toHaveClass('is-open');
+  fireEvent.click(screen.getAllByRole('button', { name: 'Templates' })[0]);
+  expect(inspector).toHaveClass('is-open');
+  fireEvent.click(screen.getByRole('button', { name: 'Close panel' }));
+  expect(inspector).not.toHaveClass('is-open');
+  fireEvent.click(screen.getByRole('button', { name: 'Design' }));
+  expect(inspector).toHaveClass('is-open');
+  fireEvent.click(screen.getByRole('button', { name: 'Design' }));
+  expect(inspector).not.toHaveClass('is-open');
+});
+
 test('recovery is offered only for the same user, account, and issue, and is not marked saved', () => {
   authenticatedRequest.mockResolvedValue({ data: { success: true, data: { assets: [] } } });
   const { recoveryStorageKey } = require('./studioPersistence');
