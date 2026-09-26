@@ -1,0 +1,96 @@
+name: Wake Relay job worker
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: relay-wake-main
+  cancel-in-progress: false
+
+jobs:
+  wake:
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == 'main' &&
+      github.event.workflow_run.head_repository.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    env:
+      VALIDATED_SHA: ${{ github.event.workflow_run.head_sha }}
+      GITHUB_TOKEN: ${{ github.token }}
+      RELAY_WAKE_URL: ${{ vars.RELAY_WAKE_URL }}
+      RELAY_WAKE_HMAC_KEY: ${{ secrets.RELAY_WAKE_HMAC_KEY }}
+    steps:
+      - name: Signal Relay after the validated commit reaches main
+        run: |
+          node <<'NODE'
+          const { createHmac, randomBytes } = require('node:crypto');
+
+          async function main() {
+            const { GITHUB_REPOSITORY, GITHUB_TOKEN, VALIDATED_SHA,
+              RELAY_WAKE_URL, RELAY_WAKE_HMAC_KEY } = process.env;
+            if (!RELAY_WAKE_URL || !RELAY_WAKE_HMAC_KEY) {
+              throw new Error('Set the RELAY_WAKE_URL variable and RELAY_WAKE_HMAC_KEY secret');
+            }
+
+            const branch = await fetch(
+              `https://api.github.com/repos/${GITHUB_REPOSITORY}/branches/main`,
+              {
+                headers: {
+                  authorization: `Bearer ${GITHUB_TOKEN}`,
+                  accept: 'application/vnd.github+json',
+                  'x-github-api-version': '2022-11-28',
+                },
+                signal: AbortSignal.timeout(15000),
+              },
+            );
+            if (!branch.ok) throw new Error(`Cannot verify main tip: HTTP ${branch.status}`);
+            const currentSha = (await branch.json()).commit.sha;
+            if (currentSha !== VALIDATED_SHA) {
+              console.log(`Skipping superseded CI run ${VALIDATED_SHA.slice(0, 12)}`);
+              return;
+            }
+
+            const url = new URL(RELAY_WAKE_URL);
+            if (url.protocol !== 'https:' || url.pathname !== '/v1/wake' ||
+                url.search || url.hash || url.username || url.password) {
+              throw new Error('RELAY_WAKE_URL must be an HTTPS /v1/wake URL');
+            }
+            const key = /^[0-9a-f]+$/i.test(RELAY_WAKE_HMAC_KEY) &&
+              RELAY_WAKE_HMAC_KEY.length >= 64 && RELAY_WAKE_HMAC_KEY.length % 2 === 0
+              ? Buffer.from(RELAY_WAKE_HMAC_KEY, 'hex')
+              : Buffer.from(RELAY_WAKE_HMAC_KEY, 'utf8');
+            if (key.length < 32) throw new Error('Wake key must be at least 32 bytes');
+
+            const timestamp = Date.now();
+            const nonce = randomBytes(16).toString('hex');
+            const signature = createHmac('sha256', key)
+              .update(`POST\n/v1/wake\n${timestamp}\n${nonce}\n`)
+              .digest('hex');
+            const response = await fetch(url, {
+              method: 'POST',
+              headers: {
+                'x-relay-wake-timestamp': String(timestamp),
+                'x-relay-wake-nonce': nonce,
+                'x-relay-wake-signature': signature,
+              },
+              body: Buffer.alloc(0),
+              signal: AbortSignal.timeout(15000),
+            });
+            if (response.status !== 202) {
+              throw new Error(`Relay did not accept wake: HTTP ${response.status}`);
+            }
+            console.log(`Wake accepted for ${VALIDATED_SHA.slice(0, 12)}; check Relay tail for sync outcome`);
+          }
+
+          main().catch((error) => {
+            console.error(error.message);
+            process.exitCode = 1;
+          });
+          NODE
