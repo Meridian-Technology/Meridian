@@ -9,6 +9,18 @@ const shape = { id: 'mark', kind: 'shape', layout: 'free', rotation: 0, frame: {
 const makeIssue = (elements = [shape]) => ({ _id: 'i', name: 'Lanterns', revision: 1, document: { schemaVersion: 2, width: 1080, height: 1350, slides: [{ id: 's', role: 'event', width: 1080, height: 1350, elements }] } });
 const node = () => screen.getByTestId('editor-stage').querySelector('[data-element-id="mark"]');
 beforeAll(() => { window.PointerEvent = MouseEvent; });
+test('closing a lettered field does not paint the words twice', () => {
+  const text = { id: 'mark', kind: 'text', text: 'Hello', presence: 'custom', style: { lettering: true }, frame: { x: 40, y: 50, width: 400, height: 80 } };
+  render(<StudioEditor issue={makeIssue([text])} />);
+  fireEvent.doubleClick(node());
+  const field = document.querySelector('.studio-art__text.is-editing');
+  field.textContent = 'Hello there';
+  fireEvent.blur(field);
+  const shown = node().querySelector('.studio-art__text');
+  expect(shown.textContent.replace(/\u00a0/g, ' ')).toBe('Hello there');
+  expect(shown.querySelector('.studio-art__letter-line')).not.toBeNull();
+  expect([...shown.childNodes].some(child => child.nodeType === Node.TEXT_NODE && child.textContent.trim())).toBe(false);
+});
 test('typed text stays when the field closes', () => {
   const text = { id: 'mark', kind: 'text', text: 'Hello', presence: 'custom', frame: { x: 40, y: 50, width: 200, height: 80 } };
   render(<StudioEditor issue={makeIssue([text])} />);

@@ -70,7 +70,7 @@ function TextBlock({ element, editing, editingLabel, onEdit, onMeasure, timezone
   }) : null;
   return <>
     {element.label && <div ref={labelRef} data-text-label="true" className="studio-art__label" contentEditable={editingLabel || undefined} suppressContentEditableWarning onBlur={editingLabel ? event => onEdit?.(element.id, readEditableText(event.currentTarget), 'label') : undefined}>{editingLabel ? null : element.label}</div>}
-    <div ref={ref} className={`studio-art__text${editing ? ' is-editing' : ''}`} style={paint}
+    <div key={editing ? 'editing' : 'display'} ref={ref} className={`studio-art__text${editing ? ' is-editing' : ''}`} style={paint}
       contentEditable={editing || undefined} suppressContentEditableWarning
       onBlur={editing ? event => onEdit?.(element.id, readEditableText(event.currentTarget)) : undefined}
       onPaste={editing ? event => {
