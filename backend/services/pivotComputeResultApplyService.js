@@ -1020,11 +1020,17 @@ async function resolvePivotTenant(req, tenantKey) {
 }
 
 async function resolveCurrentContextVersion(req, result, { authorize = null } = {}) {
+  const storedJob = await findJobByExternalId(req, result.jobId);
+  const jobOptions = storedJob?.kind === result.kind && storedJob?.cityKey === result.cityKey
+    ? (storedJob.options || {})
+    : {};
   const options = {
+    ...jobOptions,
     cityKey: result.cityKey,
     jobId: result.jobId,
     scheduleOccurrenceId: result.scheduleOccurrenceId ?? null,
     authorize: authorize || (async () => null),
+    discoveryOverrides: jobOptions,
   };
   if (result.kind === 'city-source-discovery') {
     const { buildCityDiscoveryContextSnapshot } = require('./pivotOffloadedDiscoveryContextService');

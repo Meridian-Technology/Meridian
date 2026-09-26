@@ -71,6 +71,7 @@ jest.mock('../../services/pivotOffloadedCurationRefreshContextService', () => ({
 }));
 
 const { resolvePivotTenant, publishIngestEvent } = require('../../services/pivotIngestPublishService');
+const offloadedRefreshContextService = require('../../services/pivotOffloadedCurationRefreshContextService');
 const { assignTags } = require('../../utilities/pivotTagAssigner');
 const { persistOutcome } = require('../../services/pivotSourceDiscoveryService');
 const { createCurationJob, updateCurationJob } = require('../../services/pivotCurationJobService');
@@ -342,6 +343,43 @@ describe('pivotComputeResultApplyService', () => {
 
       expect(preview.applyAllowed).toBe(false);
       expect(preview.blockingReasons[0].code).toBe('STALE_CONTEXT');
+    });
+
+    it('rebuilds a stored refresh context with the original request options', async () => {
+      const result = loadFixture('result-refresh-valid-completed.json');
+      await createComputeJob(req, {
+        externalJobId: result.jobId,
+        kind: result.kind,
+        cityKey: result.cityKey,
+        contractVersion: result.contractVersion,
+        contextVersion: result.basedOnContextVersion,
+        createIdempotencyKey: 'idem:create-refresh-options',
+        requestedAt: result.completedAt,
+        origin: { type: 'admin' },
+        options: { batchWeek: '2026-W37', forceBatchWeek: false },
+      });
+      offloadedRefreshContextService.buildCityCurationRefreshContextSnapshot
+        .mockImplementationOnce(async (_req, options) => ({
+          data: {
+            snapshot: {
+              contextVersion: options.batchWeek === '2026-W37'
+                ? result.basedOnContextVersion
+                : 'ctx:iowacity.refresh.other-week',
+            },
+          },
+        }));
+
+      const preview = await previewComputeResult(req, result);
+
+      expect(offloadedRefreshContextService.buildCityCurationRefreshContextSnapshot)
+        .toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
+          batchWeek: '2026-W37',
+          forceBatchWeek: false,
+          jobId: result.jobId,
+        }));
+      expect(preview.blockingReasons).not.toEqual(expect.arrayContaining([
+        expect.objectContaining({ code: 'STALE_CONTEXT' }),
+      ]));
     });
 
     it('rejects unknown contract versions fail-closed', () => {
