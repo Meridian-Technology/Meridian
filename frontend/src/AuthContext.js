@@ -374,7 +374,7 @@ export const AuthProvider = ({ children }) => {
             // Redirect to SAML login endpoint
             const baseUrl = process.env.NODE_ENV === 'production' 
                 ? window.location.origin 
-                : 'http://localhost:5001'; // Use backend URL directly in development
+                : (process.env.REACT_APP_API_URL || 'http://localhost:5001');
             const loginUrl = `${baseUrl}/auth/saml/login${relayState ? `?relayState=${encodeURIComponent(relayState)}` : ''}`;
             window.location.href = loginUrl;
         } catch (error) {
