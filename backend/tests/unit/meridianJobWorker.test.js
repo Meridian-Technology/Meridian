@@ -436,6 +436,22 @@ describe('meridianJobWorker boot guards', () => {
     })).toBe(true);
   });
 
+  it('leaves the poll loop off in development unless enabled', () => {
+    expect(shouldStartMeridianJobWorkerLoop({
+      env: { NODE_ENV: 'development' },
+    })).toBe(false);
+    expect(shouldStartMeridianJobWorkerLoop({
+      env: { NODE_ENV: 'development', ENABLE_MERIDIAN_JOB_WORKER: 'true' },
+    })).toBe(true);
+    expect(shouldStartMeridianJobWorkerLoop({
+      env: {
+        NODE_ENV: 'development',
+        ENABLE_MERIDIAN_JOB_WORKER: 'true',
+        DISABLE_MERIDIAN_JOB_WORKER: 'true',
+      },
+    })).toBe(false);
+  });
+
   it('starts when tests opt in with force=true', () => {
     const timer = startMeridianJobWorkerLoop({
       force: true,
