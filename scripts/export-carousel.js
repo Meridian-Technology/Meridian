@@ -8,7 +8,7 @@
  * rather than approximated. playwright-core downloads no browser of its own;
  * `channel: 'chrome'` uses the one you already have.
  *
- *   node scripts/export-carousel.js <deckId> <token> <slideCount> [baseUrl]
+ *   node scripts/export-carousel.js <deckId> <token> <slides> [baseUrl]
  *
  * The Export button in the Carousel tab prints this line with the arguments
  * filled in. The token is deck-scoped and expires in ten minutes.
@@ -26,15 +26,37 @@ const { chromium } = require('playwright-core');
 const WIDTH = 1080;
 const HEIGHT = 1350;
 const READY_TIMEOUT_MS = 20000;
+const MAX_SLIDES = 20;
+
+function parseSlideSpec(spec) {
+  const text = String(spec || '').trim();
+  const withinDeck = (slide) => Number.isInteger(slide) && slide >= 1 && slide <= MAX_SLIDES;
+  if (/^\d+-\d+$/.test(text)) {
+    const [start, end] = text.split('-').map(Number);
+    if (!withinDeck(start) || !withinDeck(end) || end < start) return null;
+    return Array.from({ length: end - start + 1 }, (_, index) => start + index);
+  }
+  if (/^\d+(,\d+)+$/.test(text)) {
+    const slides = text.split(',').map(Number);
+    if (slides.some((slide) => !withinDeck(slide)) || new Set(slides).size !== slides.length) return null;
+    return [...slides].sort((left, right) => left - right);
+  }
+  if (/^\d+$/.test(text)) {
+    const count = Number(text);
+    if (!withinDeck(count)) return null;
+    return Array.from({ length: count }, (_, index) => index + 1);
+  }
+  return null;
+}
 
 function usage(message) {
   if (message) console.error(`\n${message}`);
   console.error(`
-Usage: node scripts/export-carousel.js <deckId> <token> <slideCount> [baseUrl]
+Usage: node scripts/export-carousel.js <deckId> <token> <slides> [baseUrl]
 
   deckId      the deck to render
   token       export token, from the Export button (valid ten minutes)
-  slideCount  how many slides the deck has
+  slides      a count (3 = slides 1–3), a range (2-2, 2-4), or a list (2,4)
   baseUrl     defaults to http://localhost:3000
 
 Environment:
@@ -48,8 +70,8 @@ async function main() {
   const [deckId, token, countArg, baseUrl = 'http://localhost:3000'] = process.argv.slice(2);
   if (!deckId || !token || !countArg) usage('Missing an argument.');
 
-  const count = Number(countArg);
-  if (!Number.isInteger(count) || count < 1) usage(`Not a slide count: ${countArg}`);
+  const slides = parseSlideSpec(countArg);
+  if (!slides) usage(`Not a slide selection: ${countArg}`);
 
   const outDir = process.env.OUT_DIR || path.join('out', `carousel-${deckId}`);
   await fs.mkdir(outDir, { recursive: true });
@@ -72,12 +94,12 @@ async function main() {
   });
   const page = await context.newPage();
 
-  console.log(`Rendering ${count} slide${count === 1 ? '' : 's'} at ${WIDTH}x${HEIGHT} -> ${outDir}`);
+  console.log(`Rendering ${slides.length} slide${slides.length === 1 ? '' : 's'} at ${WIDTH}x${HEIGHT} -> ${outDir}`);
 
   const written = [];
   let failed = 0;
 
-  for (let i = 1; i <= count; i += 1) {
+  for (const i of slides) {
     const url = `${baseUrl}/carousel-export/${deckId}/${i}?token=${encodeURIComponent(token)}`;
     const file = path.join(outDir, `slide-${String(i).padStart(2, '0')}.png`);
 

@@ -9,6 +9,18 @@ const shape = { id: 'mark', kind: 'shape', layout: 'free', rotation: 0, frame: {
 const makeIssue = (elements = [shape]) => ({ _id: 'i', name: 'Lanterns', revision: 1, document: { schemaVersion: 2, width: 1080, height: 1350, slides: [{ id: 's', role: 'event', width: 1080, height: 1350, elements }] } });
 const node = () => screen.getByTestId('editor-stage').querySelector('[data-element-id="mark"]');
 beforeAll(() => { window.PointerEvent = MouseEvent; });
+test('closing a lettered field does not paint the words twice', () => {
+  const text = { id: 'mark', kind: 'text', text: 'Hello', presence: 'custom', style: { lettering: true }, frame: { x: 40, y: 50, width: 400, height: 80 } };
+  render(<StudioEditor issue={makeIssue([text])} />);
+  fireEvent.doubleClick(node());
+  const field = document.querySelector('.studio-art__text.is-editing');
+  field.textContent = 'Hello there';
+  fireEvent.blur(field);
+  const shown = node().querySelector('.studio-art__text');
+  expect(shown.textContent.replace(/\u00a0/g, ' ')).toBe('Hello there');
+  expect(shown.querySelector('.studio-art__letter-line')).not.toBeNull();
+  expect([...shown.childNodes].some(child => child.nodeType === Node.TEXT_NODE && child.textContent.trim())).toBe(false);
+});
 test('typed text stays when the field closes', () => {
   const text = { id: 'mark', kind: 'text', text: 'Hello', presence: 'custom', frame: { x: 40, y: 50, width: 200, height: 80 } };
   render(<StudioEditor issue={makeIssue([text])} />);
@@ -180,12 +192,43 @@ test('a saved issue can export through Relay or a command', async () => {
   expect(screen.getByTestId('export-issue')).toBeEnabled();
   expect(screen.getByTestId('export-issue').title).toMatch(/saved revision/);
   fireEvent.click(screen.getByTestId('export-issue'));
-  fireEvent.click(screen.getByRole('button', { name: 'Relay' }));
+  fireEvent.click(screen.getByRole('radio', { name: 'Relay' }));
+  expect(onExport).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole('button', { name: 'Confirm' }));
   expect(onExport).toHaveBeenCalled();
   fireEvent.click(screen.getByTestId('export-issue'));
-  fireEvent.click(screen.getByRole('button', { name: 'Command line' }));
+  fireEvent.click(screen.getByRole('radio', { name: 'Command line' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Confirm' }));
   expect(await screen.findByLabelText('Export command')).toHaveValue(
     `node scripts/export-carousel.js deck1 'tok.en' 1 '${window.location.origin}'`,
+  );
+  authenticatedRequest.mockImplementation(async () => ({ data: { success: true, data: { assets: [] } } }));
+});
+
+test('a command can export one slide out of a longer issue', async () => {
+  const issue = { ...makeIssue(), tenantKey: 'sf', _id: 'deck1' };
+  issue.document.slides.push({ id: 's2', role: 'back', width: 1080, height: 1350, elements: [] });
+  authenticatedRequest.mockImplementation(async (url) => {
+    if (String(url).includes('/export-token')) {
+      return { data: { success: true, data: { token: 'tok.en', deckId: 'deck1', slideCount: 2 } } };
+    }
+    return { data: { success: true, data: { assets: [] } } };
+  });
+  const onExport = jest.fn();
+  render(<StudioEditor issue={issue} onExport={onExport} />);
+  fireEvent.click(screen.getByTestId('export-issue'));
+  fireEvent.click(screen.getByRole('checkbox', { name: /01/ }));
+  fireEvent.click(screen.getByRole('checkbox', { name: /02/ }));
+  fireEvent.click(screen.getByRole('radio', { name: 'Relay' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Confirm' }));
+  expect(onExport).toHaveBeenCalledWith([2]);
+  fireEvent.click(screen.getByTestId('export-issue'));
+  fireEvent.click(screen.getByRole('checkbox', { name: /01/ }));
+  fireEvent.click(screen.getByRole('checkbox', { name: /02/ }));
+  fireEvent.click(screen.getByRole('radio', { name: 'Command line' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Confirm' }));
+  expect(await screen.findByLabelText('Export command')).toHaveValue(
+    `node scripts/export-carousel.js deck1 'tok.en' 2-2 '${window.location.origin}'`,
   );
   authenticatedRequest.mockImplementation(async () => ({ data: { success: true, data: { assets: [] } } }));
 });
@@ -221,6 +264,20 @@ test('a conflict keeps the local edit and can reload, compare, or save a new iss
   fireEvent.click(screen.getByRole('button', { name: 'Save as a new issue' }));
   await waitFor(() => expect(onOpenIssue).toHaveBeenCalledWith('copy'));
   expect(onSaveCopy).toHaveBeenCalled();
+});
+
+test('templates open in a panel that can be closed without leaving the slide', () => {
+  render(<StudioEditor issue={makeIssue()} />);
+  const inspector = screen.getByRole('complementary', { name: 'Inspector' });
+  expect(inspector).not.toHaveClass('is-open');
+  fireEvent.click(screen.getAllByRole('button', { name: 'Templates' })[0]);
+  expect(inspector).toHaveClass('is-open');
+  fireEvent.click(screen.getByRole('button', { name: 'Close panel' }));
+  expect(inspector).not.toHaveClass('is-open');
+  fireEvent.click(screen.getByRole('button', { name: 'Design' }));
+  expect(inspector).toHaveClass('is-open');
+  fireEvent.click(screen.getByRole('button', { name: 'Design' }));
+  expect(inspector).not.toHaveClass('is-open');
 });
 
 test('recovery is offered only for the same user, account, and issue, and is not marked saved', () => {

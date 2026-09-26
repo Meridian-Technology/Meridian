@@ -14,14 +14,22 @@ import useStudioNavigationGuard from './useStudioNavigationGuard';
 import useStudioAutosave from './useStudioAutosave';
 import { compareDocuments, exportAvailability } from './studioPersistence';
 import CarouselExportChoice from '../CarouselExportChoice';
+import PivotCarouselPopup from '../PivotCarouselPopup';
 import './StudioEditor.scss';
 
 const HANDLES = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'];
+const NARROW_EDITOR = '(max-width: 840px)';
 const TITLES = { 'loose-letters': 'Loose letters', 'open-invitation': 'Open invitation', 'kept-somewhere': 'Kept somewhere', 'photo-note': 'Photo note', 'on-the-bill': 'On the bill', 'in-the-room': 'In the room', 'paper-close': 'Paper close', 'orange-close': 'Orange close' };
+function slideExportLabel(item) {
+  if (item?.role === 'cover') return 'Cover';
+  if (item?.role === 'back') return 'Back';
+  return TITLES[item?.preset?.id] || 'Slide';
+}
 const typingTarget = target => Boolean(target?.closest?.('input, textarea, select, [contenteditable="true"]'));
 const clone = value => JSON.parse(JSON.stringify(value));
 function Button({ icon, children, title, ...props }) {
-  return <button type="button" title={title || (typeof children === 'string' ? children : undefined)} {...props}>{icon && <Icon icon={icon} aria-hidden="true" />}{children}</button>;
+  const label = title || (typeof children === 'string' ? children : undefined);
+  return <button type="button" title={label} {...props}>{icon && <Icon icon={icon} aria-hidden="true" />}{children != null && children !== false ? <span>{children}</span> : null}</button>;
 }
 function FileButton({ label, disabled, onFile }) {
   return <label className={`jg-editor__upload${disabled ? ' is-disabled' : ''}`}><Icon icon="lucide:upload" />{label}<input type="file" aria-label={label} accept="image/png,image/jpeg,image/webp,image/gif" disabled={disabled} onChange={event => { const file = event.target.files?.[0]; event.target.value = ''; if (file) onFile(file); }} /></label>;
@@ -59,9 +67,11 @@ export default function StudioEditor({ issue, onSave, onSaveCopy, onReload, onOp
   const [accountAssets, setAccountAssets] = useState([]);
   const [curationId, setCurationId] = useState(null);
   const controlStart = useRef(null);
-  const drag = useRef(null); const dragSlide = useRef(null);
+  const drag = useRef(null); const dragSlide = useRef(null); const suppressSlideClick = useRef(false);
   const [slideDropId, setSlideDropId] = useState(null);
   const [imageTarget, setImageTarget] = useState(null);
+  const [sheetOpen, setSheetOpen] = useState(false);
+  const [narrow, setNarrow] = useState(() => typeof window !== 'undefined' && typeof window.matchMedia === 'function' && window.matchMedia(NARROW_EDITOR).matches);
   const stageRef = useRef(null); const canvasRef = useRef(null); const rootRef = useRef(null);
   const measurements = useRef({}); const measureFrame = useRef(null);
   const selectionRef = useRef(selected); selectionRef.current = selected;
@@ -119,8 +129,11 @@ export default function StudioEditor({ issue, onSave, onSaveCopy, onReload, onOp
   const change = (command, ...args) => commit(command(docRef.current, slide?.id, ...args), command.name);
   const fit = useCallback(() => {
     const box = canvasRef.current?.getBoundingClientRect();
-    if (!box || box.width < 60 || box.height < 60) return;
-    setZoom(Math.max(0.1, Math.min(1, Math.min((box.width - 72) / 1080, (box.height - 72) / 1350))));
+    if (!box || box.width < 48 || box.height < 48) return;
+    const styles = getComputedStyle(canvasRef.current);
+    const padX = (parseFloat(styles.paddingLeft) || 0) + (parseFloat(styles.paddingRight) || 0);
+    const padY = (parseFloat(styles.paddingTop) || 0) + (parseFloat(styles.paddingBottom) || 0);
+    setZoom(Math.max(0.1, Math.min(1, Math.min((box.width - padX) / 1080, (box.height - padY) / 1350))));
   }, []);
   useLayoutEffect(() => {
     fit();
@@ -128,6 +141,24 @@ export default function StudioEditor({ issue, onSave, onSaveCopy, onReload, onOp
     if (canvasRef.current) observer?.observe(canvasRef.current);
     return () => observer?.disconnect();
   }, [fit]);
+  useEffect(() => {
+    const node = rootRef.current;
+    const query = typeof window.matchMedia === 'function' ? window.matchMedia(NARROW_EDITOR) : null;
+    const update = () => {
+      const width = node?.getBoundingClientRect().width || 0;
+      setNarrow((query?.matches ?? false) || (width > 0 && width < 840));
+    };
+    update();
+    if (query && typeof query.addEventListener === 'function') query.addEventListener('change', update);
+    else query?.addListener?.(update);
+    const observer = typeof ResizeObserver === 'undefined' || !node ? null : new ResizeObserver(update);
+    observer?.observe(node);
+    return () => {
+      if (query && typeof query.removeEventListener === 'function') query.removeEventListener('change', update);
+      else query?.removeListener?.(update);
+      observer?.disconnect();
+    };
+  }, []);
   useEffect(() => {
     if (!slides.some(item => item.id === slideId)) setSlideId(slides[0]?.id || null);
     setSelected(current => current.filter(id => Boolean(findElement(slide, id))));
@@ -361,9 +392,44 @@ export default function StudioEditor({ issue, onSave, onSaveCopy, onReload, onOp
     if (result.data?.success) setCurationId(result.data.data.draft.id); else setNotice(result.data?.message || 'Could not open the selection.');
     } catch (_) { setNotice('Could not open the selection. Your edits are still here.'); }
   };
-  const applyTemplate = (preset, variation = 1) => { change(commands.applySlidePreset, preset, variation); setSelected([]); setMode('select'); };
+  const applyTemplate = (preset, variation = 1) => { change(commands.applySlidePreset, preset, variation); setSelected([]); setMode('select'); if (narrow) setSheetOpen(false); };
   const selectSlide = id => { cancelGesture(); setSlideId(id); setSelected([]); setEditingId(null); setMode('select'); };
-  const addSlide = role => { const next = commands.insertSlide(doc, index + 1, role); commit(next, 'Add slide'); selectSlide(next.slides[index + 1]?.id); setPanel('templates'); };
+  const addSlide = role => { const next = commands.insertSlide(doc, index + 1, role); commit(next, 'Add slide'); selectSlide(next.slides[index + 1]?.id); setPanel('templates'); setSheetOpen(true); };
+  const openPanel = tab => { if (panel === tab && sheetOpen) setSheetOpen(false); else { setPanel(tab); setSheetOpen(true); } };
+  const beginSlideDrag = (event, id) => {
+    if (event.button !== 0) return;
+    dragSlide.current = { id, pointerId: event.pointerId, x: event.clientX, y: event.clientY, moved: false, scroll: narrow };
+    if (!narrow) event.currentTarget.setPointerCapture?.(event.pointerId);
+  };
+  const moveSlideDrag = event => {
+    const active = dragSlide.current;
+    if (!active || active.pointerId !== event.pointerId) return;
+    if (active.scroll) {
+      if (Math.hypot(event.clientX - active.x, event.clientY - active.y) > 8) active.moved = true;
+      return;
+    }
+    if (Math.abs(event.clientY - active.y) < 5) return;
+    active.moved = true;
+    event.preventDefault();
+    const target = document.elementFromPoint(event.clientX, event.clientY)?.closest('[data-slide-id]');
+    if (target) { active.targetId = target.dataset.slideId; setSlideDropId(active.targetId); }
+    const rail = event.currentTarget.parentElement;
+    const box = rail.getBoundingClientRect();
+    if (event.clientY < box.top + 28) rail.scrollTop -= 12;
+    if (event.clientY > box.bottom - 28) rail.scrollTop += 12;
+  };
+  const endSlideDrag = event => {
+    const active = dragSlide.current;
+    const scrolled = Boolean(active?.scroll && active.moved);
+    dragSlide.current = null;
+    setSlideDropId(null);
+    if (scrolled) {
+      suppressSlideClick.current = true;
+      queueMicrotask(() => { suppressSlideClick.current = false; });
+      return;
+    }
+    if (active?.moved && active.targetId && active.pointerId === event.pointerId) commit(commands.reorderSlides(docRef.current, active.id, commands.slidesOf(docRef.current).findIndex(row => row.id === active.targetId)), 'Reorder slide');
+  };
   const allElements = []; walkElements(slide?.elements, element => allElements.push(element));
   const overflowingCards = allElements.filter(element => cardOverflow(element) > 1);
   const status = saveState === 'saved' ? (dirty ? 'Unsaved' : 'Saved') : { unsaved: dirty ? 'Unsaved' : 'Saved', saving: 'Saving…', offline: 'Offline', conflict: 'Conflict', failed: 'Save failed' }[saveState];
@@ -376,17 +442,17 @@ export default function StudioEditor({ issue, onSave, onSaveCopy, onReload, onOp
   return <div className="jg-editor pivot-ops" ref={rootRef} tabIndex={0} onKeyDown={keyDown} onPointerMove={move} onPointerUp={finish} onPointerCancel={cancelGesture} onLostPointerCapture={() => { if (drag.current) cancelGesture(); }}>
     <header className="jg-editor__bar">
       <div className="jg-editor__identity">{onBack && <Button icon="lucide:arrow-left" aria-label="Back to issues" onClick={() => { if (!dirty || window.confirm('Leave this issue and discard unsaved changes?')) onBack(); }} />}<div><h1>{issue.name || issue.title || 'Untitled issue'}</h1><span>{issue.format === 'sorry-you-missed-it' ? 'Sorry you missed it' : 'City picks'} · {slides.length} slides</span></div></div>
-      <div className="jg-editor__actions"><span data-testid="save-state"><PivotOpsStatus tone={saveState === 'failed' || saveState === 'conflict' || saveState === 'offline' ? 'danger' : dirty ? 'warn' : 'success'}>{status}</PivotOpsStatus></span><Button icon="lucide:list-filter" onClick={editSelection} disabled={!account && !onEditSelection}>Edit selection</Button><Button icon="lucide:history" onClick={openCheckpoints}>Checkpoints</Button><Button className="is-primary" onClick={save} disabled={!dirty || saveState === 'saving' || saveState === 'conflict' || uploading}>Save</Button><Button data-testid="export-issue" disabled={!exportState.enabled} title={exportState.reason} onClick={() => setExportOpen(true)}>Export</Button></div>
+      <div className="jg-editor__actions"><span data-testid="save-state"><PivotOpsStatus tone={saveState === 'failed' || saveState === 'conflict' || saveState === 'offline' ? 'danger' : dirty ? 'warn' : 'success'}>{status}</PivotOpsStatus></span><Button icon="lucide:list-filter" onClick={editSelection} disabled={!account && !onEditSelection}>Edit selection</Button><Button icon="lucide:history" onClick={openCheckpoints}>Checkpoints</Button><div className="jg-editor__commit"><Button className="is-primary" onClick={save} disabled={!dirty || saveState === 'saving' || saveState === 'conflict' || uploading}>Save</Button><Button data-testid="export-issue" disabled={!exportState.enabled} title={exportState.reason} onClick={() => setExportOpen(true)}>Export</Button></div></div>
     </header>
 
     <div className="jg-editor__toolbar">
-      <div><Button icon="lucide:undo-2" aria-label="Undo" onClick={() => setHistory(undo)} disabled={!history.past.length} /><Button icon="lucide:redo-2" aria-label="Redo" onClick={() => setHistory(redo)} disabled={!history.future.length} /><span className="jg-editor__separator" /><Button icon="lucide:type" disabled={!slide} onClick={() => { const next = commands.insertText(doc, slide.id); commit(next, 'Add text'); setSelected([next.slides[index].elements.at(-1).id]); setPanel('design'); }}>Text</Button><Button icon="lucide:image" disabled={!slide} onClick={() => setImageTarget({ slideId: slide.id })}>Image</Button><Button icon="lucide:layout-template" onClick={() => setPanel('templates')}>Templates</Button></div>
+      <div><Button icon="lucide:undo-2" aria-label="Undo" onClick={() => setHistory(undo)} disabled={!history.past.length} /><Button icon="lucide:redo-2" aria-label="Redo" onClick={() => setHistory(redo)} disabled={!history.future.length} /><span className="jg-editor__separator" /><Button icon="lucide:type" disabled={!slide} onClick={() => { const next = commands.insertText(doc, slide.id); commit(next, 'Add text'); setSelected([next.slides[index].elements.at(-1).id]); setPanel('design'); setSheetOpen(true); }}>Text</Button><Button icon="lucide:image" disabled={!slide} onClick={() => setImageTarget({ slideId: slide.id })}>Image</Button><Button icon="lucide:layout-template" onClick={() => openPanel('templates')}>Templates</Button></div>
       <div><Button icon="lucide:group" aria-label="Group" disabled={selected.length < 2} onClick={() => change(commands.groupElements, commands.topSelection(slide, selected))} /><Button icon="lucide:ungroup" aria-label="Ungroup" disabled={primary?.role !== 'group'} onClick={() => change(commands.ungroupElements, selected)} /><Button icon={locked ? 'lucide:lock' : 'lucide:lock-open'} aria-label={locked ? 'Unlock' : 'Lock'} disabled={!primary} onClick={() => change(commands.setLocked, selected, !primary?.locked)} /><Button icon="lucide:copy" aria-label="Duplicate" disabled={!primary || locked} onClick={() => change(commands.duplicateElements, commands.topSelection(slide, selected))} /><Button icon="lucide:trash-2" aria-label="Delete" disabled={!primary || locked} onClick={() => { change(commands.deleteElements, selected); setSelected([]); }} /><span className="jg-editor__separator" /><Button onClick={() => { manualZoom.current = false; fit(); }}>Fit</Button><input aria-label="Zoom" type="range" min="0.1" max="1.5" step="0.01" value={zoom} onChange={event => { manualZoom.current = true; setZoom(Number(event.target.value)); }} /><span className="jg-editor__zoom">{Math.round(zoom * 100)}%</span></div>
     </div>
     <div className="jg-editor__body">
       <aside className="jg-editor__rail" aria-label="Slides"><div className="jg-editor__rail-title">Slides <Button icon="lucide:plus" aria-label="Add slide" disabled={slides.length >= 20} onClick={() => addSlide('event')} /></div>
-        <div className="jg-editor__thumbnails">{slides.map((item, i) => <button key={item.id} type="button" data-slide-id={item.id} className={`jg-editor__thumbnail${item.id === slide?.id ? ' is-active' : ''}${slideDropId === item.id ? ' is-drop-target' : ''}`} aria-label={`Slide ${i + 1}`} aria-current={item.id === slide?.id ? 'true' : undefined} onClick={() => selectSlide(item.id)} onPointerDown={event => { if (event.button !== 0) return; dragSlide.current = { id: item.id, pointerId: event.pointerId, y: event.clientY, moved: false }; event.currentTarget.setPointerCapture?.(event.pointerId); }} onPointerMove={event => { const active = dragSlide.current; if (!active || active.pointerId !== event.pointerId || Math.abs(event.clientY - active.y) < 5) return; active.moved = true; event.preventDefault(); const target = document.elementFromPoint(event.clientX, event.clientY)?.closest('[data-slide-id]'); if (target) { active.targetId = target.dataset.slideId; setSlideDropId(active.targetId); } const rail = event.currentTarget.parentElement; const box = rail.getBoundingClientRect(); if (event.clientY < box.top + 28) rail.scrollTop -= 12; if (event.clientY > box.bottom - 28) rail.scrollTop += 12; }} onPointerUp={event => { const active = dragSlide.current; dragSlide.current = null; setSlideDropId(null); if (active?.moved && active.targetId && active.pointerId === event.pointerId) commit(commands.reorderSlides(docRef.current, active.id, commands.slidesOf(docRef.current).findIndex(row => row.id === active.targetId)), 'Reorder slide'); }} onPointerCancel={() => { dragSlide.current = null; setSlideDropId(null); }} onLostPointerCapture={() => { dragSlide.current = null; setSlideDropId(null); }} onDragStart={event => event.preventDefault()}><StudioSlide doc={doc} slideIndex={i} width={120} /><span className="jg-editor__thumbnail-label"><b>{i + 1}</b>{item.role === 'cover' ? 'Cover' : item.role === 'back' ? 'Back' : TITLES[item.preset?.id] || 'Slide'}</span></button>)}</div>
-        <div className="jg-editor__rail-actions"><Button icon="lucide:plus" disabled={slides.length >= 20} onClick={() => addSlide('event')}>Add slide</Button><div><Button icon="lucide:arrow-up" aria-label="Move slide up" disabled={!slide || index === 0} onClick={() => commit(commands.reorderSlides(doc, slide.id, index - 1), 'Reorder slide')} /><Button icon="lucide:arrow-down" aria-label="Move slide down" disabled={!slide || index === slides.length - 1} onClick={() => commit(commands.reorderSlides(doc, slide.id, index + 1), 'Reorder slide')} /><Button icon="lucide:copy" aria-label="Duplicate slide" disabled={!slide || slides.length >= 20} onClick={() => commit(commands.duplicateSlide(doc, slide.id), 'Duplicate slide')} /><Button icon="lucide:trash-2" aria-label="Delete slide" disabled={!slide} onClick={() => { commit(commands.deleteSlide(doc, slide.id), 'Delete slide'); setSelected([]); }} /></div></div>
+        <div className="jg-editor__thumbnails">{slides.map((item, i) => <button key={item.id} type="button" data-slide-id={item.id} className={`jg-editor__thumbnail${item.id === slide?.id ? ' is-active' : ''}${slideDropId === item.id ? ' is-drop-target' : ''}`} aria-label={`Slide ${i + 1}`} aria-current={item.id === slide?.id ? 'true' : undefined} onClick={() => { if (suppressSlideClick.current) return; selectSlide(item.id); }} onPointerDown={event => beginSlideDrag(event, item.id)} onPointerMove={moveSlideDrag} onPointerUp={endSlideDrag} onPointerCancel={() => { const active = dragSlide.current; if (active?.scroll && active.moved) { suppressSlideClick.current = true; queueMicrotask(() => { suppressSlideClick.current = false; }); } dragSlide.current = null; setSlideDropId(null); }} onLostPointerCapture={() => { dragSlide.current = null; setSlideDropId(null); }} onDragStart={event => event.preventDefault()}><StudioSlide doc={doc} slideIndex={i} width={narrow ? 56 : 120} /><span className="jg-editor__thumbnail-label"><b>{i + 1}</b>{item.role === 'cover' ? 'Cover' : item.role === 'back' ? 'Back' : TITLES[item.preset?.id] || 'Slide'}</span></button>)}</div>
+        <div className="jg-editor__rail-actions"><Button icon="lucide:plus" disabled={slides.length >= 20} onClick={() => addSlide('event')}>Add slide</Button><div><Button icon={narrow ? 'lucide:chevron-left' : 'lucide:arrow-up'} aria-label="Move slide up" disabled={!slide || index === 0} onClick={() => commit(commands.reorderSlides(doc, slide.id, index - 1), 'Reorder slide')} /><Button icon={narrow ? 'lucide:chevron-right' : 'lucide:arrow-down'} aria-label="Move slide down" disabled={!slide || index === slides.length - 1} onClick={() => commit(commands.reorderSlides(doc, slide.id, index + 1), 'Reorder slide')} /><Button icon="lucide:copy" aria-label="Duplicate slide" disabled={!slide || slides.length >= 20} onClick={() => commit(commands.duplicateSlide(doc, slide.id), 'Duplicate slide')} /><Button icon="lucide:trash-2" aria-label="Delete slide" disabled={!slide} onClick={() => { commit(commands.deleteSlide(doc, slide.id), 'Delete slide'); setSelected([]); }} /></div></div>
       </aside>
       <main className="jg-editor__canvas" ref={canvasRef} data-testid="editor-canvas" onPointerDown={event => { if (event.target === event.currentTarget) setSelected([]); }}>
         {slide ? <div className="jg-editor__stage" ref={stageRef} data-testid="editor-stage" style={{ width: 1080 * zoom, height: 1350 * zoom }} onPointerDown={event => { if (!event.target.closest('[data-handle]')) begin(event); }} onDoubleClick={doubleClick} onDragStart={event => event.preventDefault()}>
@@ -398,7 +464,7 @@ export default function StudioEditor({ issue, onSave, onSaveCopy, onReload, onOp
           </div>}
         </div> : <div className="jg-editor__empty" data-testid="empty-document"><Icon icon="lucide:panels-top-left" /><h2>No slides yet</h2><p>Add a slide and choose a template to begin.</p><Button className="is-primary" onClick={() => addSlide('cover')}>Add cover</Button></div>}
       </main>
-      <aside className="jg-editor__inspector" aria-label="Inspector"><nav className="jg-editor__tabs">{['design', 'templates', 'assets', 'layers'].map(tab => <Button key={tab} aria-pressed={panel === tab} onClick={() => setPanel(tab)}>{tab[0].toUpperCase() + tab.slice(1)}</Button>)}</nav><div className="jg-editor__panel">
+      <aside className={`jg-editor__inspector${sheetOpen ? ' is-open' : ''}`} aria-label="Inspector"><nav className="jg-editor__tabs">{['design', 'templates', 'assets', 'layers'].map(tab => <Button key={tab} aria-pressed={panel === tab} aria-expanded={narrow ? sheetOpen && panel === tab : undefined} onClick={() => openPanel(tab)}>{tab[0].toUpperCase() + tab.slice(1)}</Button>)}{sheetOpen ? <Button className="jg-editor__sheet-close" icon="lucide:chevron-down" aria-label="Close panel" onClick={() => setSheetOpen(false)} /> : null}</nav><div className="jg-editor__panel">
         {panel === 'design' && <>
           {overflowingCards.map(card => <section key={card.id} className="jg-editor__warning"><h2>Copy needs more room</h2><p>Text overlaps the details in this card. Resize the card or reduce its text size.</p><Button onClick={() => change(commands.growTextFrame, card.id, cardOverflow(card) + 24)}>Make card taller</Button><Button onClick={() => change(commands.fitCardText, card.id)}>Fit card text</Button></section>)}
           <section><h2>{primary ? commands.elementLabel(primary).replaceAll('-', ' ') : 'Slide design'}</h2>{!primary && <p>Select an object to move, resize, or style it. Double-click text to edit.</p>}
@@ -422,13 +488,13 @@ export default function StudioEditor({ issue, onSave, onSaveCopy, onReload, onOp
         {panel === 'layers' && <section><h2>Layers</h2><p>Select a card or group to move it as a whole.</p>{[...allElements].reverse().map(element => <div key={element.id} className="jg-editor__layer"><Button aria-pressed={selected.includes(element.id)} onClick={event => { setSelected(event.shiftKey ? [...new Set([...selected, element.id])] : [element.id]); setMode('select'); }}>{element.kind === 'card' ? '▧ ' : ''}{element.name || element.role?.replaceAll('-', ' ') || element.kind}</Button><Button icon={element.locked ? 'lucide:lock' : 'lucide:lock-open'} aria-label={`${element.locked ? 'Unlock' : 'Lock'} ${element.role || element.kind}`} onClick={() => change(commands.setLocked, [element.id], !element.locked)} /></div>)}</section>}
       </div></aside>
     </div>
-    <footer className="jg-editor__footer"><span>{notice || (mode === 'crop' || mode === 'background-crop' ? 'Crop mode · Drag to pan · Escape to finish' : 'Drag to move · Shift-click to select more · Alt to bypass snapping')}</span><div className="jg-editor__photo-credits">{assets.filter(asset => asset.provider === 'unsplash').map(asset => <PhotoCredit key={asset.id || asset.src} asset={asset} />)}</div><span>1080 × 1350 · 4:5</span></footer>
+    <footer className={`jg-editor__footer${narrow ? ' is-compact' : ''}`}><span>{notice || (mode === 'crop' || mode === 'background-crop' ? 'Crop mode · Drag to pan · Escape to finish' : 'Drag to move · Shift-click to select more · Alt to bypass snapping')}</span><div className="jg-editor__photo-credits">{assets.filter(asset => asset.provider === 'unsplash').map(asset => <PhotoCredit key={asset.id || asset.src} asset={asset} />)}</div><span>1080 × 1350 · 4:5</span></footer>
     {imageTarget && <StudioImagePicker accountId={issue.accountId} events={eventImages(doc)} assets={accountAssets} onChoose={chooseImage} onUpload={file => upload(file, chooseImage)} onClose={() => setImageTarget(null)} />}
     {curationId && account && <div className="jg-editor__curation" role="dialog" aria-modal="true" aria-label="Edit selection"><PivotCarouselCurationWorkspace account={account} draftId={curationId} issue={{ id: issue._id || issue.id, revision: revisionRef.current, ...doc.editorial, document: doc }} onDraftId={setCurationId} staged onApplied={data => { commit({ ...data.document, editorial: { curation: data.curation, sources: data.sources } }, 'Edit selection'); setCurationId(null); setNotice('Selection updated locally. Save to keep it.'); }} onCancel={() => setCurationId(null)} /></div>}
     {recovery && <div className="jg-editor__banner" role="status"><p>This browser has newer unsaved edits than the saved issue. Restoring them does not save to the server.</p><Button onClick={acceptRecovery}>Restore local edits</Button><Button onClick={dismissRecovery}>Keep saved issue</Button></div>}
     {conflict && <div className="jg-editor__banner" role="alert"><p>{conflict.message} Both copies are kept. Autosave is paused.</p><Button onClick={reloadServer}>Reload saved issue</Button><Button onClick={() => setCompareOpen(true)} disabled={!conflict.serverIssue?.document}>Compare</Button><Button onClick={saveCopy} disabled={!onSaveCopy}>Save as a new issue</Button></div>}
     {compareOpen && comparison && <div className="jg-editor__curation" role="dialog" aria-modal="true" aria-label="Compare versions"><h2>This browser and the saved issue</h2><p>{comparison.localSlides} slides here, {comparison.serverSlides} slides saved. Revision {conflict.storedRevision} is on the server.</p>{comparison.changes.map(change => <p key={change.id}>{change.role}: {change.local ?? 'removed'} → {change.server ?? 'not on server'}</p>)}{comparison.hiddenChanges > 0 && <p>{comparison.hiddenChanges} more differences are not listed.</p>}<Button onClick={() => setCompareOpen(false)}>Close</Button></div>}
-    {exportOpen && <div className="jg-editor__curation" role="dialog" aria-modal="true" aria-label="Export"><CarouselExportChoice tenantKey={issue.tenantKey || issue.ownerTenantKey} deckId={issue._id || issue.id} onRelay={() => { setExportOpen(false); onExport?.(); }} onClose={() => setExportOpen(false)} /></div>}
+    <PivotCarouselPopup open={exportOpen} onClose={() => setExportOpen(false)} className="jgz-export-popup"><CarouselExportChoice tenantKey={issue.tenantKey || issue.ownerTenantKey} deckId={issue._id || issue.id} slides={slides.map((item, slideNumber) => ({ number: slideNumber + 1, label: slideExportLabel(item) }))} currentNumber={index + 1} onRelay={(numbers) => { setExportOpen(false); onExport?.(numbers); }} onClose={() => setExportOpen(false)} /></PivotCarouselPopup>
     {checkpointsOpen && <div className="jg-editor__curation" role="dialog" aria-modal="true" aria-label="Checkpoints"><h2>Checkpoints</h2><p>A checkpoint is a named copy. Restoring it saves a new revision and leaves the checkpoint unchanged.</p><label>Name<input aria-label="Checkpoint name" value={checkpointName} onChange={event => setCheckpointName(event.target.value)} /></label><Button onClick={saveCheckpoint} disabled={!checkpointName.trim() || saveState === 'conflict'}>Save checkpoint</Button><ul>{checkpoints.map(checkpoint => <li key={checkpoint.id}>{checkpoint.name} · revision {checkpoint.headRevision} <Button onClick={() => restoreCheckpoint(checkpoint)}>Restore as new revision</Button></li>)}</ul><Button onClick={() => setCheckpointsOpen(false)}>Close</Button></div>}
   </div>;
 }

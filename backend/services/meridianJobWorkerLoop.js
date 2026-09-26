@@ -9,6 +9,8 @@
  *   MERIDIAN_JOB_MAX_PER_TICK     serial jobs drained per poll (default 8)
  *   MERIDIAN_OPS_TENANT_KEY       ops tenant for admin failure push (default sf)
  *   DISABLE_MERIDIAN_JOB_WORKER   set true to skip starting the loop
+ *   ENABLE_MERIDIAN_JOB_WORKER    set true to run the loop when NODE_ENV=development
+ *                                 (development leaves the loop off unless this is set)
  *
  * Unique indexes are ensured on enqueue and on each tick. SIGTERM/SIGINT stop
  * the poll loop; a crashed in-flight run is reclaimed after the lease.
@@ -443,11 +445,21 @@ function shouldStartMeridianJobWorkerLoop({ force = false, env = process.env } =
   if (force) return true;
   if (env.NODE_ENV === 'test') return false;
   if (env.DISABLE_MERIDIAN_JOB_WORKER === 'true') return false;
+  if (env.NODE_ENV === 'development' && env.ENABLE_MERIDIAN_JOB_WORKER !== 'true') return false;
   return true;
 }
 
 function startMeridianJobWorkerLoop(options = {}) {
   if (!shouldStartMeridianJobWorkerLoop(options)) {
+    const env = options.env || process.env;
+    if (
+      !options.force
+      && env.NODE_ENV === 'development'
+      && env.DISABLE_MERIDIAN_JOB_WORKER !== 'true'
+      && env.ENABLE_MERIDIAN_JOB_WORKER !== 'true'
+    ) {
+      console.log('[meridianJobWorker] loop off in development; set ENABLE_MERIDIAN_JOB_WORKER=true to run it');
+    }
     return null;
   }
   if (pollTimer) return pollTimer;

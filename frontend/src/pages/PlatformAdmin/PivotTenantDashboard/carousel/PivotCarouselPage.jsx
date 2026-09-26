@@ -579,7 +579,7 @@ export default function PivotCarouselPage({ tenantKey, cityDisplayName }) {
               onSaveCopy={saveStudioCopy}
               onReload={reloadStudioIssue}
               onOpenIssue={openIssue}
-              onExport={() => exportState.startExport()}
+              onExport={(slideNumbers) => exportState.startExport(slideNumbers)}
               account={accounts.find(row => row.id === draft.accountId)}
               onEditSelection={startEditSelection}
               onBack={closeLibrary}

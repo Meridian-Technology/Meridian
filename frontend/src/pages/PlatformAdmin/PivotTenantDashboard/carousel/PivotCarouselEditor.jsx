@@ -352,8 +352,12 @@ export default function PivotCarouselEditor({
     setExportChoice(true);
   };
 
-  const chooseRelay = () => {
+  const chooseRelay = (slideNumbers) => {
     setExportChoice(false);
+    if (Array.isArray(slideNumbers) && slideNumbers.length) {
+      exportState?.startExport(slideNumbers);
+      return;
+    }
     const count = deck.slides.length;
     if (count <= 1) {
       exportState?.startExport(count === 1 ? [1] : undefined);
@@ -687,6 +691,11 @@ export default function PivotCarouselEditor({
         <CarouselExportChoice
           tenantKey={tenantKey}
           deckId={deck._id}
+          slides={(deck.slides || []).map((item, slideNumber) => ({
+            number: slideNumber + 1,
+            label: manifest?.types?.[item.type]?.label || item.type || 'Slide',
+          }))}
+          currentNumber={index + 1}
           onRelay={chooseRelay}
           onClose={() => setExportChoice(false)}
         />

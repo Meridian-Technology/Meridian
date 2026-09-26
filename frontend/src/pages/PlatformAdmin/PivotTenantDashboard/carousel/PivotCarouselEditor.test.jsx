@@ -12,15 +12,7 @@ jest.mock('./PivotCarouselVoicePanel', () => () => null);
 jest.mock('./PivotCarouselEventPicker', () => () => null);
 jest.mock('./PivotCarouselAddSlide', () => () => null);
 jest.mock('./PivotCarouselExportPanel', () => () => null);
-jest.mock('./PivotCarouselExportPicker', () => ({ open, onConfirm, currentIndex }) => (
-  open ? (
-    <div data-testid="export-picker">
-      <button type="button" onClick={() => onConfirm([currentIndex + 1])}>
-        export this slide
-      </button>
-    </div>
-  ) : null
-));
+jest.mock('./PivotCarouselExportPicker', () => () => null);
 
 const MANIFEST = {
   addable: ['card'],
@@ -144,10 +136,13 @@ describe('full screen', () => {
       exportState: { uiEnabled: true, startExport },
     });
     fireEvent.click(screen.getAllByRole('button', { name: 'export' })[0]);
-    fireEvent.click(screen.getByRole('button', { name: 'Relay' }));
-    expect(screen.getByTestId('export-picker')).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'export this slide' }));
-    expect(startExport).toHaveBeenCalledWith([1]);
+    expect(screen.getByRole('checkbox', { name: /01/ })).toBeChecked();
+    expect(screen.getByRole('checkbox', { name: /02/ })).not.toBeChecked();
+    fireEvent.click(screen.getByRole('checkbox', { name: /02/ }));
+    fireEvent.click(screen.getByRole('radio', { name: 'Relay' }));
+    expect(startExport).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm' }));
+    expect(startExport).toHaveBeenCalledWith([1, 2]);
   });
 
   test('a peek under the slide shows the title and the event', () => {

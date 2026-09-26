@@ -9,7 +9,10 @@ const {
 process.once('SIGTERM', () => stopMeridianJobWorkerLoop());
 process.once('SIGINT', () => stopMeridianJobWorkerLoop());
 
-const PORT = process.env.MERIDIAN_API_PORT || process.env.PORT || 5001;
+// Dev and preview may override the listen port. Production must bind the platform PORT.
+const PORT = process.env.NODE_ENV === 'production'
+  ? (process.env.PORT || 5001)
+  : (process.env.MERIDIAN_API_PORT || process.env.PORT || 5001);
 
 const { server } = createApp();
 server.listen(PORT, () => {

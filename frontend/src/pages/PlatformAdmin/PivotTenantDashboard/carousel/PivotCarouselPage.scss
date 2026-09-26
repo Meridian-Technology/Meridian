@@ -2251,6 +2251,12 @@
   }
 }
 
+@media (max-width: 840px) {
+  .pivot-tenant-page.pivot-carousel-page.is-carousel-focused:has(.jg-editor) > .pivot-tenant-page__body {
+    padding: 0;
+  }
+}
+
 .general-dash:has(.pivot-carousel-page.is-carousel-focused) {
   .mobile-heading {
     display: none;
