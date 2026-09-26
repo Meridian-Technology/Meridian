@@ -192,10 +192,13 @@ test('a saved issue can export through Relay or a command', async () => {
   expect(screen.getByTestId('export-issue')).toBeEnabled();
   expect(screen.getByTestId('export-issue').title).toMatch(/saved revision/);
   fireEvent.click(screen.getByTestId('export-issue'));
-  fireEvent.click(screen.getByRole('button', { name: 'Relay' }));
+  fireEvent.click(screen.getByRole('radio', { name: 'Relay' }));
+  expect(onExport).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole('button', { name: 'Confirm' }));
   expect(onExport).toHaveBeenCalled();
   fireEvent.click(screen.getByTestId('export-issue'));
-  fireEvent.click(screen.getByRole('button', { name: 'Command line' }));
+  fireEvent.click(screen.getByRole('radio', { name: 'Command line' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Confirm' }));
   expect(await screen.findByLabelText('Export command')).toHaveValue(
     `node scripts/export-carousel.js deck1 'tok.en' 1 '${window.location.origin}'`,
   );
@@ -216,12 +219,14 @@ test('a command can export one slide out of a longer issue', async () => {
   fireEvent.click(screen.getByTestId('export-issue'));
   fireEvent.click(screen.getByRole('checkbox', { name: /01/ }));
   fireEvent.click(screen.getByRole('checkbox', { name: /02/ }));
-  fireEvent.click(screen.getByRole('button', { name: 'Relay' }));
+  fireEvent.click(screen.getByRole('radio', { name: 'Relay' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Confirm' }));
   expect(onExport).toHaveBeenCalledWith([2]);
   fireEvent.click(screen.getByTestId('export-issue'));
   fireEvent.click(screen.getByRole('checkbox', { name: /01/ }));
   fireEvent.click(screen.getByRole('checkbox', { name: /02/ }));
-  fireEvent.click(screen.getByRole('button', { name: 'Command line' }));
+  fireEvent.click(screen.getByRole('radio', { name: 'Command line' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Confirm' }));
   expect(await screen.findByLabelText('Export command')).toHaveValue(
     `node scripts/export-carousel.js deck1 'tok.en' 2-2 '${window.location.origin}'`,
   );

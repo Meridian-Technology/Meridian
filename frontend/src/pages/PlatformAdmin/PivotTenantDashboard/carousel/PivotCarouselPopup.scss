@@ -539,10 +539,20 @@
 }
 
 .jgz-export-choice__actions,
-.jgz-export-choice__shortcuts {
+.jgz-export-choice__shortcuts,
+.jgz-export-choice__methods {
   display: flex;
   flex-wrap: wrap;
   gap: 0.45rem;
+}
+
+.jgz-export-choice__methods button {
+  flex: 1;
+}
+
+.jgz-export-choice__methods button.is-selected {
+  border-color: #1a1714;
+  box-shadow: inset 3px 0 0 #ff4f1f;
 }
 
 .jgz-export-choice button {

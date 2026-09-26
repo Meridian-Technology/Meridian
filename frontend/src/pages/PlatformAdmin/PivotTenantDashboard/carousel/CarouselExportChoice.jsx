@@ -39,6 +39,7 @@ export default function CarouselExportChoice({
   const choosing = slides.length > 0;
   const identity = slides.map((slide) => slide.number).join(',');
   const [picked, setPicked] = useState(() => new Set(initialSelection(slides, currentNumber)));
+  const [method, setMethod] = useState(null);
   const [command, setCommand] = useState('');
   const [notice, setNotice] = useState('');
   const [busy, setBusy] = useState(false);
@@ -50,6 +51,13 @@ export default function CarouselExportChoice({
 
   const selected = [...picked].sort((left, right) => left - right);
   const ready = !choosing || selected.length > 0;
+  const commandAvailable = Boolean(tenantKey && deckId);
+
+  const selectMethod = (next) => {
+    setMethod(next);
+    setCommand('');
+    setNotice('');
+  };
 
   const toggle = (number) => {
     setCommand('');
@@ -83,6 +91,15 @@ export default function CarouselExportChoice({
       slideNumbers: choosing ? selected : null,
       baseUrl: window.location.origin,
     }));
+  };
+
+  const confirm = () => {
+    if (!ready || busy || !method) return;
+    if (method === 'command') {
+      commandLine();
+      return;
+    }
+    onRelay?.(choosing ? selected : undefined);
   };
 
   const copy = async () => {
@@ -125,10 +142,35 @@ export default function CarouselExportChoice({
           </ul>
         </>
       ) : null}
+      <div className="jgz-export-choice__methods" role="radiogroup" aria-label="Export with">
+        <button
+          type="button"
+          role="radio"
+          aria-checked={method === 'relay'}
+          className={method === 'relay' ? 'is-selected' : undefined}
+          onClick={() => selectMethod('relay')}
+        >
+          Relay
+        </button>
+        <button
+          type="button"
+          role="radio"
+          aria-checked={method === 'command'}
+          className={method === 'command' ? 'is-selected' : undefined}
+          onClick={() => selectMethod('command')}
+          disabled={!commandAvailable}
+        >
+          Command line
+        </button>
+      </div>
       <div className="jgz-export-choice__actions">
-        <button type="button" className="jgz-export-choice__go" onClick={() => onRelay?.(choosing ? selected : undefined)} disabled={!ready}>Relay</button>
-        <button type="button" onClick={commandLine} disabled={busy || !ready || !tenantKey || !deckId}>
-          {busy ? 'Preparing…' : 'Command line'}
+        <button
+          type="button"
+          className="jgz-export-choice__go"
+          onClick={confirm}
+          disabled={!ready || busy || !method || (method === 'command' && !commandAvailable)}
+        >
+          {busy ? 'Preparing…' : 'Confirm'}
         </button>
       </div>
       {command ? (

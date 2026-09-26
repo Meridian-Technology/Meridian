@@ -139,7 +139,9 @@ describe('full screen', () => {
     expect(screen.getByRole('checkbox', { name: /01/ })).toBeChecked();
     expect(screen.getByRole('checkbox', { name: /02/ })).not.toBeChecked();
     fireEvent.click(screen.getByRole('checkbox', { name: /02/ }));
-    fireEvent.click(screen.getByRole('button', { name: 'Relay' }));
+    fireEvent.click(screen.getByRole('radio', { name: 'Relay' }));
+    expect(startExport).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm' }));
     expect(startExport).toHaveBeenCalledWith([1, 2]);
   });
 
