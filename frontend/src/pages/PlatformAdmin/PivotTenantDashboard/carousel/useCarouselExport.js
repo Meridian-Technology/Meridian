@@ -160,7 +160,9 @@ export default function useCarouselExport({ tenantKey, deck, dirty }) {
       deckRevision: currentRevision,
       idempotencyKey,
       slideNumbers,
-      slideCount: Array.isArray(deck?.slides) ? deck.slides.length : undefined,
+      slideCount: deck?.schemaVersion === 2 && Array.isArray(deck.document?.slides)
+      ? deck.document.slides.length
+      : Array.isArray(deck?.slides) ? deck.slides.length : undefined,
     });
     const { data, error } = await authenticatedRequest('/admin/pivot/compute-jobs', {
       method: 'POST',

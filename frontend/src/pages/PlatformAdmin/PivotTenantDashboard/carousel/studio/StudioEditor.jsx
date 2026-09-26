@@ -14,11 +14,17 @@ import useStudioNavigationGuard from './useStudioNavigationGuard';
 import useStudioAutosave from './useStudioAutosave';
 import { compareDocuments, exportAvailability } from './studioPersistence';
 import CarouselExportChoice from '../CarouselExportChoice';
+import PivotCarouselPopup from '../PivotCarouselPopup';
 import './StudioEditor.scss';
 
 const HANDLES = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'];
 const NARROW_EDITOR = '(max-width: 840px)';
 const TITLES = { 'loose-letters': 'Loose letters', 'open-invitation': 'Open invitation', 'kept-somewhere': 'Kept somewhere', 'photo-note': 'Photo note', 'on-the-bill': 'On the bill', 'in-the-room': 'In the room', 'paper-close': 'Paper close', 'orange-close': 'Orange close' };
+function slideExportLabel(item) {
+  if (item?.role === 'cover') return 'Cover';
+  if (item?.role === 'back') return 'Back';
+  return TITLES[item?.preset?.id] || 'Slide';
+}
 const typingTarget = target => Boolean(target?.closest?.('input, textarea, select, [contenteditable="true"]'));
 const clone = value => JSON.parse(JSON.stringify(value));
 function Button({ icon, children, title, ...props }) {
@@ -488,7 +494,7 @@ export default function StudioEditor({ issue, onSave, onSaveCopy, onReload, onOp
     {recovery && <div className="jg-editor__banner" role="status"><p>This browser has newer unsaved edits than the saved issue. Restoring them does not save to the server.</p><Button onClick={acceptRecovery}>Restore local edits</Button><Button onClick={dismissRecovery}>Keep saved issue</Button></div>}
     {conflict && <div className="jg-editor__banner" role="alert"><p>{conflict.message} Both copies are kept. Autosave is paused.</p><Button onClick={reloadServer}>Reload saved issue</Button><Button onClick={() => setCompareOpen(true)} disabled={!conflict.serverIssue?.document}>Compare</Button><Button onClick={saveCopy} disabled={!onSaveCopy}>Save as a new issue</Button></div>}
     {compareOpen && comparison && <div className="jg-editor__curation" role="dialog" aria-modal="true" aria-label="Compare versions"><h2>This browser and the saved issue</h2><p>{comparison.localSlides} slides here, {comparison.serverSlides} slides saved. Revision {conflict.storedRevision} is on the server.</p>{comparison.changes.map(change => <p key={change.id}>{change.role}: {change.local ?? 'removed'} → {change.server ?? 'not on server'}</p>)}{comparison.hiddenChanges > 0 && <p>{comparison.hiddenChanges} more differences are not listed.</p>}<Button onClick={() => setCompareOpen(false)}>Close</Button></div>}
-    {exportOpen && <div className="jg-editor__curation" role="dialog" aria-modal="true" aria-label="Export"><CarouselExportChoice tenantKey={issue.tenantKey || issue.ownerTenantKey} deckId={issue._id || issue.id} onRelay={() => { setExportOpen(false); onExport?.(); }} onClose={() => setExportOpen(false)} /></div>}
+    <PivotCarouselPopup open={exportOpen} onClose={() => setExportOpen(false)} className="jgz-export-popup"><CarouselExportChoice tenantKey={issue.tenantKey || issue.ownerTenantKey} deckId={issue._id || issue.id} slides={slides.map((item, slideNumber) => ({ number: slideNumber + 1, label: slideExportLabel(item) }))} currentNumber={index + 1} onRelay={(numbers) => { setExportOpen(false); onExport?.(numbers); }} onClose={() => setExportOpen(false)} /></PivotCarouselPopup>
     {checkpointsOpen && <div className="jg-editor__curation" role="dialog" aria-modal="true" aria-label="Checkpoints"><h2>Checkpoints</h2><p>A checkpoint is a named copy. Restoring it saves a new revision and leaves the checkpoint unchanged.</p><label>Name<input aria-label="Checkpoint name" value={checkpointName} onChange={event => setCheckpointName(event.target.value)} /></label><Button onClick={saveCheckpoint} disabled={!checkpointName.trim() || saveState === 'conflict'}>Save checkpoint</Button><ul>{checkpoints.map(checkpoint => <li key={checkpoint.id}>{checkpoint.name} · revision {checkpoint.headRevision} <Button onClick={() => restoreCheckpoint(checkpoint)}>Restore as new revision</Button></li>)}</ul><Button onClick={() => setCheckpointsOpen(false)}>Close</Button></div>}
   </div>;
 }

@@ -190,6 +190,32 @@ test('a saved issue can export through Relay or a command', async () => {
   authenticatedRequest.mockImplementation(async () => ({ data: { success: true, data: { assets: [] } } }));
 });
 
+test('a command can export one slide out of a longer issue', async () => {
+  const issue = { ...makeIssue(), tenantKey: 'sf', _id: 'deck1' };
+  issue.document.slides.push({ id: 's2', role: 'back', width: 1080, height: 1350, elements: [] });
+  authenticatedRequest.mockImplementation(async (url) => {
+    if (String(url).includes('/export-token')) {
+      return { data: { success: true, data: { token: 'tok.en', deckId: 'deck1', slideCount: 2 } } };
+    }
+    return { data: { success: true, data: { assets: [] } } };
+  });
+  const onExport = jest.fn();
+  render(<StudioEditor issue={issue} onExport={onExport} />);
+  fireEvent.click(screen.getByTestId('export-issue'));
+  fireEvent.click(screen.getByRole('checkbox', { name: /01/ }));
+  fireEvent.click(screen.getByRole('checkbox', { name: /02/ }));
+  fireEvent.click(screen.getByRole('button', { name: 'Relay' }));
+  expect(onExport).toHaveBeenCalledWith([2]);
+  fireEvent.click(screen.getByTestId('export-issue'));
+  fireEvent.click(screen.getByRole('checkbox', { name: /01/ }));
+  fireEvent.click(screen.getByRole('checkbox', { name: /02/ }));
+  fireEvent.click(screen.getByRole('button', { name: 'Command line' }));
+  expect(await screen.findByLabelText('Export command')).toHaveValue(
+    `node scripts/export-carousel.js deck1 'tok.en' 2-2 '${window.location.origin}'`,
+  );
+  authenticatedRequest.mockImplementation(async () => ({ data: { success: true, data: { assets: [] } } }));
+});
+
 test('autosave keeps a newer edit, undo still restores, and a later save uses the new revision', async () => {
   let resolve;
   const save = jest.fn(() => new Promise((done) => { resolve = done; }));

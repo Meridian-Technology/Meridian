@@ -15,6 +15,22 @@
   display: contents;
 }
 
+/*
+ * The portal is a child of document.body, so it does not inherit the dashboard's
+ * --background. Without a color of its own the shell is transparent and the
+ * type disappears into whatever is behind it.
+ */
+.popup-content.jgz-popup {
+  background: #faf9f6;
+  color: #1a1714;
+  border: 1px solid rgba(26, 23, 20, 0.12);
+
+  .close-popup {
+    color: #1a1714;
+    background: transparent;
+  }
+}
+
 /* --------------------------------------------------- static copy panel */
 
 /*
@@ -494,5 +510,83 @@
   color: #faf6ef;
 
   &:disabled { opacity: 0.5; cursor: not-allowed; }
+}
+
+.jgz-export-choice {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.85rem;
+  width: min(26rem, calc(100vw - 48px));
+  color: #1a1714;
+  font-family: 'Space Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, monospace;
+
+  h2 { margin: 0; font-size: 1.05rem; font-weight: 400; }
+  p { margin: 0; font-size: 0.74rem; line-height: 1.45; color: rgba(26, 23, 20, 0.62); }
+
+  textarea {
+    width: 100%;
+    min-height: 5.5rem;
+    box-sizing: border-box;
+    padding: 0.55rem 0.65rem;
+    border: 1px solid rgba(26, 23, 20, 0.3);
+    border-radius: 0;
+    background: #fff;
+    color: #1a1714;
+    font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, Monaco, monospace;
+    resize: vertical;
+  }
+}
+
+.jgz-export-choice__actions,
+.jgz-export-choice__shortcuts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.jgz-export-choice button {
+  appearance: none;
+  font: inherit;
+  cursor: pointer;
+  padding: 0.4rem 0.7rem;
+  border: 1px solid rgba(26, 23, 20, 0.3);
+  background: #fff;
+  color: #1a1714;
+  font-size: 0.72rem;
+
+  &:hover:not(:disabled) { border-color: #1a1714; }
+  &:disabled { opacity: 0.5; cursor: not-allowed; }
+  &:focus-visible { outline: 2px solid #ff4f1f; outline-offset: 2px; }
+}
+
+.jgz-export-choice__go {
+  border-color: #1a1714 !important;
+  background: #1a1714 !important;
+  color: #faf6ef !important;
+}
+
+.jgz-export-choice__list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  max-height: min(40vh, 280px);
+  overflow: auto;
+  border-top: 1px solid rgba(26, 23, 20, 0.12);
+
+  li { border-bottom: 1px solid rgba(26, 23, 20, 0.12); }
+
+  label {
+    display: flex;
+    align-items: center;
+    gap: 0.65rem;
+    padding: 0.55rem 0.1rem;
+    cursor: pointer;
+    font-size: 0.78rem;
+  }
+
+  input { margin: 0; accent-color: #ff4f1f; }
+
+  b { font-variant-numeric: tabular-nums; }
 }
 

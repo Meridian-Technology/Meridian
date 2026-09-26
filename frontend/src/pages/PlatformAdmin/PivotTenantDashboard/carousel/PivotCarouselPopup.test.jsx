@@ -32,6 +32,8 @@ describe('popup styles survive the portal', () => {
     expect(popupCss).toMatch(/\.jgz-picker\b/);
     expect(popupCss).toMatch(/\.jgz-voice\b/);
     expect(popupCss).toMatch(/\.jgz-export-panel\b/);
+    expect(popupCss).toMatch(/\.jgz-export-choice\b/);
+    expect(popupCss).toMatch(/\.popup-content\.jgz-popup/);
     expect(pageCss).not.toMatch(/\.jgz-picker\b/);
     expect(pageCss).not.toMatch(/\.jgz-export-panel\b/);
   });
