@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from 'react';
+import PivotScrapeLearningPanel from './PivotScrapeLearningPanel';
 import './PivotSourceIntelligence.scss';
 
 const FILTERS = [
@@ -128,7 +129,7 @@ function SourceImpactExplanation({ impact, rankingSignals }) {
   );
 }
 
-function SourceDetail({ source, rankingSignals, onSetTier, onToggleEnabled }) {
+function SourceDetail({ source, tenantKey, onUpdated, rankingSignals, onSetTier, onToggleEnabled }) {
   const breakdown = source.score?.breakdown || {};
   const components = breakdown.components || {};
   const impact = source.deckImpact || {};
@@ -238,12 +239,13 @@ function SourceDetail({ source, rankingSignals, onSetTier, onToggleEnabled }) {
           Pausing crawls does not remove published events.
         </p>
       </div>
+      <PivotScrapeLearningPanel source={source} tenantKey={tenantKey} onUpdated={onUpdated} />
       <p className="pivot-source-intel__footnote">Evidence includes attributed staged and published events in released batches. Updated {formatDate(source.score?.computedAt)}.</p>
     </article>
   );
 }
 
-export default function PivotSourceIntelligence({ sources = [], rankingSignals, loading, error, onRefresh,
+export default function PivotSourceIntelligence({ sources = [], tenantKey, rankingSignals, loading, error, onRefresh,
   onRecompute, recomputing, onCreate, creating, newSource, onNewSourceChange, onSetTier, onToggleEnabled }) {
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState('all');
@@ -333,7 +335,8 @@ export default function PivotSourceIntelligence({ sources = [], rankingSignals, 
           <div className="pivot-source-intel__cards" aria-label="Sources">
             {visible.map((source) => <SourceCard key={source._id} source={source} selected={selected?._id === source._id} onClick={() => setSelectedId(source._id)} />)}
           </div>
-          {selected ? <SourceDetail source={selected} rankingSignals={rankingSignals} onSetTier={onSetTier} onToggleEnabled={onToggleEnabled} /> : null}
+          {selected ? <SourceDetail source={selected} tenantKey={tenantKey} onUpdated={onRefresh}
+            rankingSignals={rankingSignals} onSetTier={onSetTier} onToggleEnabled={onToggleEnabled} /> : null}
         </div>
       ) : null}
     </div>

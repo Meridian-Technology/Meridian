@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Popup from '../../../components/Popup/Popup';
 import PivotTagMultiSelect from './PivotTagMultiSelect';
 import { PivotDeckPhonePreview } from './PivotDeckCardPreview';
@@ -167,14 +167,20 @@ function PivotCatalogEventEditModal({
 }) {
   const [draft, setDraft] = useState(null);
   const [formError, setFormError] = useState('');
+  const [rememberForCalendar, setRememberForCalendar] = useState(true);
+  const openedAtRef = useRef(null);
+  const isImport = mode === 'import';
 
   useEffect(() => {
     if (open && event) {
       setDraft(catalogEventToEditDraft(event));
       setFormError('');
+      setRememberForCalendar(true);
+      openedAtRef.current = Date.now();
     } else if (!open) {
       setDraft(null);
       setFormError('');
+      openedAtRef.current = null;
     }
   }, [open, event]);
 
@@ -277,17 +283,18 @@ function PivotCatalogEventEditModal({
       return;
     }
 
-    const ok = await onSave?.(draft);
+    const ok = await onSave?.(draft, {
+      rememberForCalendar: !isImport && event?.source === 'generic-site' && Boolean(event?.entrypointId) && rememberForCalendar,
+      reviewSeconds: openedAtRef.current ? Math.min(3600, Math.round((Date.now() - openedAtRef.current) / 1000)) : 0,
+    });
     if (ok) {
       onClose?.();
     }
-  }, [draft, onClose, onSave]);
+  }, [draft, event, isImport, onClose, onSave, rememberForCalendar]);
 
   if (!open || !event) {
     return null;
   }
-
-  const isImport = mode === 'import';
 
   return (
     <Popup
@@ -738,6 +745,13 @@ function PivotCatalogEventEditModal({
         </div>
 
         {formError ? <p className="pivot-manual-import__error">{formError}</p> : null}
+
+        {!isImport && event?.source === 'generic-site' && event?.entrypointId ? (
+          <label className="pivot-manual-import__hint">
+            <input type="checkbox" checked={rememberForCalendar} onChange={(e) => setRememberForCalendar(e.target.checked)} />
+            {' '}Suggest a reusable scraper hint from corrected fields. Review it in Source health before it affects future crawls.
+          </label>
+        ) : null}
 
         <footer className="pivot-manual-import__footer">
           <div className="pivot-manual-import__actions">

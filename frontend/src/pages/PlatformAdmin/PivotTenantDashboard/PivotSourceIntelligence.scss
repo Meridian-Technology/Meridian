@@ -157,6 +157,26 @@
   &__create p { margin: 0 0 12px; color: var(--psi-muted); font-size: 12px; }
   &__create-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-bottom: 12px; }
   &__create-grid label { display: flex; flex-direction: column; gap: 5px; font-size: 11px; font-weight: 650; }
+  &__learning { font-size: 12px; }
+  &__learning p,
+  &__learning small { color: var(--psi-muted); line-height: 1.45; }
+  &__learning label { display: flex; flex-direction: column; gap: 5px; margin: 9px 0; font-weight: 650; }
+  &__learning textarea,
+  &__learning input { box-sizing: border-box; width: 100%; padding: 8px; border: 1px solid var(--psi-border); border-radius: 7px; background: var(--psi-surface); color: var(--psi-ink); font: inherit; font-weight: 400; }
+  &__learning button { padding: 7px 10px; border: 1px solid var(--psi-border); border-radius: 7px; background: var(--psi-surface); color: var(--psi-ink); cursor: pointer; font: inherit; }
+  &__learning button:disabled { opacity: 0.5; cursor: default; }
+  &__learning-job { margin-top: 16px; padding: 13px; border: 1px solid var(--psi-border); border-radius: 9px; }
+  &__learning-job h5 { margin: 0 0 7px; font-size: 12px; }
+  &__learning-actions { display: flex; flex-wrap: wrap; gap: 7px; }
+  &__suggestions { margin-top: 14px; }
+  &__suggestions > div { padding: 9px 0; border-top: 1px solid var(--psi-border); }
+  &__suggestions span { color: var(--psi-muted); font-size: 11px; }
+  &__learning-runs { display: grid; gap: 7px; }
+  &__learning-run { display: grid; gap: 3px; padding: 9px; border-radius: 7px; background: var(--la-row-hover, rgba(0, 0, 0, 0.035)); font-size: 11px; }
+  &__learning-run span { color: var(--psi-muted); }
+  &__learning-feedback { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)) auto; align-items: end; gap: 7px; margin-top: 12px; }
+  &__learning-feedback > span { grid-column: 1 / -1; font-weight: 700; }
+  &__learning-feedback label { margin: 0; font-size: 11px; }
 }
 
 @media (max-width: 1000px) {
@@ -177,5 +197,6 @@
     &__batch-featured { display: none; }
     &__detail { padding: 14px; }
     &__detail-header { flex-wrap: wrap; }
+    &__learning-feedback { grid-template-columns: 1fr 1fr; }
   }
 }

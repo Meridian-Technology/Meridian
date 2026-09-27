@@ -1143,12 +1143,12 @@ function PivotTenantCurationPage({ tenantKey, cityDisplayName }) {
   }, [addNotification, committedWeek, selectedEvents, unreleaseEvents]);
 
   const patchEventOverrides = useCallback(
-    async (eventId, overrides) => {
+    async (eventId, overrides, learning = {}) => {
       const { data, error } = await authenticatedRequest(
         `/admin/pivot/ingest/${eventId}`,
         {
           method: 'PATCH',
-          data: { tenantKey, overrides },
+          data: { tenantKey, overrides, ...learning },
         },
       );
       if (error || !data?.success) {
@@ -1534,7 +1534,7 @@ function PivotTenantCurationPage({ tenantKey, cityDisplayName }) {
   ]);
 
   const handleSaveCatalogEdit = useCallback(
-    async (draft) => {
+    async (draft, learning = {}) => {
       if (!editingEvent || !tenantKey) return false;
       setEditSaving(true);
       const wantsPublish = draft.ingestStatus === 'published';
@@ -1554,7 +1554,7 @@ function PivotTenantCurationPage({ tenantKey, cityDisplayName }) {
           return false;
         }
         const { ingestStatus: _ingestStatus, ...metadataOverrides } = overrides;
-        const result = await patchEventOverrides(editingEvent._id, metadataOverrides);
+        const result = await patchEventOverrides(editingEvent._id, metadataOverrides, learning);
         if (result.error) {
           setEditSaving(false);
           addNotification({
@@ -1599,7 +1599,7 @@ function PivotTenantCurationPage({ tenantKey, cityDisplayName }) {
 
       if (wantsUnpublish) {
         const { ingestStatus: _ingestStatus, ...metadataOverrides } = overrides;
-        const result = await patchEventOverrides(editingEvent._id, metadataOverrides);
+        const result = await patchEventOverrides(editingEvent._id, metadataOverrides, learning);
         if (result.error) {
           setEditSaving(false);
           addNotification({
@@ -1621,7 +1621,7 @@ function PivotTenantCurationPage({ tenantKey, cityDisplayName }) {
         return true;
       }
 
-      const result = await patchEventOverrides(editingEvent._id, overrides);
+      const result = await patchEventOverrides(editingEvent._id, overrides, learning);
       setEditSaving(false);
       if (result.error) {
         addNotification({
