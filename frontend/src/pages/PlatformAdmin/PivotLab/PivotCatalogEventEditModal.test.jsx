@@ -65,3 +65,18 @@ describe('PivotCatalogEventEditModal import mode', () => {
     }));
   });
 });
+
+describe('PivotCatalogEventEditModal source history mode', () => {
+  it('keeps publication status in the batch queue while allowing correction hints', async () => {
+    const onSave = jest.fn().mockResolvedValue(true);
+    render(<PivotCatalogEventEditModal open event={{ ...event, source: 'generic-site', entrypointId: 'job-1' }}
+      catalogTags={[{ slug: 'nightlife', label: 'Nightlife' }]} batchWeek="2026-W39"
+      onClose={jest.fn()} onSave={onSave} lockIngestStatus elevated />);
+    expect(screen.getByLabelText(/^Ingest status/)).toBeDisabled();
+    expect(screen.getByText(/Change publication status from the batch curation queue/)).toBeInTheDocument();
+    expect(screen.getByText(/Suggest a reusable scraper hint/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /Save/ }));
+    await waitFor(() => expect(onSave).toHaveBeenCalled());
+    expect(onSave.mock.calls[0][1].rememberForCalendar).toBe(true);
+  });
+});

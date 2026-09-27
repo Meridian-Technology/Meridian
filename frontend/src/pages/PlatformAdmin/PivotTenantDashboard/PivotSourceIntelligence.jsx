@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import PivotScrapeLearningPanel from './PivotScrapeLearningPanel';
+import PivotSourceEventHistoryPopup from './PivotSourceEventHistoryPopup';
 import './PivotSourceIntelligence.scss';
 
 const FILTERS = [
@@ -129,7 +130,8 @@ function SourceImpactExplanation({ impact, rankingSignals }) {
   );
 }
 
-function SourceDetail({ source, tenantKey, onUpdated, rankingSignals, onSetTier, onToggleEnabled }) {
+function SourceDetail({ source, tenantKey, cityLabel, catalogTags, onUpdated, rankingSignals, onSetTier, onToggleEnabled }) {
+  const [historyOpen, setHistoryOpen] = useState(false);
   const breakdown = source.score?.breakdown || {};
   const components = breakdown.components || {};
   const impact = source.deckImpact || {};
@@ -146,6 +148,11 @@ function SourceDetail({ source, tenantKey, onUpdated, rankingSignals, onSetTier,
           {signed(impact.total)} <small>deck points</small>
         </span>
       </header>
+      <button type="button" className="pivot-source-intel__history-button" onClick={() => setHistoryOpen(true)}>
+        View past events
+      </button>
+      <PivotSourceEventHistoryPopup open={historyOpen} source={source} tenantKey={tenantKey}
+        cityLabel={cityLabel} catalogTags={catalogTags} onClose={() => setHistoryOpen(false)} onUpdated={onUpdated} />
       {source.status === 'rejected' ? (
         <p className="pivot-source-intel__notice">Discovery ruled this source out: {REJECTION_LABELS[source.rejectedReason] || source.rejectedReason || 'no qualifying events'}.</p>
       ) : null}
@@ -245,7 +252,7 @@ function SourceDetail({ source, tenantKey, onUpdated, rankingSignals, onSetTier,
   );
 }
 
-export default function PivotSourceIntelligence({ sources = [], tenantKey, rankingSignals, loading, error, onRefresh,
+export default function PivotSourceIntelligence({ sources = [], tenantKey, cityLabel, catalogTags, rankingSignals, loading, error, onRefresh,
   onRecompute, recomputing, onCreate, creating, newSource, onNewSourceChange, onSetTier, onToggleEnabled }) {
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState('all');
@@ -335,7 +342,7 @@ export default function PivotSourceIntelligence({ sources = [], tenantKey, ranki
           <div className="pivot-source-intel__cards" aria-label="Sources">
             {visible.map((source) => <SourceCard key={source._id} source={source} selected={selected?._id === source._id} onClick={() => setSelectedId(source._id)} />)}
           </div>
-          {selected ? <SourceDetail source={selected} tenantKey={tenantKey} onUpdated={onRefresh}
+          {selected ? <SourceDetail key={selected._id} source={selected} tenantKey={tenantKey} cityLabel={cityLabel} catalogTags={catalogTags} onUpdated={onRefresh}
             rankingSignals={rankingSignals} onSetTier={onSetTier} onToggleEnabled={onToggleEnabled} /> : null}
         </div>
       ) : null}

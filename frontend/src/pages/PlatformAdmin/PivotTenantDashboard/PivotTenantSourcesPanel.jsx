@@ -359,6 +359,8 @@ function PivotTenantSourcesPanel({
       <PivotSourceIntelligence
         sources={sources}
         tenantKey={tenantKey}
+        cityLabel={cityDisplayName}
+        catalogTags={catalogTags}
         rankingSignals={sourcesResponse?.data?.rankingSignals}
         loading={sourcesLoading}
         error={sourcesError}

@@ -1,6 +1,7 @@
 import React from 'react';
 import { fireEvent, render, screen } from '@testing-library/react';
 jest.mock('../../../hooks/useFetch', () => ({ authenticatedRequest: jest.fn() }));
+jest.mock('./PivotSourceEventHistoryPopup', () => () => null);
 import PivotSourceIntelligence from './PivotSourceIntelligence';
 
 const source = {

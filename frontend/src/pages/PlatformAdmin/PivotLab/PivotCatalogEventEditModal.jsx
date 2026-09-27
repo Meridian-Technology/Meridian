@@ -164,6 +164,8 @@ function PivotCatalogEventEditModal({
   saveLabel,
   savingLabel,
   notices = [],
+  lockIngestStatus = false,
+  elevated = false,
 }) {
   const [draft, setDraft] = useState(null);
   const [formError, setFormError] = useState('');
@@ -301,6 +303,7 @@ function PivotCatalogEventEditModal({
       isOpen={open}
       onClose={onClose}
       customClassName="pivot-manual-import__shell pivot-catalog-edit__shell"
+      overlayClassName={elevated ? 'popup-overlay--elevated' : ''}
       disableOutsideClick={saving || tagSuggestLoading}
     >
       {draft ? (
@@ -582,12 +585,14 @@ function PivotCatalogEventEditModal({
                       <select
                         className="linear-input pivot-manual-import__input"
                         value={draft.ingestStatus}
+                        disabled={lockIngestStatus}
                         onChange={(e) => patchDraft({ ingestStatus: e.target.value })}
                       >
                         <option value="draft">Draft</option>
                         <option value="staged">Staged</option>
                         <option value="published">Published (live feed)</option>
                       </select>
+                      {lockIngestStatus ? <span className="pivot-manual-import__hint">Change publication status from the batch curation queue.</span> : null}
                     </label>
                     <label className="pivot-manual-import__field pivot-manual-import__check">
                       <span className="pivot-manual-import__label">Featured</span>
