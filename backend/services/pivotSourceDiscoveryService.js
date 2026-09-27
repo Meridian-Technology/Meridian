@@ -640,11 +640,15 @@ async function listCitySources(req, options = {}) {
       lastRunStatus: job.lastRunStatus, lastRunAt: job.lastRunAt,
       lastRunStats: job.lastRunStats || null });
   }
-  const weight = mergePivotDeckConfig(tenantResult.tenant.pivotDeckConfig).weights.sourceQuality;
+  const weights = mergePivotDeckConfig(tenantResult.tenant.pivotDeckConfig).weights;
   return { data: { sources: rows.map((row) => ({ ...serializeCitySource(row),
     entrypoints: bySource.get(String(row._id)) || [],
-    deckImpact: explainSourceAdjustment(row, weight),
-  })) } };
+    deckImpact: explainSourceAdjustment(row, weights.sourceQuality),
+  })), rankingSignals: {
+    personalInterest: weights.personalInterest,
+    friendInterested: weights.friendInterested,
+    friendGoing: weights.friendGoing,
+  } } };
 }
 
 async function createCitySource(req, options = {}) {

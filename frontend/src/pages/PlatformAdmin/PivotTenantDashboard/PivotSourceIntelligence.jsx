@@ -96,7 +96,39 @@ function SourceCard({ source, selected, onClick }) {
   );
 }
 
-function SourceDetail({ source, onSetTier, onToggleEnabled }) {
+function SourceImpactExplanation({ impact, rankingSignals }) {
+  const points = Number(impact.total || 0);
+  const magnitude = Math.abs(points);
+  const comparisons = [
+    { label: 'one matching interest', value: rankingSignals?.personalInterest },
+    { label: 'one friend interested', value: rankingSignals?.friendInterested },
+  ].filter((signal) => Number(signal.value) > 0);
+  return (
+    <div className="pivot-source-intel__impact-explainer">
+      <strong>What {signed(points)} means</strong>
+      {magnitude < 0.005 ? (
+        <p>This source currently has no effect on an event’s deck ranking score.</p>
+      ) : (
+        <p>
+          Each event from this source {points > 0 ? 'gains' : 'loses'} about {magnitude.toFixed(2)} points when a personalized deck is built.
+          {' '}That can {points > 0 ? 'move it ahead of' : 'move it behind'} another event if their scores were less than {magnitude.toFixed(2)} points apart before this source adjustment.
+        </p>
+      )}
+      {magnitude >= 0.005 && comparisons.length ? (
+        <div className="pivot-source-intel__impact-comparisons" aria-label="Compare source points with other deck signals">
+          {comparisons.map((signal) => (
+            <span key={signal.label}>
+              <b>{Math.round(magnitude / signal.value * 100)}%</b> of {signal.label} ({signed(signal.value)})
+            </span>
+          ))}
+        </div>
+      ) : null}
+      <small>These are score comparisons, not a predicted rank, deck slot, or percentage of users who will see the event.</small>
+    </div>
+  );
+}
+
+function SourceDetail({ source, rankingSignals, onSetTier, onToggleEnabled }) {
   const breakdown = source.score?.breakdown || {};
   const components = breakdown.components || {};
   const impact = source.deckImpact || {};
@@ -116,6 +148,8 @@ function SourceDetail({ source, onSetTier, onToggleEnabled }) {
       {source.status === 'rejected' ? (
         <p className="pivot-source-intel__notice">Discovery ruled this source out: {REJECTION_LABELS[source.rejectedReason] || source.rejectedReason || 'no qualifying events'}.</p>
       ) : null}
+
+      <SourceImpactExplanation impact={impact} rankingSignals={rankingSignals} />
 
       <div className="pivot-source-intel__score-grid">
         <div className="pivot-source-intel__score-panel">
@@ -209,7 +243,7 @@ function SourceDetail({ source, onSetTier, onToggleEnabled }) {
   );
 }
 
-export default function PivotSourceIntelligence({ sources = [], loading, error, onRefresh,
+export default function PivotSourceIntelligence({ sources = [], rankingSignals, loading, error, onRefresh,
   onRecompute, recomputing, onCreate, creating, newSource, onNewSourceChange, onSetTier, onToggleEnabled }) {
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState('all');
@@ -299,7 +333,7 @@ export default function PivotSourceIntelligence({ sources = [], loading, error, 
           <div className="pivot-source-intel__cards" aria-label="Sources">
             {visible.map((source) => <SourceCard key={source._id} source={source} selected={selected?._id === source._id} onClick={() => setSelectedId(source._id)} />)}
           </div>
-          {selected ? <SourceDetail source={selected} onSetTier={onSetTier} onToggleEnabled={onToggleEnabled} /> : null}
+          {selected ? <SourceDetail source={selected} rankingSignals={rankingSignals} onSetTier={onSetTier} onToggleEnabled={onToggleEnabled} /> : null}
         </div>
       ) : null}
     </div>

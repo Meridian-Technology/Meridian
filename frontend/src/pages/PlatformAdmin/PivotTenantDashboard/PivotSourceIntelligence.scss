@@ -114,6 +114,13 @@
   &__impact.is-negative { color: #b23a39; background: rgba(178, 58, 57, 0.1); }
   &__impact small { display: block; font-size: 10px; font-weight: 550; }
   &__notice { margin: 12px 0 0; padding: 9px 11px; border-radius: 8px; background: rgba(178, 58, 57, 0.1); color: #a23838; font-size: 11px; }
+  &__impact-explainer { margin-top: 16px; padding: 13px 14px; border: 1px solid var(--psi-border); border-radius: 10px; background: var(--la-row-hover, rgba(0, 0, 0, 0.035)); }
+  &__impact-explainer > strong { display: block; font-size: 13px; }
+  &__impact-explainer p { margin: 6px 0 0; font-size: 12px; line-height: 1.5; }
+  &__impact-explainer > small { display: block; margin-top: 9px; color: var(--psi-muted); font-size: 10px; line-height: 1.4; }
+  &__impact-comparisons { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 11px; }
+  &__impact-comparisons span { padding: 6px 9px; border: 1px solid var(--psi-border); border-radius: 7px; background: var(--psi-surface); color: var(--psi-muted); font-size: 11px; }
+  &__impact-comparisons b { color: var(--psi-ink); }
   &__score-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; margin-top: 19px; }
   &__score-panel { display: flex; flex-direction: column; padding: 13px; border: 1px solid var(--psi-border); border-radius: 10px; }
   &__score-panel strong { margin: 5px 0; font-size: 28px; font-variant-numeric: tabular-nums; }

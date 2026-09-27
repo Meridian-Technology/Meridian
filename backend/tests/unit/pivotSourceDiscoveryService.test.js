@@ -1984,6 +1984,11 @@ describe('pivotSourceDiscoveryService', () => {
       const result = await listCitySources(mockReq(), { tenantKey: 'iowacity' });
 
       expect(result.data.sources).toHaveLength(1);
+      expect(result.data.rankingSignals).toEqual({
+        personalInterest: 0.7,
+        friendInterested: 0.5,
+        friendGoing: 1.5,
+      });
       expect(result.data.sources[0]).toMatchObject({
         host: 'englert.org',
         status: 'qualified',

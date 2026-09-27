@@ -358,6 +358,7 @@ function PivotTenantSourcesPanel({
     <section className="linear-section pivot-lab__section pivot-sources" aria-labelledby="curation-sources">
       <PivotSourceIntelligence
         sources={sources}
+        rankingSignals={sourcesResponse?.data?.rankingSignals}
         loading={sourcesLoading}
         error={sourcesError}
         onRefresh={refetchSources}

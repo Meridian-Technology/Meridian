@@ -24,7 +24,7 @@ function renderPanel(overrides = {}) {
     onRefresh: jest.fn(), onRecompute: jest.fn(), onCreate: jest.fn(),
     onNewSourceChange: jest.fn(), onSetTier: jest.fn(), onToggleEnabled: jest.fn(),
   };
-  render(<PivotSourceIntelligence sources={[source]} newSource={{ label: '', sourceKey: '', url: '', provider: 'luma' }} {...actions} {...overrides} />);
+  render(<PivotSourceIntelligence sources={[source]} rankingSignals={{ personalInterest: 0.7, friendInterested: 0.5, friendGoing: 1.5 }} newSource={{ label: '', sourceKey: '', url: '', provider: 'luma' }} {...actions} {...overrides} />);
   return actions;
 }
 
@@ -60,5 +60,20 @@ describe('PivotSourceIntelligence', () => {
   it('prompts recomputation for existing scores without evidence details', () => {
     renderPanel({ sources: [{ ...source, score: { quality: 0.6, reputation: 0.5, version: 1 } }] });
     expect(screen.getByText(/older scores without an evidence breakdown/)).toBeInTheDocument();
+  });
+
+  it('explains a boost using the actual tenant signal weights', () => {
+    renderPanel({ sources: [{ ...source, deckImpact: { automatic: 0.26, manual: 0, total: 0.26 } }] });
+    expect(screen.getByText('What +0.26 means')).toBeInTheDocument();
+    expect(screen.getByText(/gains about 0.26 points/)).toBeInTheDocument();
+    expect(screen.getByLabelText('Compare source points with other deck signals')).toHaveTextContent('37% of one matching interest (+0.70)');
+    expect(screen.getByLabelText('Compare source points with other deck signals')).toHaveTextContent('52% of one friend interested (+0.50)');
+  });
+
+  it('explains a penalty as a possible change in order', () => {
+    renderPanel({ sources: [{ ...source, deckImpact: { automatic: -0.26, manual: 0, total: -0.26 } }] });
+    expect(screen.getByText('What -0.26 means')).toBeInTheDocument();
+    expect(screen.getByText(/loses about 0.26 points/)).toBeInTheDocument();
+    expect(screen.getByText(/move it behind another event/)).toBeInTheDocument();
   });
 });
