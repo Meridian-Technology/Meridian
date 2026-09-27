@@ -212,3 +212,19 @@
     &__learning-feedback { grid-template-columns: 1fr 1fr; }
   }
 }
+.pivot-source-intel__rule {
+  display: grid;
+  gap: 7px;
+  padding: 12px;
+  border: 1px solid var(--psi-border, #e7e3dd);
+  border-radius: 9px;
+  margin-top: 8px;
+  font-size: 12px;
+  > div:first-child { display: flex; justify-content: space-between; gap: 8px; }
+  > div:first-child span { color: #8b4b35; }
+  p { margin: 0; overflow-wrap: anywhere; }
+  code { font-size: 11px; }
+  select { padding: 5px; border: 1px solid #d6d2cc; border-radius: 6px; }
+  &-preview { display: grid; gap: 5px; padding: 10px; border-radius: 8px; background: #faf8f5; }
+  &-preview small { color: #667085; }
+}

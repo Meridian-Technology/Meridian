@@ -44,4 +44,27 @@ describe('PivotScrapeLearningPanel', () => {
     ));
     await waitFor(() => expect(onUpdated).toHaveBeenCalled());
   });
+
+  it('previews a proposed rule before approving it for the source', async () => {
+    authenticatedRequest.mockResolvedValue({ data: { success: true, data: {
+      checked: 12, changed: 3, examples: [], promptOnly: false,
+    } } });
+    const withRule = { ...source, entrypoints: [{ ...source.entrypoints[0],
+      extractionProfile: { ...source.entrypoints[0].extractionProfile,
+        extractionRules: [{ id: 'event-1:image:venue_logo', field: 'image', reason: 'venue_logo',
+          status: 'proposed', exampleId: 'event-1', before: 'logo', after: 'poster' }] } }] };
+    const onUpdated = jest.fn();
+    render(<PivotScrapeLearningPanel tenantKey="nyc" source={withRule} onUpdated={onUpdated} />);
+    const approve = screen.getByRole('button', { name: 'Approve rule' });
+    expect(approve).toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: 'Preview rule on catalog' }));
+    await waitFor(() => expect(screen.getByText(/Checked 12 catalog events · 3 would change/)).toBeInTheDocument());
+    fireEvent.change(screen.getByLabelText('Apply to'), { target: { value: 'source' } });
+    fireEvent.click(approve);
+    await waitFor(() => expect(authenticatedRequest).toHaveBeenCalledWith(
+      '/admin/pivot/tenants/nyc/curation-jobs/job-1/extraction-rules/event-1%3Aimage%3Avenue_logo/decision',
+      { method: 'POST', data: { action: 'approve', scope: 'source' } },
+    ));
+    await waitFor(() => expect(onUpdated).toHaveBeenCalled());
+  });
 });

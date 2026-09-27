@@ -67,16 +67,21 @@ describe('PivotCatalogEventEditModal import mode', () => {
 });
 
 describe('PivotCatalogEventEditModal source history mode', () => {
-  it('keeps publication status in the batch queue while allowing correction hints', async () => {
+  it('keeps publication status in the batch queue while recording a structured image correction', async () => {
     const onSave = jest.fn().mockResolvedValue(true);
-    render(<PivotCatalogEventEditModal open event={{ ...event, source: 'generic-site', entrypointId: 'job-1' }}
+    render(<PivotCatalogEventEditModal open event={{ ...event, source: 'generic-site', entrypointId: 'job-1',
+      scrapeEvidence: { imageCandidates: ['https://images.example/event.jpg', 'https://images.example/poster.jpg'] } }}
       catalogTags={[{ slug: 'nightlife', label: 'Nightlife' }]} batchWeek="2026-W39"
       onClose={jest.fn()} onSave={onSave} lockIngestStatus elevated />);
     expect(screen.getByLabelText(/^Ingest status/)).toBeDisabled();
     expect(screen.getByText(/Change publication status from the batch curation queue/)).toBeInTheDocument();
-    expect(screen.getByText(/Suggest a reusable scraper hint/)).toBeInTheDocument();
+    expect(screen.getByText(/Improve future scrapes from these corrections/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /poster.jpg/i }));
+    fireEvent.change(screen.getByLabelText('Image correction reason'), { target: { value: 'venue_logo' } });
     fireEvent.click(screen.getByRole('button', { name: /Save/ }));
     await waitFor(() => expect(onSave).toHaveBeenCalled());
     expect(onSave.mock.calls[0][1].rememberForCalendar).toBe(true);
+    expect(onSave.mock.calls[0][1].correctionReasons).toEqual({ image: 'venue_logo' });
+    expect(onSave.mock.calls[0][0].imageUrl).toBe('https://images.example/poster.jpg');
   });
 });
