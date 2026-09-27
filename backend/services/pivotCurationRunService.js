@@ -9,7 +9,7 @@ const {
   GENERIC_SITE_PROVIDER,
 } = require('./pivotIngestPreviewService');
 const { isSiteScrapeConfigured } = require('./pivotSiteScrapeService');
-const { loadApprovedHintsForJob, recordScrapeLearningRun } = require('./pivotScrapeLearningService');
+const { loadApprovedHintsForJob, loadApprovedRulesForJob, recordScrapeLearningRun } = require('./pivotScrapeLearningService');
 const { normalizeBatchWeek } = require('./pivotWeeklySnapshotService');
 const { ensurePivotBatch } = require('./pivotBatchService');
 const { toIsoWeek, shiftIsoWeek } = require('../utilities/pivotIsoWeek');
@@ -679,6 +679,8 @@ async function executeCurationRun(runId) {
     const maxEvents = run.maxEvents != null ? run.maxEvents : null;
     const promptHints = job.provider === GENERIC_SITE_PROVIDER
       ? await loadApprovedHintsForJob(workerReq, tenantKey, job) : [];
+    const extractionRules = job.provider === GENERIC_SITE_PROVIDER
+      ? await loadApprovedRulesForJob(workerReq, tenantKey, job) : [];
     const preview = await previewIngestUrl(workerReq, {
       url: job.url,
       ...(maxEvents != null ? { maxEvents } : {}),
@@ -688,6 +690,7 @@ async function executeCurationRun(runId) {
       provider: job.provider,
       timezone: await resolveTenantTimezone(workerReq, tenantKey),
       promptHints,
+      extractionRules,
     });
 
     if (preview.error) {

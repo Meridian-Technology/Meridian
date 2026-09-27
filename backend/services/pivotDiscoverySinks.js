@@ -135,6 +135,12 @@ function buildEventProposalFromEntry(entry, {
       hostName: boundedString(draft.hostName || draft.host?.name, 300),
       hostProfileUrl: safeHttpsUrl(draft.hostProfileUrl || draft.host?.profileUrl),
       tags,
+      ...(draft.scrapeEvidence ? { scrapeEvidence: {
+        imageCandidates: [...new Set((draft.scrapeEvidence.imageCandidates || [])
+          .map((url) => safeHttpsUrl(url)).filter(Boolean))].slice(0, 6),
+        appliedRuleIds: (draft.scrapeEvidence.appliedRuleIds || [])
+          .filter((id) => typeof id === 'string').map((id) => id.slice(0, 200)).slice(0, 30),
+      } } : {}),
     },
     basedOnEventVersion: basedOnEventVersion || null,
     linkedJobId: safeLinkedJobId,

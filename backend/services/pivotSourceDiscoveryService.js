@@ -612,6 +612,7 @@ function serializeCitySource(doc) {
     rankingOverride: row.rankingOverride?.tier ? row.rankingOverride : null,
     score: row.score || null,
     promptHints: Array.isArray(row.promptHints) ? row.promptHints : [],
+    extractionRules: Array.isArray(row.extractionRules) ? row.extractionRules : [],
     entrypoints: row.entrypoints || [],
     createdAt: row.createdAt || null,
     updatedAt: row.updatedAt || null,

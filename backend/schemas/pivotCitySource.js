@@ -149,6 +149,7 @@ const pivotCitySourceSchema = new mongoose.Schema(
         'promptHints exceed safe bounds',
       ],
     },
+    extractionRules: { type: [mongoose.Schema.Types.Mixed], default: [] },
     createdBy: {
       type: String,
       default: null,

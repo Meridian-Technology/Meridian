@@ -3,7 +3,7 @@ jest.mock('../../services/getGlobalModelService', () => jest.fn());
 const getGlobalModels = require('../../services/getGlobalModelService');
 const {
   correctedFields, loadApprovedHintsForJob, recordScrapeLearningRun,
-  recordCatalogCorrection, recordManualReviewFeedback,
+  recordCatalogCorrection, recordManualReviewFeedback, decideExtractionRule,
 } = require('../../services/pivotScrapeLearningService');
 
 const JOB_ID = '665a1b2c3d4e5f6789012345';
@@ -81,5 +81,40 @@ describe('pivotScrapeLearningService', () => {
     expect((await recordManualReviewFeedback(req, { tenantKey: 'nyc', jobId: 'bad' })).status).toBe(400);
     expect((await recordManualReviewFeedback(req, { tenantKey: 'nyc', jobId: JOB_ID, missed: -1 })).status).toBe(400);
     expect(PivotCurationJob.findOne).not.toHaveBeenCalled();
+  });
+
+  it('records a reasoned correction as a proposed rule, then approves it for its entrypoint', async () => {
+    const doc = job();
+    PivotCurationJob.findOne.mockResolvedValue(doc);
+    const before = { _id: EVENT_ID, image: 'https://venue.example/logo.png',
+      customFields: { pivot: { entrypointId: JOB_ID } } };
+    await recordCatalogCorrection(req, { tenantKey: 'nyc', before,
+      after: { ...before, image: 'https://venue.example/show.jpg' },
+      correctionReasons: { image: 'venue_logo' } });
+    expect(doc.extractionProfile.extractionRules).toMatchObject([{
+      id: `${EVENT_ID}:image:venue_logo`, status: 'proposed',
+      badValue: 'https://venue.example/logo.png',
+    }]);
+    expect(doc.extractionProfile.suggestedHints).toEqual([]);
+    await decideExtractionRule(req, { tenantKey: 'nyc', jobId: JOB_ID,
+      ruleId: `${EVENT_ID}:image:venue_logo`, action: 'approve' });
+    expect(doc.extractionProfile.extractionRules[0].status).toBe('active');
+  });
+
+  it('can approve a proposed rule for every entrypoint of a linked source and disable it', async () => {
+    const doc = job();
+    doc.sourceId = SOURCE_ID;
+    doc.extractionProfile.extractionRules = [{ id: 'rule-1', field: 'description',
+      reason: 'date_not_description', badValue: 'Sep 26', status: 'proposed' }];
+    const source = { extractionRules: [], save: jest.fn().mockResolvedValue(undefined) };
+    PivotCurationJob.findOne.mockResolvedValue(doc);
+    PivotCitySource.findOne.mockResolvedValue(source);
+    await decideExtractionRule(req, { tenantKey: 'nyc', jobId: JOB_ID,
+      ruleId: 'rule-1', action: 'approve', scope: 'source' });
+    expect(doc.extractionProfile.extractionRules).toEqual([]);
+    expect(source.extractionRules).toMatchObject([{ id: 'rule-1', status: 'active' }]);
+    await decideExtractionRule(req, { tenantKey: 'nyc', jobId: JOB_ID,
+      ruleId: 'rule-1', action: 'disable' });
+    expect(source.extractionRules[0].status).toBe('disabled');
   });
 });

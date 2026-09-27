@@ -41,6 +41,7 @@ function serializeCurationJob(doc) {
     extractionProfile: {
       promptHints: row.extractionProfile?.promptHints || [],
       suggestedHints: row.extractionProfile?.suggestedHints || [],
+      extractionRules: row.extractionProfile?.extractionRules || [],
       learningRuns: row.extractionProfile?.learningRuns || [],
       updatedAt: row.extractionProfile?.updatedAt || null,
       updatedBy: row.extractionProfile?.updatedBy || null,

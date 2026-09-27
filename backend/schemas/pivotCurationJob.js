@@ -33,6 +33,19 @@ const extractionProfileSchema = new mongoose.Schema(
       }],
       default: [],
     },
+    extractionRules: { type: [{
+      id: { type: String, required: true },
+      field: { type: String, required: true, enum: ['image', 'description', 'start_time'] },
+      reason: { type: String, required: true },
+      badValue: { type: String, required: true, maxlength: 1000 },
+      exampleId: { type: String, required: true },
+      before: { type: String, default: null, maxlength: 1000 },
+      after: { type: String, default: null, maxlength: 1000 },
+      status: { type: String, enum: ['proposed', 'active', 'disabled'], default: 'proposed' },
+      createdAt: { type: Date, default: Date.now },
+      updatedAt: { type: Date, default: Date.now },
+      updatedBy: { type: String, default: null },
+    }], default: [] },
     learningRuns: {
       type: [{
         runKey: { type: String, required: true },
@@ -170,6 +183,9 @@ pivotCurationJobSchema.pre('validate', function normalizeFields() {
     );
     if (this.extractionProfile.suggestedHints?.length > 30) {
       this.extractionProfile.suggestedHints = this.extractionProfile.suggestedHints.slice(-30);
+    }
+    if (this.extractionProfile.extractionRules?.length > 30) {
+      this.extractionProfile.extractionRules = this.extractionProfile.extractionRules.slice(-30);
     }
     if (this.extractionProfile.learningRuns?.length > 12) {
       this.extractionProfile.learningRuns = this.extractionProfile.learningRuns.slice(-12);

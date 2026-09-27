@@ -2502,6 +2502,35 @@ router.post('/tenants/:tenantKey/curation-jobs/:jobId/review-feedback',
     }
   });
 
+router.get('/tenants/:tenantKey/curation-jobs/:jobId/extraction-rules/:ruleId/preview',
+  verifyToken, requirePlatformAdmin, async (req, res) => {
+    try {
+      const { previewExtractionRule } = require('../services/pivotScrapeLearningService');
+      const result = await previewExtractionRule(req, { tenantKey: req.params.tenantKey,
+        jobId: req.params.jobId, ruleId: req.params.ruleId });
+      if (result.error) return res.status(result.status || 400).json({ success: false, message: result.error });
+      return res.status(200).json({ success: true, data: result.data });
+    } catch (err) {
+      logPivotRouteError('GET extraction rule preview', err, req);
+      return res.status(500).json({ success: false, message: 'Unable to preview extraction rule.' });
+    }
+  });
+
+router.post('/tenants/:tenantKey/curation-jobs/:jobId/extraction-rules/:ruleId/decision',
+  verifyToken, requirePlatformAdmin, async (req, res) => {
+    try {
+      const { decideExtractionRule } = require('../services/pivotScrapeLearningService');
+      const result = await decideExtractionRule(req, { tenantKey: req.params.tenantKey,
+        jobId: req.params.jobId, ruleId: req.params.ruleId,
+        action: req.body?.action, scope: req.body?.scope });
+      if (result.error) return res.status(result.status || 400).json({ success: false, message: result.error });
+      return res.status(200).json({ success: true });
+    } catch (err) {
+      logPivotRouteError('POST extraction rule decision', err, req);
+      return res.status(500).json({ success: false, message: 'Unable to update extraction rule.' });
+    }
+  });
+
 router.patch(
   '/tenants/:tenantKey/curation-jobs/:jobId',
   verifyToken,
@@ -3294,9 +3323,13 @@ router.post('/ingest/preview', verifyToken, requirePlatformAdmin, async (req, re
   try {
     let job = null;
     let promptHints = [];
+    let extractionRules = [];
     if (req.body?.jobId) {
+      if (!require('mongoose').Types.ObjectId.isValid(req.body.jobId)) {
+        return res.status(400).json({ success: false, message: 'Invalid website job id.' });
+      }
       const getGlobalModels = require('../services/getGlobalModelService');
-      const { loadApprovedHintsForJob } = require('../services/pivotScrapeLearningService');
+      const { loadApprovedHintsForJob, loadApprovedRulesForJob } = require('../services/pivotScrapeLearningService');
       const { PivotCurationJob } = getGlobalModels(req, 'PivotCurationJob');
       job = await PivotCurationJob.findOne({ _id: req.body.jobId,
         tenantKey: req.body?.tenantKey }).lean();
@@ -3304,12 +3337,22 @@ router.post('/ingest/preview', verifyToken, requirePlatformAdmin, async (req, re
         return res.status(400).json({ success: false, message: 'Job and preview URL must match.' });
       }
       promptHints = await loadApprovedHintsForJob(req, req.body.tenantKey, job);
+      extractionRules = await loadApprovedRulesForJob(req, req.body.tenantKey, job);
+      if (req.body?.ruleId) {
+        const { ruleInstruction } = require('../utilities/pivotStructuredExtractionRules');
+        const proposed = job.extractionProfile?.extractionRules?.find((rule) => rule.id === req.body.ruleId
+          && rule.status === 'proposed');
+        if (!proposed) return res.status(400).json({ success: false, message: 'Proposed rule not found for this job.' });
+        extractionRules = [...extractionRules, { ...proposed, status: 'active' }];
+        promptHints = [...promptHints, ruleInstruction(proposed)];
+      }
     }
     const result = await previewIngestUrl(req, {
       url: req.body?.url,
       tenantKey: req.body?.tenantKey,
       provider: job?.provider || req.body?.provider,
       promptHints,
+      extractionRules,
     });
     if (result.error) {
       return res.status(result.status || 400).json({
@@ -3560,6 +3603,7 @@ router.patch('/ingest/:eventId', verifyToken, requirePlatformAdmin, async (req, 
       overrides: req.body?.overrides,
       rememberForCalendar: req.body?.rememberForCalendar,
       reviewSeconds: req.body?.reviewSeconds,
+      correctionReasons: req.body?.correctionReasons,
     });
     if (result.error) {
       return res.status(result.status || 400).json({

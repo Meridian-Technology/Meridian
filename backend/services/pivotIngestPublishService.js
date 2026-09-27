@@ -218,6 +218,7 @@ function mergeDraftWithOverrides(draft = {}, overrides = {}) {
         : undefined,
     source: firstNonEmpty(overrides.source, draft.source),
     sourceUrl: firstNonEmpty(overrides.sourceUrl, draft.sourceUrl),
+    scrapeEvidence: draft.scrapeEvidence || null,
     tags: Array.isArray(overrides.tags)
       ? overrides.tags
       : Array.isArray(draft.tags)
@@ -369,6 +370,7 @@ function buildPivotMetadata(merged, { batchWeek, sourceUrl, importedBy, tags, in
     ...(merged.movie ? { movie: merged.movie } : {}),
     ...(merged.enrichment ? { enrichment: merged.enrichment } : {}),
     ...(merged.parsed ? { parsed: merged.parsed } : {}),
+    ...(merged.scrapeEvidence ? { scrapeEvidence: merged.scrapeEvidence } : {}),
     ...(merged.duplicateRollup ? { duplicateRollup: merged.duplicateRollup } : {}),
     ...(merged.rawLocationText ? { rawLocationText: merged.rawLocationText } : {}),
     ...(merged.locationPolicy?.reviewRequired
@@ -1225,7 +1227,8 @@ async function updateIngestEvent(req, options = {}) {
     try {
       const { recordCatalogCorrection } = require('./pivotScrapeLearningService');
       await recordCatalogCorrection(req, { tenantKey: tenantResult.tenant.tenantKey,
-        before: existing, after: updated, reviewSeconds: options.reviewSeconds });
+        before: existing, after: updated, reviewSeconds: options.reviewSeconds,
+        correctionReasons: options.correctionReasons });
     } catch (error) {
       logPivot('warn', 'scrape correction record failed after event edit', {
         tenantKey: tenantResult.tenant.tenantKey, eventId, message: error.message,

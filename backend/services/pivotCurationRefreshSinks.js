@@ -51,6 +51,7 @@ function contextJobToRuntime(job) {
     enabled: job.enabled !== false,
     defaultTags: Array.isArray(job.defaultTags) ? job.defaultTags : [],
     promptHints: Array.isArray(job.promptHints) ? job.promptHints : [],
+    extractionRules: Array.isArray(job.extractionRules) ? job.extractionRules : [],
     recordVersion: job.recordVersion,
     linkedSourceHost: job.linkedSourceHost || null,
   };
@@ -242,6 +243,7 @@ function createArtifactCurationRefreshSinks(contextSnapshot, collector) {
         provider: job.provider,
         timezone: contextSnapshot.tenant.timezone,
         promptHints: job.promptHints,
+        extractionRules: job.extractionRules,
       });
 
       const parsed = entriesFromPreview(preview, job.url);

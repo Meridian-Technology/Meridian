@@ -1589,6 +1589,7 @@ async function previewGenericSiteIngest(options = {}) {
     timezone: options.timezone,
     now: options.now,
     promptHints: options.promptHints,
+    extractionRules: options.extractionRules,
   });
   if (scraped.error) {
     return scraped;
