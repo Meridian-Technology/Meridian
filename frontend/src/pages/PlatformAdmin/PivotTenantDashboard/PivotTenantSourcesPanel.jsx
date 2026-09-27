@@ -114,6 +114,8 @@ function PivotTenantSourcesPanel({
   const [statusFilter, setStatusFilter] = useState('all');
   const [optionsOpen, setOptionsOpen] = useState(false);
   const [sitesExpanded, setSitesExpanded] = useState(false);
+  const [newSource, setNewSource] = useState({ sourceKey: '', label: '', url: '', provider: 'luma' });
+  const [creatingSource, setCreatingSource] = useState(false);
   const [options, setOptions] = useState(defaultOptions);
   const [starting, setStarting] = useState(false);
   const [savingConfig, setSavingConfig] = useState(false);
@@ -288,6 +290,37 @@ function PivotTenantSourcesPanel({
     },
     [addNotification, refetchSources, tenantKey],
   );
+
+  const createSource = useCallback(async () => {
+    let host;
+    try { host = new URL(newSource.url).hostname.replace(/^www\./, '').toLowerCase(); }
+    catch { addNotification({ title: 'Valid URL required', type: 'warning' }); return; }
+    setCreatingSource(true);
+    const { data, error } = await authenticatedRequest(sourcesUrl, {
+      method: 'POST', data: { ...newSource, host },
+    });
+    setCreatingSource(false);
+    if (error || !data?.success) {
+      addNotification({ title: 'Source creation failed', message: error || data?.message, type: 'error' });
+      return;
+    }
+    setNewSource({ sourceKey: '', label: '', url: '', provider: 'luma' });
+    refetchSources();
+  }, [addNotification, newSource, refetchSources, sourcesUrl]);
+
+  const setSourceTier = useCallback(async (source, tier) => {
+    const { data, error } = await authenticatedRequest(`${sourcesUrl}/${encodeURIComponent(source._id)}`, {
+      method: 'PATCH', data: { rankingOverride: tier === 'standard' ? null : { tier } },
+    });
+    if (error || !data?.success) addNotification({ title: 'Source ranking update failed', message: error || data?.message, type: 'error' });
+    else refetchSources();
+  }, [addNotification, refetchSources, sourcesUrl]);
+
+  const refreshScores = useCallback(async () => {
+    const { data, error } = await authenticatedRequest(`${sourcesUrl}/recompute-scores`, { method: 'POST' });
+    if (error || !data?.success) addNotification({ title: 'Score refresh failed', message: error || data?.message, type: 'error' });
+    else refetchSources();
+  }, [addNotification, refetchSources, sourcesUrl]);
 
   const handleSaveConfig = useCallback(async () => {
     if (!tenantKey) return;
@@ -705,6 +738,17 @@ function PivotTenantSourcesPanel({
               >
                 Refresh
               </button>
+              <button type="button" className="linear-btn linear-btn--ghost" onClick={refreshScores}>Recompute scores</button>
+            </div>
+
+            <div className="pivot-sources__toolbar" aria-label="Add catalog source">
+              <input className="linear-input" aria-label="Source key" placeholder="calendar-slug" value={newSource.sourceKey} onChange={(e) => setNewSource((s) => ({ ...s, sourceKey: e.target.value }))} />
+              <input className="linear-input" aria-label="Source label" placeholder="Calendar name" value={newSource.label} onChange={(e) => setNewSource((s) => ({ ...s, label: e.target.value }))} />
+              <input className="linear-input" aria-label="Source URL" placeholder="https://lu.ma/calendar/..." value={newSource.url} onChange={(e) => setNewSource((s) => ({ ...s, url: e.target.value }))} />
+              <select className="linear-input" aria-label="Source provider" value={newSource.provider} onChange={(e) => setNewSource((s) => ({ ...s, provider: e.target.value }))}>
+                <option value="luma">Luma</option><option value="partiful">Partiful</option><option value="generic-site">Website</option>
+              </select>
+              <button type="button" className="linear-btn linear-btn--primary" disabled={creatingSource} onClick={createSource}>Add source</button>
             </div>
 
             {sourcesError ? <p className="pivot-lab__error">{String(sourcesError)}</p> : null}
@@ -720,6 +764,7 @@ function PivotTenantSourcesPanel({
                       <th scope="col">Provider</th>
                       <th scope="col">Status</th>
                       <th scope="col">Events</th>
+                      <th scope="col">Quality / reputation</th>
                       <th scope="col">Categories</th>
                       <th scope="col">Found via</th>
                       <th scope="col">Job</th>
@@ -751,6 +796,7 @@ function PivotTenantSourcesPanel({
                         <td>
                           {source.status === 'qualified' ? source.lastEventCount || 0 : '—'}
                         </td>
+                        <td>{source.score?.quality == null ? '—' : `${Math.round(source.score.quality * 100)} / ${Math.round(source.score.reputation * 100)}`}</td>
                         <td>{source.seedTags?.length ? source.seedTags.join(', ') : '—'}</td>
                         <td
                           className="pivot-sources__query"
@@ -759,13 +805,23 @@ function PivotTenantSourcesPanel({
                           {source.discoveredVia || '—'}
                         </td>
                         <td>
-                          {source.curationJobId ? (
-                            <span className="pivot-lab__pill pivot-lab__pill--info">Linked</span>
+                          {source.entrypoints?.length || source.curationJobId ? (
+                            <div>
+                              <span className="pivot-lab__pill pivot-lab__pill--info">{source.entrypoints?.length || 1} entrypoint(s)</span>
+                              {source.entrypoints?.map((entrypoint) => (
+                                <a key={entrypoint.id} className="pivot-sources__url" href={entrypoint.url} target="_blank" rel="noreferrer">
+                                  {entrypoint.label || entrypoint.url}
+                                </a>
+                              ))}
+                            </div>
                           ) : (
                             <span className="pivot-lab__pill pivot-lab__pill--muted">—</span>
                           )}
                         </td>
                         <td>
+                          <select className="linear-input" aria-label={`Rank ${source.label || source.host}`} value={source.rankingOverride?.tier || 'standard'} onChange={(e) => setSourceTier(source, e.target.value)}>
+                            <option value="standard">Standard</option><option value="promote">Promote</option><option value="strong_promote">Strong promote</option><option value="demote">Demote</option>
+                          </select>
                           {source.status === 'qualified' ? (
                             <button
                               type="button"

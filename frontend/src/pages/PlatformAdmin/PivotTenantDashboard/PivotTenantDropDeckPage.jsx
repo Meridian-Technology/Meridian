@@ -303,6 +303,15 @@ function PivotTenantDropDeckPage({
               value={form.weights.negativeTag}
               onChange={(value) => updateWeight('negativeTag', Number(value))}
             />
+            <NumberField
+              label="Source quality"
+              hint="Bounded adjustment from source quality and reputation. Manual source overrides apply separately."
+              min={0}
+              max={5}
+              step="0.05"
+              value={form.weights.sourceQuality}
+              onChange={(value) => updateWeight('sourceQuality', Number(value))}
+            />
           </div>
         </PivotOpsSection>
 
