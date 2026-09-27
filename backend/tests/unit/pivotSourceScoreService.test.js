@@ -16,11 +16,35 @@ describe('source scores', () => {
     expect(good.reputation).toBeGreaterThan(bad.reputation);
     expect(good.batchCount).toBe(3);
     expect(bad.sampleSize).toBe(21);
+    expect(good.breakdown).toMatchObject({
+      eligibleCount: 6,
+      publishedCount: 6,
+      featuredCount: 3,
+      publishRate: 1,
+      featuredRate: 0.5,
+    });
+    expect(good.breakdown.history[0]).toMatchObject({ batchWeek: '2026-W30', eligible: 2,
+      published: 2, featured: 1 });
   });
 
   it('ignores draft and unreleased weeks and yields no score without evidence', () => {
     expect(calculateSourceScore([event('2026-W30', 'draft'), event('2026-W31', 'published')], weeks))
       .toMatchObject({ quality: null, reputation: null, sampleSize: 0 });
+    expect(calculateSourceScore([], []))
+      .toMatchObject({ quality: null, reputation: null, sampleSize: 0,
+        breakdown: { eligibleCount: 0, history: [], windowBatchCount: 0 } });
+  });
+
+  it('credits each observed entrypoint once per event', () => {
+    const row = event('2026-W30', 'published', true);
+    row.customFields.pivot.entrypointId = 'job-a';
+    row.customFields.pivot.observedEntrypointIds = ['job-a', 'job-b', 'job-b'];
+    const score = calculateSourceScore([row], weeks);
+    expect(score.breakdown.entrypoints).toEqual({
+      'job-a': { eligible: 1, published: 1, featured: 1 },
+      'job-b': { eligible: 1, published: 1, featured: 1 },
+    });
+    expect(score.sampleSize).toBe(1);
   });
 
   it('bounds manual adjustments and allows an operator to promote a new source', () => {

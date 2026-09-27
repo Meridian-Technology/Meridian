@@ -1,6 +1,8 @@
 const mongoose = require('mongoose');
 const { connectToDatabase, connectToGlobalDatabase } = require('../connectionsManager');
 const getGlobalModels = require('./getGlobalModelService');
+const { explainSourceAdjustment } = require('./pivotSourceScoreService');
+const { mergePivotDeckConfig } = require('../utilities/pivotDeckConfig');
 const { resolvePivotTenant } = require('./pivotIngestPublishService');
 const { isAllowedHost, detectProvider } = require('./pivotIngestPreviewService');
 const {
@@ -627,7 +629,7 @@ async function listCitySources(req, options = {}) {
     .lean();
 
   const jobs = await PivotCurationJob.find({ tenantKey: query.tenantKey, sourceId: { $in: rows.map((row) => row._id) } })
-    .select('_id sourceId label url provider enabled lastRunStatus lastRunAt')
+    .select('_id sourceId label url provider enabled lastRunStatus lastRunAt lastRunStats')
     .lean();
   const bySource = new Map();
   for (const job of jobs) {
@@ -635,9 +637,14 @@ async function listCitySources(req, options = {}) {
     if (!bySource.has(id)) bySource.set(id, []);
     bySource.get(id).push({ id: String(job._id), label: job.label, url: job.url,
       provider: job.provider, enabled: job.enabled !== false,
-      lastRunStatus: job.lastRunStatus, lastRunAt: job.lastRunAt });
+      lastRunStatus: job.lastRunStatus, lastRunAt: job.lastRunAt,
+      lastRunStats: job.lastRunStats || null });
   }
-  return { data: { sources: rows.map((row) => ({ ...serializeCitySource(row), entrypoints: bySource.get(String(row._id)) || [] })) } };
+  const weight = mergePivotDeckConfig(tenantResult.tenant.pivotDeckConfig).weights.sourceQuality;
+  return { data: { sources: rows.map((row) => ({ ...serializeCitySource(row),
+    entrypoints: bySource.get(String(row._id)) || [],
+    deckImpact: explainSourceAdjustment(row, weight),
+  })) } };
 }
 
 async function createCitySource(req, options = {}) {

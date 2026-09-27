@@ -1970,12 +1970,17 @@ describe('pivotSourceDiscoveryService', () => {
               status: 'qualified',
               seedTags: ['live-music'],
               lastEventCount: 4,
+              score: { quality: 0.8, reputation: 0.6 },
+              rankingOverride: { tier: 'promote' },
             },
           ]),
         }),
       });
 
-      PivotCurationJob.find.mockReturnValue({ select: jest.fn().mockReturnValue({ lean: jest.fn().mockResolvedValue([]) }) });
+      PivotCurationJob.find.mockReturnValue({ select: jest.fn().mockReturnValue({ lean: jest.fn().mockResolvedValue([{
+        _id: 'job-1', sourceId: '665a1b2c3d4e5f6789012399', label: 'Main calendar',
+        lastRunStatus: 'completed', lastRunStats: { discovered: 7, upserted: 4, failed: 0 },
+      }]) }) });
       const result = await listCitySources(mockReq(), { tenantKey: 'iowacity' });
 
       expect(result.data.sources).toHaveLength(1);
@@ -1983,7 +1988,10 @@ describe('pivotSourceDiscoveryService', () => {
         host: 'englert.org',
         status: 'qualified',
         lastEventCount: 4,
+        deckImpact: { manual: 0.35, total: 0.539 },
+        entrypoints: [{ id: 'job-1', lastRunStats: { discovered: 7, upserted: 4, failed: 0 } }],
       });
+      expect(result.data.sources[0].deckImpact.automatic).toBeCloseTo(0.189);
     });
 
     it('filters by status when requested', async () => {

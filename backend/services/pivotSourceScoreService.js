@@ -1,7 +1,7 @@
 const getModels = require('./getModelService');
 const getGlobalModels = require('./getGlobalModelService');
 
-const SCORE_VERSION = 1;
+const SCORE_VERSION = 2;
 const MAX_BATCHES = 8;
 
 function clamp01(value) { return Math.max(0, Math.min(1, value)); }
@@ -11,21 +11,48 @@ function round(value) { return Math.round(value * 1000) / 1000; }
 function calculateSourceScore(events, weeks) {
   const allowed = new Set(weeks);
   const byWeek = new Map();
+  const byEntrypoint = new Map();
   for (const event of events) {
     const pivot = event.customFields?.pivot || {};
     if (!allowed.has(pivot.batchWeek) || !['staged', 'published'].includes(pivot.ingestStatus)) continue;
     if (!byWeek.has(pivot.batchWeek)) byWeek.set(pivot.batchWeek, { eligible: 0, published: 0, featured: 0 });
     const row = byWeek.get(pivot.batchWeek);
     row.eligible += 1;
+    const featured = pivot.ingestStatus === 'published'
+      && (pivot.featured === true || ['promote', 'strong_promote', 'must_show'].includes(pivot.rankingOverride?.tier));
     if (pivot.ingestStatus === 'published') {
       row.published += 1;
-      if (pivot.featured === true || ['promote', 'strong_promote', 'must_show'].includes(pivot.rankingOverride?.tier)) row.featured += 1;
+      if (featured) row.featured += 1;
+    }
+    const entrypointIds = [...new Set([
+      ...(Array.isArray(pivot.observedEntrypointIds) ? pivot.observedEntrypointIds : []),
+      pivot.entrypointId,
+    ].filter(Boolean).map(String))];
+    for (const id of entrypointIds) {
+      if (!byEntrypoint.has(id)) byEntrypoint.set(id, { eligible: 0, published: 0, featured: 0 });
+      const entrypoint = byEntrypoint.get(id);
+      entrypoint.eligible += 1;
+      if (pivot.ingestStatus === 'published') entrypoint.published += 1;
+      if (featured) entrypoint.featured += 1;
     }
   }
   const rows = [...byWeek.entries()].sort(([a], [b]) => b.localeCompare(a));
   const eligible = rows.reduce((sum, [, row]) => sum + row.eligible, 0);
   const published = rows.reduce((sum, [, row]) => sum + row.published, 0);
-  if (!eligible) return { quality: null, reputation: null, sampleSize: 0, batchCount: 0, version: SCORE_VERSION };
+  const featured = rows.reduce((sum, [, row]) => sum + row.featured, 0);
+  const breakdown = {
+    eligibleCount: eligible,
+    publishedCount: published,
+    featuredCount: featured,
+    publishRate: eligible ? round(published / eligible) : null,
+    featuredRate: published ? round(featured / published) : null,
+    history: rows.map(([batchWeek, row]) => ({ batchWeek, ...row,
+      publishRate: round(row.published / row.eligible) })),
+    entrypoints: Object.fromEntries(byEntrypoint),
+    windowBatchCount: weeks.length,
+  };
+  if (!eligible) return { quality: null, reputation: null, sampleSize: 0,
+    publishedCount: 0, batchCount: 0, version: SCORE_VERSION, breakdown };
   let weightedPublished = 0;
   let weightedEligible = 0;
   let weightedFeatured = 0;
@@ -46,8 +73,15 @@ function calculateSourceScore(events, weeks) {
     * Math.min(1, rows.length / 3));
   const confidence = (published / (published + 8)) * Math.min(1, rows.length / 3);
   const reputation = clamp01(0.7 * quality + 0.15 * consistency + 0.15 * confidence);
+  breakdown.components = {
+    publishRate: round(publishRate),
+    featuredRate: round(featuredRate),
+    volume: round(volume),
+    consistency: round(consistency),
+    confidence: round(confidence),
+  };
   return { quality: round(quality), reputation: round(reputation), sampleSize: eligible,
-    publishedCount: published, batchCount: rows.length, version: SCORE_VERSION };
+    publishedCount: published, batchCount: rows.length, version: SCORE_VERSION, breakdown };
 }
 
 async function recomputeTenantSourceScores(req, tenantReq, tenantKey, now = new Date()) {
@@ -55,11 +89,10 @@ async function recomputeTenantSourceScores(req, tenantReq, tenantKey, now = new 
   const { PivotCitySource } = getGlobalModels(req, 'PivotCitySource');
   const batches = await PivotBatch.find({ status: 'released' }).sort({ batchWeek: -1 }).limit(MAX_BATCHES).select('batchWeek').lean();
   const weeks = batches.map((batch) => batch.batchWeek);
-  if (!weeks.length) return { updated: 0 };
-  const events = await Event.find({ 'customFields.pivot.batchWeek': { $in: weeks },
+  const events = weeks.length ? await Event.find({ 'customFields.pivot.batchWeek': { $in: weeks },
     'customFields.pivot.sourceId': { $exists: true }, isDeleted: { $ne: true } })
-    .select('customFields.pivot.sourceId customFields.pivot.batchWeek customFields.pivot.ingestStatus customFields.pivot.featured customFields.pivot.rankingOverride')
-    .lean();
+    .select('customFields.pivot.sourceId customFields.pivot.entrypointId customFields.pivot.observedEntrypointIds customFields.pivot.batchWeek customFields.pivot.ingestStatus customFields.pivot.featured customFields.pivot.rankingOverride')
+    .lean() : [];
   const bySource = new Map();
   for (const event of events) {
     const id = String(event.customFields?.pivot?.sourceId || '');
@@ -76,12 +109,21 @@ async function recomputeTenantSourceScores(req, tenantReq, tenantKey, now = new 
   return { updated: sources.length };
 }
 
-function sourceAdjustment(source, weight = 0.45) {
-  if (!source) return 0;
+function explainSourceAdjustment(source, weight = 0.45) {
+  if (!source) return { automatic: 0, manual: 0, total: 0, capped: false, weight };
   const evidence = source.score?.quality == null ? 0.5
     : 0.55 * source.score.quality + 0.45 * source.score.reputation;
   const manual = { promote: 0.35, strong_promote: 0.7, demote: -0.5 }[source.rankingOverride?.tier] || 0;
-  return Math.max(-0.6, Math.min(0.9, weight * (evidence - 0.5) * 2 + manual));
+  const automatic = source.score?.quality == null ? 0 : weight * (evidence - 0.5) * 2;
+  const raw = automatic + manual;
+  const total = Math.max(-0.6, Math.min(0.9, raw));
+  return { automatic, manual, total,
+    capped: raw !== total, weight };
 }
 
-module.exports = { calculateSourceScore, recomputeTenantSourceScores, sourceAdjustment, SCORE_VERSION };
+function sourceAdjustment(source, weight = 0.45) {
+  return explainSourceAdjustment(source, weight).total;
+}
+
+module.exports = { calculateSourceScore, recomputeTenantSourceScores, sourceAdjustment,
+  explainSourceAdjustment, SCORE_VERSION };

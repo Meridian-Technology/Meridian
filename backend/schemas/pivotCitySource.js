@@ -134,7 +134,9 @@ const pivotCitySourceSchema = new mongoose.Schema(
       sampleSize: { type: Number, default: 0 },
       batchCount: { type: Number, default: 0 },
       computedAt: { type: Date, default: null },
-      version: { type: Number, default: 1 },
+      version: { type: Number, default: 2 },
+      /** Explainable counts, components, batch history, and entrypoint yield. */
+      breakdown: { type: mongoose.Schema.Types.Mixed, default: null },
     },
     /** Host-wide extraction guidance, shared by curation jobs for this source. */
     promptHints: {
