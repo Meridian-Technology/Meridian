@@ -2313,6 +2313,23 @@ router.patch(
   },
 );
 
+router.get('/tenants/:tenantKey/sources/:sourceId/events',
+  verifyToken, requirePlatformAdmin, async (req, res) => {
+    try {
+      const { listSourceEventHistory } = require('../services/pivotSourceEventHistoryService');
+      const result = await listSourceEventHistory(req, {
+        tenantKey: req.params.tenantKey, sourceId: req.params.sourceId,
+        page: req.query?.page, status: req.query?.status, entrypointId: req.query?.entrypointId,
+      });
+      if (result.error) return res.status(result.status || 400).json({ success: false,
+        message: result.error, code: result.code });
+      return res.status(200).json({ success: true, data: result.data });
+    } catch (err) {
+      logPivotRouteError('GET /admin/pivot/tenants/:tenantKey/sources/:sourceId/events', err, req);
+      return res.status(500).json({ success: false, message: 'Unable to load source events.' });
+    }
+  });
+
 router.get(
   '/tenants/:tenantKey/sources/discovery-plan',
   verifyToken,
