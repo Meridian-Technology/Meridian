@@ -50,6 +50,7 @@ function contextJobToRuntime(job) {
     provider: job.provider,
     enabled: job.enabled !== false,
     defaultTags: Array.isArray(job.defaultTags) ? job.defaultTags : [],
+    promptHints: Array.isArray(job.promptHints) ? job.promptHints : [],
     recordVersion: job.recordVersion,
     linkedSourceHost: job.linkedSourceHost || null,
   };
@@ -218,6 +219,8 @@ function createArtifactCurationRefreshSinks(contextSnapshot, collector) {
           jobId: String(job._id),
           outcome: 'skipped',
           basedOnRecordVersion,
+          hintCount: job.promptHints?.length || 0,
+          extractionRequests: 0,
           failure: {
             code: 'SITE_SCRAPE_NOT_CONFIGURED',
             message: 'Website scraping is not configured.',
@@ -238,6 +241,7 @@ function createArtifactCurationRefreshSinks(contextSnapshot, collector) {
         url: job.url,
         provider: job.provider,
         timezone: contextSnapshot.tenant.timezone,
+        promptHints: job.promptHints,
       });
 
       const parsed = entriesFromPreview(preview, job.url);
@@ -247,6 +251,8 @@ function createArtifactCurationRefreshSinks(contextSnapshot, collector) {
           jobId: String(job._id),
           outcome: 'failed',
           basedOnRecordVersion,
+          hintCount: job.promptHints?.length || 0,
+          extractionRequests: job.provider === GENERIC_SITE_PROVIDER ? 1 : 0,
           failure,
         });
         guard.noteFailure({ code: failure.code, error: failure.message });
@@ -284,6 +290,8 @@ function createArtifactCurationRefreshSinks(contextSnapshot, collector) {
         jobId: String(job._id),
         outcome: 'completed',
         basedOnRecordVersion,
+        hintCount: job.promptHints?.length || 0,
+        extractionRequests: job.provider === GENERIC_SITE_PROVIDER ? 1 : 0,
       });
 
       guard.noteSuccess();

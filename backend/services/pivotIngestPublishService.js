@@ -1221,6 +1221,18 @@ async function updateIngestEvent(req, options = {}) {
     { new: true, runValidators: true },
   ).lean();
 
+  if (options.rememberForCalendar === true && pivot.entrypointId) {
+    try {
+      const { recordCatalogCorrection } = require('./pivotScrapeLearningService');
+      await recordCatalogCorrection(req, { tenantKey: tenantResult.tenant.tenantKey,
+        before: existing, after: updated, reviewSeconds: options.reviewSeconds });
+    } catch (error) {
+      logPivot('warn', 'scrape correction record failed after event edit', {
+        tenantKey: tenantResult.tenant.tenantKey, eventId, message: error.message,
+      });
+    }
+  }
+
   if (pivot.sourceId && (overrides.featured !== undefined
     || overrides.rankingOverride !== undefined || overrides.ingestStatus !== undefined)) {
     try {

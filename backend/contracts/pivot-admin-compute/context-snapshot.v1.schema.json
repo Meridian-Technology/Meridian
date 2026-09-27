@@ -193,6 +193,11 @@
           "maxItems": 16,
           "items": { "type": "string", "maxLength": 64 }
         },
+        "promptHints": {
+          "type": "array",
+          "maxItems": 30,
+          "items": { "type": "string", "maxLength": 600 }
+        },
         "linkedSourceHost": { "oneOf": [{ "type": "string", "maxLength": 253 }, { "type": "null" }] }
       }
     },

@@ -214,6 +214,8 @@
         "jobId": { "type": "string", "pattern": "^[0-9a-f]{24}$" },
         "outcome": { "enum": ["completed", "failed", "skipped"] },
         "basedOnRecordVersion": { "type": "string", "pattern": "^rv:[a-zA-Z0-9._-]+$" },
+        "hintCount": { "type": "integer", "minimum": 0, "maximum": 30 },
+        "extractionRequests": { "type": "integer", "minimum": 0, "maximum": 10 },
         "failure": {
           "type": "object",
           "additionalProperties": false,

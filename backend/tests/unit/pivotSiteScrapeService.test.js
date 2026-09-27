@@ -96,6 +96,10 @@ describe('pivotSiteScrapeService', () => {
   });
 
   describe('buildExtractionPrompt', () => {
+    it('appends approved guidance to the JSON extraction prompt', () => {
+      const prompt = buildExtractionPrompt({ promptHints: ['Use section dates for every card.'] });
+      expect(prompt).toContain('Use section dates for every card.');
+    });
     it('anchors relative dates to today and the city timezone', () => {
       const prompt = buildExtractionPrompt({
         now: new Date('2026-08-10T12:00:00.000Z'),

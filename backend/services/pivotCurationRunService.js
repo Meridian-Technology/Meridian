@@ -9,6 +9,7 @@ const {
   GENERIC_SITE_PROVIDER,
 } = require('./pivotIngestPreviewService');
 const { isSiteScrapeConfigured } = require('./pivotSiteScrapeService');
+const { loadApprovedHintsForJob, recordScrapeLearningRun } = require('./pivotScrapeLearningService');
 const { normalizeBatchWeek } = require('./pivotWeeklySnapshotService');
 const { ensurePivotBatch } = require('./pivotBatchService');
 const { toIsoWeek, shiftIsoWeek } = require('../utilities/pivotIsoWeek');
@@ -676,6 +677,8 @@ async function executeCurationRun(runId) {
     }
 
     const maxEvents = run.maxEvents != null ? run.maxEvents : null;
+    const promptHints = job.provider === GENERIC_SITE_PROVIDER
+      ? await loadApprovedHintsForJob(workerReq, tenantKey, job) : [];
     const preview = await previewIngestUrl(workerReq, {
       url: job.url,
       ...(maxEvents != null ? { maxEvents } : {}),
@@ -684,6 +687,7 @@ async function executeCurationRun(runId) {
       // the city timezone to resolve relative dates like "Fri 8pm".
       provider: job.provider,
       timezone: await resolveTenantTimezone(workerReq, tenantKey),
+      promptHints,
     });
 
     if (preview.error) {
@@ -777,6 +781,14 @@ async function executeCurationRun(runId) {
       finishedAt,
       events,
     });
+    if (job.provider === GENERIC_SITE_PROVIDER) {
+      try {
+        await recordScrapeLearningRun(workerReq, { tenantKey, jobId, runKey: `local:${runId}`,
+          stats, hintCount: promptHints.length, estimatedCredits: 5, completedAt: finishedAt });
+      } catch (error) {
+        logPivot('warn', 'scrape learning run record failed', { tenantKey, jobId: String(jobId), message: error.message });
+      }
+    }
 
     // A batch emits one aggregate completion summary of its own. Logging every
     // child completion makes a large refresh unnecessarily noisy, while a

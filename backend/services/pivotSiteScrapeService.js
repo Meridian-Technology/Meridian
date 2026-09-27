@@ -17,6 +17,7 @@ const axios = require('axios');
 
 const { enrichIngestDraft, parseEventDateTime } = require('../utilities/pivotFieldParsingUtils');
 const { identityFromDisplayName } = require('../utilities/pivotHostIdentity');
+const { mergeExtractionHints } = require('../utilities/pivotExtractionHints');
 
 const FIRECRAWL_SCRAPE_URL = 'https://api.firecrawl.dev/v2/scrape';
 const FIRECRAWL_SEARCH_URL = 'https://api.firecrawl.dev/v2/search';
@@ -270,9 +271,9 @@ function resolveSiteBatchLimit(maxEvents) {
  * Listing pages routinely show dates as "Fri 8pm" with no year, so the extractor
  * needs today's date and the city's timezone to resolve them correctly.
  */
-function buildExtractionPrompt({ now = new Date(), timezone = 'UTC' } = {}) {
+function buildExtractionPrompt({ now = new Date(), timezone = 'UTC', promptHints = [] } = {}) {
   const today = now.toISOString().slice(0, 10);
-  return [
+  const base = [
     'Extract every distinct upcoming event listed on this page.',
     `Today's date is ${today}. The venue is in the ${timezone} timezone.`,
     'Resolve relative or partial dates (for example "Fri 8pm" or "March 4") against that date and timezone, choosing the next future occurrence.',
@@ -281,7 +282,10 @@ function buildExtractionPrompt({ now = new Date(), timezone = 'UTC' } = {}) {
     'hostName is the public-facing organizer, promoter, or presenting venue — never the website name if a more specific organizer is shown.',
     'Ignore navigation links, newsletter signups, past events, and generic venue pages that are not a specific dated event.',
     'Omit any field you cannot read from the page. Do not guess dates, URLs, or venues.',
-  ].join(' ');
+  ];
+  const hints = mergeExtractionHints([], promptHints);
+  if (hints.length) base.push(`Approved guidance for this calendar: ${hints.map((hint, index) => `${index + 1}. ${hint}`).join(' ')}`);
+  return base.join(' ');
 }
 
 function absoluteUrl(candidate, baseUrl) {
@@ -464,7 +468,8 @@ async function scrapeSiteEvents(options = {}) {
           {
             type: 'json',
             schema: SITE_EVENT_SCHEMA,
-            prompt: buildExtractionPrompt({ now: options.now, timezone: options.timezone }),
+            prompt: buildExtractionPrompt({ now: options.now, timezone: options.timezone,
+              promptHints: options.promptHints }),
           },
         ],
       },

@@ -2,6 +2,7 @@ const mongoose = require('mongoose');
 const { connectToDatabase, connectToGlobalDatabase } = require('../connectionsManager');
 const getGlobalModels = require('./getGlobalModelService');
 const { explainSourceAdjustment } = require('./pivotSourceScoreService');
+const { validateExtractionHints } = require('../utilities/pivotExtractionHints');
 const { mergePivotDeckConfig } = require('../utilities/pivotDeckConfig');
 const { resolvePivotTenant } = require('./pivotIngestPublishService');
 const { isAllowedHost, detectProvider } = require('./pivotIngestPreviewService');
@@ -610,6 +611,7 @@ function serializeCitySource(doc) {
     curationJobId: row.curationJobId || null,
     rankingOverride: row.rankingOverride?.tier ? row.rankingOverride : null,
     score: row.score || null,
+    promptHints: Array.isArray(row.promptHints) ? row.promptHints : [],
     entrypoints: row.entrypoints || [],
     createdAt: row.createdAt || null,
     updatedAt: row.updatedAt || null,
@@ -629,7 +631,7 @@ async function listCitySources(req, options = {}) {
     .lean();
 
   const jobs = await PivotCurationJob.find({ tenantKey: query.tenantKey, sourceId: { $in: rows.map((row) => row._id) } })
-    .select('_id sourceId label url provider enabled lastRunStatus lastRunAt lastRunStats')
+    .select('_id sourceId label url provider enabled lastRunStatus lastRunAt lastRunStats extractionProfile')
     .lean();
   const bySource = new Map();
   for (const job of jobs) {
@@ -638,7 +640,8 @@ async function listCitySources(req, options = {}) {
     bySource.get(id).push({ id: String(job._id), label: job.label, url: job.url,
       provider: job.provider, enabled: job.enabled !== false,
       lastRunStatus: job.lastRunStatus, lastRunAt: job.lastRunAt,
-      lastRunStats: job.lastRunStats || null });
+      lastRunStats: job.lastRunStats || null,
+      extractionProfile: job.extractionProfile || null });
   }
   const weights = mergePivotDeckConfig(tenantResult.tenant.pivotDeckConfig).weights;
   return { data: { sources: rows.map((row) => ({ ...serializeCitySource(row),
@@ -694,9 +697,12 @@ async function updateCitySource(req, options = {}) {
     return { error: 'Invalid source id.', status: 400, code: 'INVALID_SOURCE_ID' };
   }
 
-  if (options.enabled === undefined && options.rankingOverride === undefined) {
-    return { error: 'enabled or rankingOverride is required.', status: 400, code: 'NO_CHANGES' };
+  if (options.enabled === undefined && options.rankingOverride === undefined && options.promptHints === undefined) {
+    return { error: 'enabled, rankingOverride, or promptHints is required.', status: 400, code: 'NO_CHANGES' };
   }
+
+  const hintResult = options.promptHints === undefined ? null : validateExtractionHints(options.promptHints);
+  if (hintResult?.error) return { error: hintResult.error, status: 400, code: 'INVALID_EXTRACTION_HINTS' };
 
   let rankingOverride;
   if (options.rankingOverride !== undefined) {
@@ -710,10 +716,15 @@ async function updateCitySource(req, options = {}) {
   }
 
   const { PivotCitySource } = getGlobalModels(req, 'PivotCitySource');
+  const $set = {
+    ...(options.enabled !== undefined ? { enabled: Boolean(options.enabled) } : {}),
+    ...(rankingOverride ? { rankingOverride } : {}),
+    ...(hintResult ? { promptHints: hintResult.hints } : {}),
+  };
   const doc = await PivotCitySource.findOneAndUpdate(
     { _id: sourceId, tenantKey: tenantResult.tenant.tenantKey },
-    { ...(options.enabled !== undefined ? { $set: { enabled: Boolean(options.enabled) } } : {}),
-      ...(rankingOverride !== undefined ? (rankingOverride ? { $set: { ...(options.enabled !== undefined ? { enabled: Boolean(options.enabled) } : {}), rankingOverride } } : { $unset: { rankingOverride: '' } }) : {}) },
+    { ...(Object.keys($set).length ? { $set } : {}),
+      ...(rankingOverride === null ? { $unset: { rankingOverride: '' } } : {}) },
     { new: true },
   );
 

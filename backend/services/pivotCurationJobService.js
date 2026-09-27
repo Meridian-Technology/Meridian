@@ -7,6 +7,7 @@ const {
   CURATION_PROVIDERS,
   BATCH_WEEK_STRATEGIES,
 } = require('../schemas/pivotCurationJob');
+const { validateExtractionHints, mergeExtractionHints } = require('../utilities/pivotExtractionHints');
 
 function actorFromReq(req) {
   return req?.user?.email || req?.user?.globalUserId || req?.user?.userId || null;
@@ -37,6 +38,13 @@ function serializeCurationJob(doc) {
           updated: Boolean(event?.updated),
         }))
       : [],
+    extractionProfile: {
+      promptHints: row.extractionProfile?.promptHints || [],
+      suggestedHints: row.extractionProfile?.suggestedHints || [],
+      learningRuns: row.extractionProfile?.learningRuns || [],
+      updatedAt: row.extractionProfile?.updatedAt || null,
+      updatedBy: row.extractionProfile?.updatedBy || null,
+    },
     createdBy: row.createdBy || null,
     createdAt: row.createdAt || null,
     updatedAt: row.updatedAt || null,
@@ -224,6 +232,8 @@ async function createCurationJob(req, options = {}) {
   if (tagsResult.error) return tagsResult;
 
   const enabled = options.enabled === undefined ? true : Boolean(options.enabled);
+  const hintResult = options.promptHints === undefined ? { hints: [] } : validateExtractionHints(options.promptHints);
+  if (hintResult.error) return { error: hintResult.error, status: 400, code: 'INVALID_EXTRACTION_HINTS' };
 
   const { PivotCurationJob, PivotCitySource } = getGlobalModels(req, 'PivotCurationJob', 'PivotCitySource');
   if (options.sourceId) {
@@ -241,6 +251,9 @@ async function createCurationJob(req, options = {}) {
     defaultBatchWeekStrategy: strategyResult.strategy,
     defaultTags: tagsResult,
     enabled,
+    extractionProfile: { promptHints: hintResult.hints,
+      updatedAt: hintResult.hints.length ? new Date() : null,
+      updatedBy: hintResult.hints.length ? actorFromReq(req) : null },
     createdBy: actorFromReq(req),
   });
 
@@ -292,6 +305,31 @@ async function updateCurationJob(req, options = {}) {
 
   if (options.enabled !== undefined) {
     doc.enabled = Boolean(options.enabled);
+  }
+  if (options.promptHints !== undefined) {
+    const hintResult = validateExtractionHints(options.promptHints);
+    if (hintResult.error) return { error: hintResult.error, status: 400, code: 'INVALID_EXTRACTION_HINTS' };
+    if (!doc.extractionProfile) doc.extractionProfile = { promptHints: [] };
+    doc.extractionProfile.promptHints = hintResult.hints;
+    doc.extractionProfile.updatedAt = new Date();
+    doc.extractionProfile.updatedBy = actorFromReq(req);
+  }
+  if (options.hintDecision !== undefined) {
+    if (!doc.extractionProfile) doc.extractionProfile = { promptHints: [] };
+    const { id, action, text } = options.hintDecision || {};
+    const suggestions = doc.extractionProfile?.suggestedHints || [];
+    const suggestion = suggestions.find((row) => row.id === id);
+    if (!suggestion || !['approve', 'dismiss'].includes(action)) {
+      return { error: 'Unknown hint suggestion or decision.', status: 400, code: 'INVALID_HINT_DECISION' };
+    }
+    if (action === 'approve') {
+      const hintResult = validateExtractionHints([...(doc.extractionProfile.promptHints || []), text || suggestion.text]);
+      if (hintResult.error) return { error: hintResult.error, status: 400, code: 'INVALID_EXTRACTION_HINTS' };
+      doc.extractionProfile.promptHints = mergeExtractionHints([], hintResult.hints);
+    }
+    doc.extractionProfile.suggestedHints = suggestions.filter((row) => row.id !== id);
+    doc.extractionProfile.updatedAt = new Date();
+    doc.extractionProfile.updatedBy = actorFromReq(req);
   }
   if (options.sourceId !== undefined) {
     const { PivotCitySource } = getGlobalModels(req, 'PivotCitySource');

@@ -3,6 +3,7 @@ const getGlobalModels = require('./getGlobalModelService');
 const { resolvePivotTenant } = require('./pivotIngestPublishService');
 const { resolveRunBatchWeek } = require('./pivotCurationRunService');
 const { isSiteScrapeConfigured } = require('./pivotSiteScrapeService');
+const { mergeExtractionHints } = require('../utilities/pivotExtractionHints');
 const {
   serializeSourceIdentity,
   serializeOrganizerIdentity,
@@ -57,7 +58,7 @@ function hostFromUrl(rawUrl) {
   }
 }
 
-function serializeRefreshJobIdentity(row, linkedSourceHost = null) {
+function serializeRefreshJobIdentity(row, linkedSourceHost = null, sourceHints = []) {
   const doc = row?.toObject ? row.toObject() : row;
   const jobId = String(doc?._id || '');
   const label = trimString(doc?.label);
@@ -69,6 +70,8 @@ function serializeRefreshJobIdentity(row, linkedSourceHost = null) {
   if (!url) return null;
 
   const defaultTags = sortedUniqueStrings(doc?.defaultTags, 16);
+  const promptHints = provider === 'generic-site'
+    ? mergeExtractionHints(doc?.extractionProfile?.promptHints || [], sourceHints) : [];
   const material = {
     id: jobId,
     label,
@@ -76,6 +79,7 @@ function serializeRefreshJobIdentity(row, linkedSourceHost = null) {
     provider,
     enabled: doc?.enabled !== false,
     defaultTags,
+    promptHints,
     linkedSourceHost: linkedSourceHost || hostFromUrl(url),
     updatedAt: isoTimestamp(doc?.updatedAt),
   };
@@ -88,6 +92,7 @@ function serializeRefreshJobIdentity(row, linkedSourceHost = null) {
     provider,
     enabled: material.enabled,
     defaultTags,
+    promptHints,
     linkedSourceHost: material.linkedSourceHost,
   };
 }
@@ -275,8 +280,10 @@ async function buildCityCurationRefreshContextSnapshot(req, options = {}) {
   }
 
   const linkedHosts = sourceHostByJobId(sourceRows);
+  const sourcesById = new Map(sourceRows.map((row) => [String(row._id), row]));
   const jobs = crawlableJobs
-    .map((row) => serializeRefreshJobIdentity(row, linkedHosts.get(String(row._id)) || null))
+    .map((row) => serializeRefreshJobIdentity(row, linkedHosts.get(String(row._id)) || null,
+      sourcesById.get(String(row.sourceId))?.promptHints || []))
     .filter(Boolean);
   const sources = sourceRows
     .map(serializeSourceIdentity)

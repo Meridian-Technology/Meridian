@@ -2289,6 +2289,7 @@ router.patch(
         sourceId: req.params.sourceId,
         enabled: req.body?.enabled,
         rankingOverride: req.body?.rankingOverride,
+        promptHints: req.body?.promptHints,
       });
       if (result.error) {
         return res.status(result.status || 400).json({
@@ -2442,6 +2443,7 @@ router.post(
         defaultBatchWeekStrategy: req.body?.defaultBatchWeekStrategy,
         defaultTags: req.body?.defaultTags,
         enabled: req.body?.enabled,
+        promptHints: req.body?.promptHints,
       });
       if (result.error) {
         return res.status(result.status || 400).json({
@@ -2465,6 +2467,24 @@ router.post(
   },
 );
 
+router.post('/tenants/:tenantKey/curation-jobs/:jobId/review-feedback',
+  verifyToken, requirePlatformAdmin, async (req, res) => {
+    try {
+      const { recordManualReviewFeedback } = require('../services/pivotScrapeLearningService');
+      const { serializeCurationJob } = require('../services/pivotCurationJobService');
+      const result = await recordManualReviewFeedback(req, {
+        tenantKey: req.params.tenantKey, jobId: req.params.jobId,
+        missed: req.body?.missed || 0, discarded: req.body?.discarded || 0,
+        reviewSeconds: req.body?.reviewSeconds || 0,
+      });
+      if (result.error) return res.status(result.status || 400).json({ success: false, message: result.error });
+      return res.status(200).json({ success: true, data: { job: serializeCurationJob(result.data.job) } });
+    } catch (err) {
+      logPivotRouteError('POST /admin/pivot/tenants/:tenantKey/curation-jobs/:jobId/review-feedback', err, req);
+      return res.status(500).json({ success: false, message: 'Unable to record review feedback.' });
+    }
+  });
+
 router.patch(
   '/tenants/:tenantKey/curation-jobs/:jobId',
   verifyToken,
@@ -2481,6 +2501,8 @@ router.patch(
         defaultBatchWeekStrategy: req.body?.defaultBatchWeekStrategy,
         defaultTags: req.body?.defaultTags,
         enabled: req.body?.enabled,
+        promptHints: req.body?.promptHints,
+        hintDecision: req.body?.hintDecision,
       });
       if (result.error) {
         return res.status(result.status || 400).json({
@@ -3253,9 +3275,24 @@ router.get('/tmdb/movies/:tmdbId', verifyToken, requirePlatformAdmin, async (req
 
 router.post('/ingest/preview', verifyToken, requirePlatformAdmin, async (req, res) => {
   try {
+    let job = null;
+    let promptHints = [];
+    if (req.body?.jobId) {
+      const getGlobalModels = require('../services/getGlobalModelService');
+      const { loadApprovedHintsForJob } = require('../services/pivotScrapeLearningService');
+      const { PivotCurationJob } = getGlobalModels(req, 'PivotCurationJob');
+      job = await PivotCurationJob.findOne({ _id: req.body.jobId,
+        tenantKey: req.body?.tenantKey }).lean();
+      if (!job || job.url !== req.body?.url) {
+        return res.status(400).json({ success: false, message: 'Job and preview URL must match.' });
+      }
+      promptHints = await loadApprovedHintsForJob(req, req.body.tenantKey, job);
+    }
     const result = await previewIngestUrl(req, {
       url: req.body?.url,
       tenantKey: req.body?.tenantKey,
+      provider: job?.provider || req.body?.provider,
+      promptHints,
     });
     if (result.error) {
       return res.status(result.status || 400).json({
@@ -3504,6 +3541,8 @@ router.patch('/ingest/:eventId', verifyToken, requirePlatformAdmin, async (req, 
       eventId: req.params.eventId,
       tenantKey: req.body?.tenantKey,
       overrides: req.body?.overrides,
+      rememberForCalendar: req.body?.rememberForCalendar,
+      reviewSeconds: req.body?.reviewSeconds,
     });
     if (result.error) {
       return res.status(result.status || 400).json({
