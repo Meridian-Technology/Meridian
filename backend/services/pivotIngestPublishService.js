@@ -340,7 +340,7 @@ function validateMergedDraft(merged, options = {}) {
   };
 }
 
-function buildPivotMetadata(merged, { batchWeek, sourceUrl, importedBy, tags, ingestStatus }) {
+function buildPivotMetadata(merged, { batchWeek, sourceUrl, importedBy, tags, ingestStatus, sourceId, entrypointId, observedSourceIds, observedEntrypointIds }) {
   const identities = unionHostIdentities(merged.hostIdentities, merged.identities);
   const display = displayFieldsFromIdentities(identities, {
     imageUrl: merged.hostImageUrl,
@@ -359,6 +359,10 @@ function buildPivotMetadata(merged, { batchWeek, sourceUrl, importedBy, tags, in
     batchWeek,
     source: merged.source || 'manual',
     sourceUrl,
+    ...(sourceId ? { sourceId: String(sourceId) } : {}),
+    ...(entrypointId ? { entrypointId: String(entrypointId) } : {}),
+    ...(observedSourceIds?.length ? { observedSourceIds } : {}),
+    ...(observedEntrypointIds?.length ? { observedEntrypointIds } : {}),
     host,
     tags: tags || [],
     ...(merged.timeSlots?.length ? { timeSlots: merged.timeSlots } : {}),
@@ -427,7 +431,7 @@ function resolveCreateIngestStatus(options = {}, overrides = {}) {
   return { ingestStatus: DEFAULT_INGEST_STATUS };
 }
 
-function buildEventPayload(merged, { catalogOrgId, sourceUrl, batchWeek, importedBy, tags, ingestStatus }) {
+function buildEventPayload(merged, { catalogOrgId, sourceUrl, batchWeek, importedBy, tags, ingestStatus, sourceId, entrypointId, observedSourceIds, observedEntrypointIds }) {
   const listingUrl = trimString(sourceUrl) || null;
   return {
     name: merged.name,
@@ -453,6 +457,7 @@ function buildEventPayload(merged, { catalogOrgId, sourceUrl, batchWeek, importe
         importedBy,
         tags,
         ingestStatus,
+        sourceId, entrypointId, observedSourceIds, observedEntrypointIds,
       }),
     },
   };
@@ -735,7 +740,19 @@ async function publishIngestEvent(req, options = {}) {
     importedBy,
     tags: tagResult.tags,
     ingestStatus,
+    // Preserve the first credited source when another crawl finds the same event.
+    sourceId: existingDoc?.customFields?.pivot?.sourceId || options.sourceId,
+    entrypointId: existingDoc?.customFields?.pivot?.entrypointId || options.entrypointId,
+    observedSourceIds: [...new Set([...(existingDoc?.customFields?.pivot?.observedSourceIds || []),
+      existingDoc?.customFields?.pivot?.sourceId, options.sourceId].filter(Boolean).map(String))],
+    observedEntrypointIds: [...new Set([...(existingDoc?.customFields?.pivot?.observedEntrypointIds || []),
+      existingDoc?.customFields?.pivot?.entrypointId, options.entrypointId].filter(Boolean).map(String))],
   });
+  if (existingDoc?.customFields?.pivot?.batchWeek === resolvedBatchWeek) {
+    const previousPivot = existingDoc.customFields.pivot;
+    if (previousPivot.featured !== undefined) eventPayload.customFields.pivot.featured = previousPivot.featured;
+    if (previousPivot.rankingOverride) eventPayload.customFields.pivot.rankingOverride = previousPivot.rankingOverride;
+  }
 
   const event = await savePublishedCatalogEvent(
     tenantReq,
@@ -1203,6 +1220,18 @@ async function updateIngestEvent(req, options = {}) {
     { $set: setPayload },
     { new: true, runValidators: true },
   ).lean();
+
+  if (pivot.sourceId && (overrides.featured !== undefined
+    || overrides.rankingOverride !== undefined || overrides.ingestStatus !== undefined)) {
+    try {
+      const { recomputeTenantSourceScores } = require('./pivotSourceScoreService');
+      await recomputeTenantSourceScores(req, tenantReq, tenantResult.tenant.tenantKey);
+    } catch (error) {
+      logPivot('warn', 'source score refresh failed after event edit', {
+        tenantKey: tenantResult.tenant.tenantKey, eventId, message: error.message,
+      });
+    }
+  }
 
   return {
     data: {

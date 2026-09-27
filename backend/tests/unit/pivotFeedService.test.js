@@ -717,6 +717,21 @@ describe('pivotFeedService helpers', () => {
     expect(selected.map((event) => event._id)).toEqual(['promoted', 'standard', 'demoted']);
   });
 
+  it('uses a bounded source signal to select a higher quality source', () => {
+    const { mergePivotDeckConfig } = require('../../utilities/pivotDeckConfig');
+    const events = [
+      { _id: 'low', start_time: new Date('2026-05-28T18:00:00.000Z'), customFields: { pivot: { sourceId: 'low', tags: [] } } },
+      { _id: 'high', start_time: new Date('2026-05-28T19:00:00.000Z'), customFields: { pivot: { sourceId: 'high', tags: [] } } },
+    ];
+    const ranked = selectDropDeckEvents(events, new Map(), new Set(), new Set(), {
+      sourcesById: new Map([
+        ['low', { score: { quality: 0.1, reputation: 0.1 } }],
+        ['high', { score: { quality: 0.9, reputation: 0.9 } }],
+      ]),
+    }, mergePivotDeckConfig({ softMax: 1, hardMax: 1 }));
+    expect(ranked.map((event) => event._id)).toEqual(['high']);
+  });
+
   it('guarantees must-show membership while preserving personalized order', () => {
     const { mergePivotDeckConfig } = require('../../utilities/pivotDeckConfig');
     const events = [
@@ -871,7 +886,7 @@ describe('getPivotFeed', () => {
 
     expect(result.data.batchWeek).toBe('2026-W22');
     expect(result.data.cityDisplayName).toBe('New York City');
-    expect(result.data.rankerVersion).toBe('rules_v2_editorial');
+    expect(result.data.rankerVersion).toBe('rules_v3_source');
     expect(result.data.events).toHaveLength(1);
     expect(result.data.events[0].displayHost).toEqual({ name: 'Roof Records' });
     expect(result.data.events[0].userIntent).toBeNull();
@@ -1169,7 +1184,7 @@ describe('getPivotFeed', () => {
       'No Friends (popular)',
     ]);
     expect(result.data.events.map((event) => event.rankInFeed)).toEqual([0, 1, 2]);
-    expect(result.data.rankerVersion).toBe('rules_v2_editorial');
+    expect(result.data.rankerVersion).toBe('rules_v3_source');
     const registered = result.data.events[0];
     expect(registered.friendsGoing).toHaveLength(1);
     expect(registered.friendsInterested).toHaveLength(1);
@@ -2017,7 +2032,7 @@ describe('getPivotFeed', () => {
           events[1]._id,
           events[0]._id,
         ],
-        rankerVersion: 'rules_v2_editorial',
+        rankerVersion: 'rules_v3_source',
         forceRefresh: false,
       }),
     );

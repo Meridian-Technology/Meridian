@@ -54,6 +54,8 @@ const pivotCitySourceSchema = new mongoose.Schema(
       trim: true,
       lowercase: true,
     },
+    /** Stable identity within a tenant; distinct calendars may share a host. */
+    sourceKey: { type: String, required: true, trim: true, lowercase: true },
     /** Best event-index URL found for this host, not necessarily its homepage. */
     url: {
       type: String,
@@ -119,6 +121,21 @@ const pivotCitySourceSchema = new mongoose.Schema(
       default: null,
       trim: true,
     },
+    /** Operator adjustment is kept separate from the computed evidence. */
+    rankingOverride: {
+      tier: { type: String, enum: ['promote', 'strong_promote', 'demote'], default: null },
+      note: { type: String, default: null, maxlength: 500 },
+      updatedBy: { type: String, default: null },
+      updatedAt: { type: Date, default: null },
+    },
+    score: {
+      quality: { type: Number, default: null },
+      reputation: { type: Number, default: null },
+      sampleSize: { type: Number, default: 0 },
+      batchCount: { type: Number, default: 0 },
+      computedAt: { type: Date, default: null },
+      version: { type: Number, default: 1 },
+    },
     /** Host-wide extraction guidance, shared by curation jobs for this source. */
     promptHints: {
       type: [String],
@@ -146,6 +163,8 @@ pivotCitySourceSchema.pre('validate', function normalizeFields() {
   if (this.host) {
     this.host = String(this.host).trim().toLowerCase().replace(/^www\./, '');
   }
+  if (!this.sourceKey && this.host) this.sourceKey = this.host;
+  if (this.sourceKey) this.sourceKey = String(this.sourceKey).trim().toLowerCase();
   if (Array.isArray(this.seedTags)) {
     this.seedTags = [
       ...new Set(this.seedTags.map((tag) => String(tag || '').trim()).filter(Boolean)),
@@ -156,7 +175,8 @@ pivotCitySourceSchema.pre('validate', function normalizeFields() {
   }
 });
 
-pivotCitySourceSchema.index({ tenantKey: 1, host: 1 }, { unique: true });
+pivotCitySourceSchema.index({ tenantKey: 1, sourceKey: 1 }, { unique: true });
+pivotCitySourceSchema.index({ tenantKey: 1, host: 1 });
 pivotCitySourceSchema.index({ tenantKey: 1, status: 1, enabled: 1 });
 
 module.exports = pivotCitySourceSchema;

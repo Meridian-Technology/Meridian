@@ -560,9 +560,9 @@ describe('pivotSourceDiscoveryService', () => {
       const nativeWrites = PivotCitySource.findOneAndUpdate.mock.calls.filter(
         ([filter]) => filter.host === 'luma.com',
       );
-      expect(nativeWrites).toHaveLength(1);
-      const [filter, update] = nativeWrites[0];
-      expect(filter).toEqual({ tenantKey: 'iowacity', host: 'luma.com' });
+      expect(nativeWrites).toHaveLength(2);
+      const [filter, update] = nativeWrites[1];
+      expect(filter).toEqual({ tenantKey: 'iowacity', host: 'luma.com', sourceKey: 'luma.com' });
       expect(update.$set).toMatchObject({
         provider: 'luma',
         status: 'qualified',
@@ -605,8 +605,8 @@ describe('pivotSourceDiscoveryService', () => {
       const nativeWrites = PivotCitySource.findOneAndUpdate.mock.calls.filter(
         ([filter]) => filter.host === 'partiful.com',
       );
-      expect(nativeWrites).toHaveLength(1);
-      expect(nativeWrites[0][1].$set).toMatchObject({
+      expect(nativeWrites).toHaveLength(2);
+      expect(nativeWrites[1][1].$set).toMatchObject({
         provider: 'partiful',
         status: 'qualified',
         url: 'https://partiful.com/explore/iowa-city',
@@ -1297,7 +1297,7 @@ describe('pivotSourceDiscoveryService', () => {
           lumaSlug: 'iowa-city',
         });
 
-        expect(updateCurationJob).not.toHaveBeenCalled();
+        expect(updateCurationJob).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ sourceId: expect.any(String) }));
       });
 
       it('does not rewrite URLs in preview mode', async () => {
@@ -1975,6 +1975,7 @@ describe('pivotSourceDiscoveryService', () => {
         }),
       });
 
+      PivotCurationJob.find.mockReturnValue({ select: jest.fn().mockReturnValue({ lean: jest.fn().mockResolvedValue([]) }) });
       const result = await listCitySources(mockReq(), { tenantKey: 'iowacity' });
 
       expect(result.data.sources).toHaveLength(1);
@@ -1989,6 +1990,7 @@ describe('pivotSourceDiscoveryService', () => {
       const lean = jest.fn().mockResolvedValue([]);
       PivotCitySource.find.mockReturnValue({ sort: jest.fn().mockReturnValue({ lean }) });
 
+      PivotCurationJob.find.mockReturnValue({ select: jest.fn().mockReturnValue({ lean: jest.fn().mockResolvedValue([]) }) });
       await listCitySources(mockReq(), { tenantKey: 'iowacity', status: 'rejected' });
 
       expect(PivotCitySource.find).toHaveBeenCalledWith({

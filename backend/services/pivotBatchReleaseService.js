@@ -1,5 +1,6 @@
 const mongoose = require('mongoose');
 const getModels = require('./getModelService');
+const { recomputeTenantSourceScores } = require('./pivotSourceScoreService');
 const { connectToDatabase } = require('../connectionsManager');
 const { resolvePivotTenant } = require('./pivotIngestPublishService');
 const { normalizeBatchWeek, rebuildWeeklySnapshot } = require('./pivotWeeklySnapshotService');
@@ -259,6 +260,16 @@ async function releaseBatch(req, options = {}) {
     { new: true, runValidators: true },
   ).lean();
 
+  if (releasedCount > 0) {
+    try {
+      await recomputeTenantSourceScores(req, tenantReq, tenantKey, now);
+    } catch (error) {
+      logPivot('warn', 'source score refresh failed after release', {
+        ...pivotRequestContext(req), tenantKey, batchWeek, message: error.message,
+      });
+    }
+  }
+
   let snapshot = null;
   const shouldRebuild = options.rebuildSnapshot !== false;
   if (shouldRebuild && releasedCount > 0) {
@@ -414,6 +425,16 @@ async function unreleaseBatch(req, options = {}) {
     { $set: batchSet },
     { new: true, runValidators: true },
   ).lean();
+
+  if (unreleasedCount > 0) {
+    try {
+      await recomputeTenantSourceScores(req, tenantReq, tenantKey, now);
+    } catch (error) {
+      logPivot('warn', 'source score refresh failed after unrelease', {
+        ...pivotRequestContext(req), tenantKey, batchWeek, message: error.message,
+      });
+    }
+  }
 
   let snapshot = null;
   const shouldRebuild = options.rebuildSnapshot !== false;

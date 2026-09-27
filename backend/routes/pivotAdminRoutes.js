@@ -93,6 +93,7 @@ const {
 } = require('../services/pivotCurationBatchService');
 const {
   listCitySources,
+  createCitySource,
   startCitySourceDiscovery,
   stopCitySourceDiscoveryRun,
   previewCitySourceDiscovery,
@@ -101,6 +102,7 @@ const {
   getCitySourceDiscoveryRun,
   getLatestCitySourceDiscoveryRun,
 } = require('../services/pivotSourceDiscoveryService');
+const { recomputeTenantSourceScores } = require('../services/pivotSourceScoreService');
 const {
   startCitySourceDiscoveryRehearsal,
 } = require('../services/pivotDiscoveryRehearsal');
@@ -2037,6 +2039,43 @@ router.get(
   },
 );
 
+router.post(
+  '/tenants/:tenantKey/sources',
+  verifyToken,
+  requirePlatformAdmin,
+  async (req, res) => {
+    try {
+      const result = await createCitySource(req, { ...req.body, tenantKey: req.params.tenantKey });
+      if (result.error) return res.status(result.status || 400).json({ success: false, message: result.error, code: result.code });
+      return res.status(201).json({ success: true, data: result.data });
+    } catch (err) {
+      logPivotRouteError('POST /admin/pivot/tenants/:tenantKey/sources', err, req);
+      return res.status(500).json({ success: false, message: 'Unable to create source.' });
+    }
+  },
+);
+
+router.post(
+  '/tenants/:tenantKey/sources/recompute-scores',
+  verifyToken,
+  requirePlatformAdmin,
+  async (req, res) => {
+    try {
+      const { connectToDatabase } = require('../connectionsManager');
+      const { resolvePivotTenant } = require('../services/pivotIngestPublishService');
+      const tenantResult = await resolvePivotTenant(req, req.params.tenantKey);
+      if (tenantResult.error) return res.status(tenantResult.status || 400).json({ success: false, message: tenantResult.error });
+      const tenantKey = tenantResult.tenant.tenantKey;
+      const tenantReq = { db: await connectToDatabase(tenantKey), school: tenantKey };
+      const data = await recomputeTenantSourceScores(req, tenantReq, tenantKey);
+      return res.status(200).json({ success: true, data });
+    } catch (err) {
+      logPivotRouteError('POST /admin/pivot/tenants/:tenantKey/sources/recompute-scores', err, req);
+      return res.status(500).json({ success: false, message: 'Unable to recompute source scores.' });
+    }
+  },
+);
+
 /**
  * Walk the pipeline with no outbound calls, so the console can be reviewed
  * before a Firecrawl key exists and before any credits are at stake.
@@ -2249,6 +2288,7 @@ router.patch(
         tenantKey: req.params.tenantKey,
         sourceId: req.params.sourceId,
         enabled: req.body?.enabled,
+        rankingOverride: req.body?.rankingOverride,
       });
       if (result.error) {
         return res.status(result.status || 400).json({
@@ -2398,6 +2438,7 @@ router.post(
         label: req.body?.label,
         url: req.body?.url,
         provider: req.body?.provider,
+        sourceId: req.body?.sourceId,
         defaultBatchWeekStrategy: req.body?.defaultBatchWeekStrategy,
         defaultTags: req.body?.defaultTags,
         enabled: req.body?.enabled,
@@ -2436,6 +2477,7 @@ router.patch(
         label: req.body?.label,
         url: req.body?.url,
         provider: req.body?.provider,
+        sourceId: req.body?.sourceId,
         defaultBatchWeekStrategy: req.body?.defaultBatchWeekStrategy,
         defaultTags: req.body?.defaultTags,
         enabled: req.body?.enabled,

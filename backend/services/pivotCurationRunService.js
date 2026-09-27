@@ -282,6 +282,8 @@ async function upsertDiscoveredEntry(
     entry,
     defaultTags,
     locationResolution = {},
+    sourceId,
+    entrypointId,
   },
 ) {
   const draft = entry?.draft || {};
@@ -304,6 +306,8 @@ async function upsertDiscoveredEntry(
     batchWeek,
     forceBatchWeek: Boolean(forceBatchWeek),
     url: sourceUrl,
+    sourceId,
+    entrypointId,
     draft,
     tagsRequired: false,
     resolveRichLocation: true,
@@ -461,6 +465,8 @@ async function ingestEntries(req, options = {}) {
         entry,
         defaultTags: tags,
         locationResolution,
+        sourceId: options.sourceId,
+        entrypointId: options.entrypointId,
       });
 
       if (outcome.upserted) {
@@ -722,9 +728,23 @@ async function executeCurationRun(runId) {
 
     const forceBatchWeek = Boolean(run.forceBatchWeek);
     const defaultTags = Array.isArray(job.defaultTags) ? job.defaultTags : [];
+    // Older and Relay-promoted jobs can predate the explicit source link.
+    // Resolve only an exact job or entrypoint URL, never a shared provider host.
+    let sourceId = job.sourceId;
+    if (!sourceId) {
+      const { PivotCitySource } = getGlobalModels(workerReq, 'PivotCitySource');
+      if (PivotCitySource?.findOne) {
+        const linked = await PivotCitySource.findOne({ tenantKey, provider: job.provider,
+          $or: [{ curationJobId: String(job._id) }, { url: job.url }] })
+          .select('_id').lean();
+        sourceId = linked?._id || null;
+      }
+    }
 
     const { events, failures } = await ingestEntries(workerReq, {
       tenantKey,
+      sourceId,
+      entrypointId: job._id,
       batchWeek: run.batchWeek,
       forceBatchWeek,
       entries,

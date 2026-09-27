@@ -20,6 +20,7 @@ function serializeCurationJob(doc) {
     label: row.label,
     url: row.url || null,
     provider: row.provider,
+    sourceId: row.sourceId ? String(row.sourceId) : null,
     defaultBatchWeekStrategy: row.defaultBatchWeekStrategy || 'next-drop',
     defaultTags: Array.isArray(row.defaultTags) ? row.defaultTags : [],
     enabled: row.enabled !== false,
@@ -224,12 +225,19 @@ async function createCurationJob(req, options = {}) {
 
   const enabled = options.enabled === undefined ? true : Boolean(options.enabled);
 
-  const { PivotCurationJob } = getGlobalModels(req, 'PivotCurationJob');
+  const { PivotCurationJob, PivotCitySource } = getGlobalModels(req, 'PivotCurationJob', 'PivotCitySource');
+  if (options.sourceId) {
+    if (!mongoose.Types.ObjectId.isValid(options.sourceId)
+      || !await PivotCitySource.exists({ _id: options.sourceId, tenantKey, provider: urlResult.provider })) {
+      return { error: 'Source not found in this tenant.', status: 404, code: 'SOURCE_NOT_FOUND' };
+    }
+  }
   const doc = await PivotCurationJob.create({
     tenantKey,
     label,
     url: urlResult.url,
     provider: urlResult.provider,
+    sourceId: options.sourceId || null,
     defaultBatchWeekStrategy: strategyResult.strategy,
     defaultTags: tagsResult,
     enabled,
@@ -284,6 +292,20 @@ async function updateCurationJob(req, options = {}) {
 
   if (options.enabled !== undefined) {
     doc.enabled = Boolean(options.enabled);
+  }
+  if (options.sourceId !== undefined) {
+    const { PivotCitySource } = getGlobalModels(req, 'PivotCitySource');
+    if (options.sourceId && (!mongoose.Types.ObjectId.isValid(options.sourceId)
+      || !await PivotCitySource.exists({ _id: options.sourceId, tenantKey, provider: doc.provider }))) {
+      return { error: 'Source not found in this tenant.', status: 404, code: 'SOURCE_NOT_FOUND' };
+    }
+    doc.sourceId = options.sourceId || null;
+  }
+  if (doc.sourceId && options.provider !== undefined && options.sourceId === undefined) {
+    const { PivotCitySource } = getGlobalModels(req, 'PivotCitySource');
+    if (!await PivotCitySource.exists({ _id: doc.sourceId, tenantKey, provider: doc.provider })) {
+      return { error: 'The linked source has a different provider.', status: 400, code: 'SOURCE_PROVIDER_MISMATCH' };
+    }
   }
 
   await doc.save();

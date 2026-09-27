@@ -59,6 +59,8 @@ const pivotCurationJobSchema = new mongoose.Schema(
       trim: true,
       lowercase: true,
     },
+    /** A job is one crawl entrypoint; several jobs can feed one source. */
+    sourceId: { type: mongoose.Schema.Types.ObjectId, ref: 'PivotCitySource', default: null },
     label: {
       type: String,
       required: true,
@@ -148,6 +150,7 @@ pivotCurationJobSchema.pre('validate', function normalizeFields() {
 
 pivotCurationJobSchema.index({ tenantKey: 1, createdAt: -1 });
 pivotCurationJobSchema.index({ tenantKey: 1, enabled: 1 });
+pivotCurationJobSchema.index({ tenantKey: 1, sourceId: 1 });
 
 module.exports = pivotCurationJobSchema;
 module.exports.CURATION_PROVIDERS = CURATION_PROVIDERS;

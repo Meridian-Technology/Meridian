@@ -81,6 +81,7 @@ const pivotDeckConfigSchema = new mongoose.Schema(
       personalInterest: { type: Number, default: null, min: 0, max: 1 },
       crewSignal: { type: Number, default: null, min: 0, max: 1 },
       negativeTag: { type: Number, default: null, min: 0, max: 5 },
+      sourceQuality: { type: Number, default: null, min: 0, max: 5 },
     },
   },
   { _id: false }

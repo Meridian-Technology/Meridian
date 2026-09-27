@@ -71,7 +71,20 @@ const {
   updateIngestEvent,
   mergeDraftWithOverrides,
   validateMergedDraft,
+  buildEventPayload,
 } = require('../../services/pivotIngestPublishService');
+
+it('stores trusted source and entrypoint attribution on ingested events', () => {
+  const payload = buildEventPayload({ name: 'Show', hostName: 'Venue', location: 'Downtown',
+    startTime: new Date('2026-07-12T18:00:00Z'), endTime: new Date('2026-07-12T20:00:00Z') }, {
+    catalogOrgId: 'org', sourceUrl: 'https://lu.ma/show', batchWeek: '2026-W28',
+    importedBy: 'test', tags: ['music'], ingestStatus: 'staged',
+    sourceId: 'source-1', entrypointId: 'job-1',
+    observedSourceIds: ['source-1'], observedEntrypointIds: ['job-1'],
+  });
+  expect(payload.customFields.pivot).toMatchObject({ sourceId: 'source-1',
+    entrypointId: 'job-1', observedSourceIds: ['source-1'], observedEntrypointIds: ['job-1'] });
+});
 
 const TENANT = {
   tenantKey: 'nyc',
