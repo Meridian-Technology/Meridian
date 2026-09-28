@@ -33,6 +33,7 @@ jest.mock('./PivotComputeJobRunStatus', () => ({
 }));
 
 jest.mock('../PivotLab/PivotTagMultiSelect', () => () => null);
+jest.mock('./PivotSourceIntelligence', () => () => null);
 
 describe('PivotTenantSourcesPanel compute-apply policy', () => {
   beforeEach(() => {

@@ -140,6 +140,16 @@
         "sourceUrl": { "type": "string", "format": "uri", "pattern": "^https://", "maxLength": 2048 },
         "hostName": { "oneOf": [{ "type": "string", "maxLength": 300 }, { "type": "null" }] },
         "hostProfileUrl": { "oneOf": [{ "type": "string", "format": "uri", "pattern": "^https://", "maxLength": 2048 }, { "type": "null" }] },
+        "scrapeEvidence": {
+          "type": "object", "additionalProperties": false,
+          "required": ["imageCandidates", "appliedRuleIds"],
+          "properties": {
+            "imageCandidates": { "type": "array", "maxItems": 6,
+              "items": { "type": "string", "format": "uri", "pattern": "^https://", "maxLength": 2048 } },
+            "appliedRuleIds": { "type": "array", "maxItems": 30,
+              "items": { "type": "string", "maxLength": 200 } }
+          }
+        },
         "tags": {
           "type": "array",
           "maxItems": 16,
@@ -214,6 +224,8 @@
         "jobId": { "type": "string", "pattern": "^[0-9a-f]{24}$" },
         "outcome": { "enum": ["completed", "failed", "skipped"] },
         "basedOnRecordVersion": { "type": "string", "pattern": "^rv:[a-zA-Z0-9._-]+$" },
+        "hintCount": { "type": "integer", "minimum": 0, "maximum": 30 },
+        "extractionRequests": { "type": "integer", "minimum": 0, "maximum": 10 },
         "failure": {
           "type": "object",
           "additionalProperties": false,

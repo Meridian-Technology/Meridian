@@ -1,6 +1,9 @@
 const mongoose = require('mongoose');
 const { connectToDatabase, connectToGlobalDatabase } = require('../connectionsManager');
 const getGlobalModels = require('./getGlobalModelService');
+const { explainSourceAdjustment } = require('./pivotSourceScoreService');
+const { validateExtractionHints } = require('../utilities/pivotExtractionHints');
+const { mergePivotDeckConfig } = require('../utilities/pivotDeckConfig');
 const { resolvePivotTenant } = require('./pivotIngestPublishService');
 const { isAllowedHost, detectProvider } = require('./pivotIngestPreviewService');
 const {
@@ -12,7 +15,7 @@ const {
   isSiteScrapeConfigured,
   scrapeNotConfiguredResult,
 } = require('./pivotSiteScrapeService');
-const { createCurationJob, updateCurationJob } = require('./pivotCurationJobService');
+const { createCurationJob, updateCurationJob, validateJobUrlAndProvider } = require('./pivotCurationJobService');
 const {
   createDiscoveryRun,
   serializeDiscoveryRun,
@@ -183,6 +186,7 @@ async function persistBootstrappedSource(req, tenantKey, spec, now, jobId, extra
   };
   const $setOnInsert = {
     tenantKey,
+    sourceKey: host,
     host,
     discoveredVia: 'native-bootstrap',
     discoveredAt: now,
@@ -196,7 +200,7 @@ async function persistBootstrappedSource(req, tenantKey, spec, now, jobId, extra
   }
 
   return PivotCitySource.findOneAndUpdate(
-    { tenantKey, host },
+    { tenantKey, host, sourceKey: host },
     { $set, $setOnInsert },
     { new: true, upsert: true },
   );
@@ -484,6 +488,13 @@ async function bootstrapNativeSources(req, options, sinks) {
   if (ingestEvents !== false) {
     for (const { job, spec } of jobsToRun) {
       if (state.shouldStop()) break;
+      if (persistRegistry && !job.sourceId) {
+        const savedSource = await sinks.persistBootstrappedSource(tenantKey, spec, now, job._id);
+        if (savedSource?._id) {
+          const linked = await sinks.updateCurationJob({ tenantKey, jobId: String(job._id), sourceId: String(savedSource._id) });
+          if (!linked.error) job.sourceId = savedSource._id;
+        }
+      }
       const crawled = await sinks.crawlNativeJob({ state, tenantKey, job, actor });
       crawledJobIds.push(String(job._id));
       if (crawled) {
@@ -492,14 +503,17 @@ async function bootstrapNativeSources(req, options, sinks) {
         events.failed += crawled.failed || 0;
       }
       if (persistRegistry) {
-        await sinks.persistBootstrappedSource(tenantKey, spec, now, job._id, {
+        const savedSource = await sinks.persistBootstrappedSource(tenantKey, spec, now, job._id, {
           lastEventCount: crawled?.upserted || 0,
         });
       }
     }
   } else if (persistRegistry) {
     for (const { job, spec } of jobsToRun) {
-      await sinks.persistBootstrappedSource(tenantKey, spec, now, job._id);
+      const savedSource = await sinks.persistBootstrappedSource(tenantKey, spec, now, job._id);
+      if (savedSource?._id && !job.sourceId) {
+        await sinks.updateCurationJob({ tenantKey, jobId: String(job._id), sourceId: String(savedSource._id) });
+      }
     }
   }
 
@@ -582,6 +596,7 @@ function serializeCitySource(doc) {
     _id: String(row._id),
     tenantKey: row.tenantKey,
     host: row.host,
+    sourceKey: row.sourceKey || row.host,
     url: row.url,
     label: row.label || null,
     provider: row.provider,
@@ -594,6 +609,11 @@ function serializeCitySource(doc) {
     lastQualifiedAt: row.lastQualifiedAt || null,
     lastEventCount: row.lastEventCount || 0,
     curationJobId: row.curationJobId || null,
+    rankingOverride: row.rankingOverride?.tier ? row.rankingOverride : null,
+    score: row.score || null,
+    promptHints: Array.isArray(row.promptHints) ? row.promptHints : [],
+    extractionRules: Array.isArray(row.extractionRules) ? row.extractionRules : [],
+    entrypoints: row.entrypoints || [],
     createdAt: row.createdAt || null,
     updatedAt: row.updatedAt || null,
   };
@@ -603,7 +623,7 @@ async function listCitySources(req, options = {}) {
   const tenantResult = await resolvePivotTenant(req, options.tenantKey);
   if (tenantResult.error) return tenantResult;
 
-  const { PivotCitySource } = getGlobalModels(req, 'PivotCitySource');
+  const { PivotCitySource, PivotCurationJob } = getGlobalModels(req, 'PivotCitySource', 'PivotCurationJob');
   const query = { tenantKey: tenantResult.tenant.tenantKey };
   if (options.status) query.status = options.status;
 
@@ -611,7 +631,55 @@ async function listCitySources(req, options = {}) {
     .sort({ status: 1, lastEventCount: -1, host: 1 })
     .lean();
 
-  return { data: { sources: rows.map(serializeCitySource) } };
+  const jobs = await PivotCurationJob.find({ tenantKey: query.tenantKey, sourceId: { $in: rows.map((row) => row._id) } })
+    .select('_id sourceId label url provider enabled lastRunStatus lastRunAt lastRunStats extractionProfile')
+    .lean();
+  const bySource = new Map();
+  for (const job of jobs) {
+    const id = String(job.sourceId);
+    if (!bySource.has(id)) bySource.set(id, []);
+    bySource.get(id).push({ id: String(job._id), label: job.label, url: job.url,
+      provider: job.provider, enabled: job.enabled !== false,
+      lastRunStatus: job.lastRunStatus, lastRunAt: job.lastRunAt,
+      lastRunStats: job.lastRunStats || null,
+      extractionProfile: job.extractionProfile || null });
+  }
+  const weights = mergePivotDeckConfig(tenantResult.tenant.pivotDeckConfig).weights;
+  return { data: { sources: rows.map((row) => ({ ...serializeCitySource(row),
+    entrypoints: bySource.get(String(row._id)) || [],
+    deckImpact: explainSourceAdjustment(row, weights.sourceQuality),
+  })), rankingSignals: {
+    personalInterest: weights.personalInterest,
+    friendInterested: weights.friendInterested,
+    friendGoing: weights.friendGoing,
+  } } };
+}
+
+async function createCitySource(req, options = {}) {
+  const tenantResult = await resolvePivotTenant(req, options.tenantKey);
+  if (tenantResult.error) return tenantResult;
+  const tenantKey = tenantResult.tenant.tenantKey;
+  const sourceKey = trimString(options.sourceKey).toLowerCase();
+  const host = trimString(options.host).toLowerCase().replace(/^www\./, '');
+  const label = trimString(options.label);
+  let url;
+  try { url = new URL(options.url); } catch { /* validated below */ }
+  if (!/^[a-z0-9][a-z0-9._-]{1,119}$/.test(sourceKey) || !host || !label
+    || !url || !['http:', 'https:'].includes(url.protocol)
+    || url.hostname.toLowerCase().replace(/^www\./, '') !== host
+    || !['partiful', 'luma', 'generic-site'].includes(options.provider)) {
+    return { error: 'sourceKey, host, and label are required; sourceKey must be a stable slug.', status: 400, code: 'INVALID_SOURCE' };
+  }
+  const urlResult = validateJobUrlAndProvider({ url: url.toString(), provider: options.provider });
+  if (urlResult.error) return urlResult;
+  const { PivotCitySource } = getGlobalModels(req, 'PivotCitySource');
+  if (await PivotCitySource.exists({ tenantKey, sourceKey })) {
+    return { error: 'Source key already exists.', status: 409, code: 'SOURCE_EXISTS' };
+  }
+  const doc = await PivotCitySource.create({ tenantKey, sourceKey, host, label,
+    url: urlResult.url, provider: options.provider,
+    status: 'qualified', enabled: true, discoveredVia: 'manual', discoveredAt: new Date() });
+  return { data: { source: serializeCitySource(doc) } };
 }
 
 /**
@@ -630,14 +698,34 @@ async function updateCitySource(req, options = {}) {
     return { error: 'Invalid source id.', status: 400, code: 'INVALID_SOURCE_ID' };
   }
 
-  if (options.enabled === undefined) {
-    return { error: 'enabled is required.', status: 400, code: 'NO_CHANGES' };
+  if (options.enabled === undefined && options.rankingOverride === undefined && options.promptHints === undefined) {
+    return { error: 'enabled, rankingOverride, or promptHints is required.', status: 400, code: 'NO_CHANGES' };
+  }
+
+  const hintResult = options.promptHints === undefined ? null : validateExtractionHints(options.promptHints);
+  if (hintResult?.error) return { error: hintResult.error, status: 400, code: 'INVALID_EXTRACTION_HINTS' };
+
+  let rankingOverride;
+  if (options.rankingOverride !== undefined) {
+    const raw = options.rankingOverride;
+    if (raw === null || raw?.tier === 'standard') rankingOverride = null;
+    else if (!raw || !['promote', 'strong_promote', 'demote'].includes(raw.tier)
+      || String(raw.note || '').length > 500) {
+      return { error: 'rankingOverride requires promote, strong_promote, or demote and a note of at most 500 characters.', status: 400, code: 'INVALID_RANKING_OVERRIDE' };
+    } else rankingOverride = { tier: raw.tier, note: String(raw.note || '').trim() || null,
+      updatedBy: req.user?.email || req.user?.userId || 'platform-admin', updatedAt: new Date() };
   }
 
   const { PivotCitySource } = getGlobalModels(req, 'PivotCitySource');
+  const $set = {
+    ...(options.enabled !== undefined ? { enabled: Boolean(options.enabled) } : {}),
+    ...(rankingOverride ? { rankingOverride } : {}),
+    ...(hintResult ? { promptHints: hintResult.hints } : {}),
+  };
   const doc = await PivotCitySource.findOneAndUpdate(
     { _id: sourceId, tenantKey: tenantResult.tenant.tenantKey },
-    { $set: { enabled: Boolean(options.enabled) } },
+    { ...(Object.keys($set).length ? { $set } : {}),
+      ...(rankingOverride === null ? { $unset: { rankingOverride: '' } } : {}) },
     { new: true },
   );
 
@@ -761,6 +849,8 @@ async function ingestEvents(req, { state, tenantKey, source, entries, batchWeek 
       batchWeek,
       forceBatchWeek: false,
       entries,
+      sourceId: source._id,
+      entrypointId: source.curationJobId,
       // The seed query that found the source is the same category signal its job
       // uses, so events land with identical tags either way.
       defaultTags: source.seedTags,
@@ -1043,7 +1133,7 @@ async function persistOutcome(req, tenantKey, outcome, now) {
   const qualified = outcome.status === 'qualified';
 
   const doc = await PivotCitySource.findOneAndUpdate(
-    { tenantKey, host: outcome.candidate.host },
+    { tenantKey, host: outcome.candidate.host, sourceKey: outcome.candidate.host },
     {
       $set: {
         url: outcome.url,
@@ -1056,6 +1146,7 @@ async function persistOutcome(req, tenantKey, outcome, now) {
       },
       $setOnInsert: {
         tenantKey,
+        sourceKey: outcome.candidate.host,
         host: outcome.candidate.host,
         discoveredVia: outcome.candidate.discoveredVia,
         discoveredAt: now,
@@ -1113,6 +1204,7 @@ async function registerDiscoveredSource(req, params, sinks) {
       defaultTags: source.seedTags,
       defaultBatchWeekStrategy: 'next-drop',
       linkedSourceHost: source.host,
+      sourceId: source._id,
     });
 
     if (jobResult.data?.job?._id) {
@@ -2023,6 +2115,7 @@ module.exports = {
   previewCitySourceDiscovery,
   scheduleCitySourceDiscovery,
   listCitySources,
+  createCitySource,
   updateCitySource,
   updateCityDiscoveryConfig,
   getCitySourceDiscoveryRun,

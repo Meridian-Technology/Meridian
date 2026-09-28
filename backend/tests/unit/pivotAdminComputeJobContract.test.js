@@ -14,6 +14,7 @@ const {
   listFixtures,
   isStaleContextPreview,
 } = require('../../utilities/pivotAdminComputeJobContract');
+const { buildEventProposalFromEntry } = require('../../services/pivotDiscoverySinks');
 
 describe('Pivot admin compute job contracts v1 (Phase 1, Step 1.2)', () => {
   it('locks contract version and supported compute kinds', () => {
@@ -70,6 +71,14 @@ describe('Pivot admin compute job contracts v1 (Phase 1, Step 1.2)', () => {
   });
 
   describe('context snapshot', () => {
+    it('accepts only bounded approved rules in refresh context', () => {
+      const context = loadFixture('context-refresh-valid.json');
+      context.jobs[0].extractionRules = [{ id: 'rule-1', field: 'image', reason: 'venue_logo',
+        badValue: 'https://venue.example/logo.png', status: 'active' }];
+      expect(validateContextSnapshot(context)).toEqual({ valid: true });
+      context.jobs[0].extractionRules[0].status = 'proposed';
+      expect(validateContextSnapshot(context).valid).toBe(false);
+    });
     it('accepts bounded discovery and refresh context snapshots', () => {
       expect(validateContextSnapshot(loadFixture('context-discovery-valid.json'))).toEqual({ valid: true });
       expect(validateContextSnapshot(loadFixture('context-refresh-valid.json'))).toEqual({ valid: true });
@@ -97,6 +106,31 @@ describe('Pivot admin compute job contracts v1 (Phase 1, Step 1.2)', () => {
       expect(validateExecutionResult(loadFixture('result-discovery-valid-completed.json'))).toEqual({ valid: true });
       expect(validateExecutionResult(loadFixture('result-refresh-valid-completed.json'))).toEqual({ valid: true });
       expect(validateExecutionResult(loadFixture('result-carousel-valid-completed.json'))).toEqual({ valid: true });
+    });
+
+    it('carries bounded scrape image evidence in refresh event proposals', () => {
+      const result = loadFixture('result-refresh-valid-completed.json');
+      const proposal = result.proposals.jobOutcomes?.[0]?.events?.[0]
+        || result.proposals.events?.[0];
+      expect(proposal).toBeDefined();
+      proposal.draft.scrapeEvidence = {
+        imageCandidates: ['https://venue.example/poster.jpg'], appliedRuleIds: ['rule-1'],
+      };
+      expect(validateExecutionResult(result)).toEqual({ valid: true });
+      proposal.draft.scrapeEvidence.imageCandidates.push('http://localhost/logo.png');
+      expect(validateExecutionResult(result).valid).toBe(false);
+    });
+
+    it('preserves only safe image evidence when building an offloaded event proposal', () => {
+      const proposal = buildEventProposalFromEntry({ draft: {
+        name: 'Open Mic', sourceUrl: 'https://venue.example/show',
+        start_time: '2026-09-26T20:00:00Z',
+        scrapeEvidence: { imageCandidates: ['https://venue.example/poster.jpg',
+          'http://localhost/logo.png'], appliedRuleIds: ['logo-rule'] },
+      } }, { provider: 'generic-site', defaultTags: ['music'] });
+      expect(proposal.draft.scrapeEvidence).toEqual({
+        imageCandidates: ['https://venue.example/poster.jpg'], appliedRuleIds: ['logo-rule'],
+      });
     });
 
     it('rejects unsupported carousel artifacts and oversized or incomplete manifests', () => {

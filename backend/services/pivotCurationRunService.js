@@ -9,6 +9,7 @@ const {
   GENERIC_SITE_PROVIDER,
 } = require('./pivotIngestPreviewService');
 const { isSiteScrapeConfigured } = require('./pivotSiteScrapeService');
+const { loadApprovedHintsForJob, loadApprovedRulesForJob, recordScrapeLearningRun } = require('./pivotScrapeLearningService');
 const { normalizeBatchWeek } = require('./pivotWeeklySnapshotService');
 const { ensurePivotBatch } = require('./pivotBatchService');
 const { toIsoWeek, shiftIsoWeek } = require('../utilities/pivotIsoWeek');
@@ -282,6 +283,8 @@ async function upsertDiscoveredEntry(
     entry,
     defaultTags,
     locationResolution = {},
+    sourceId,
+    entrypointId,
   },
 ) {
   const draft = entry?.draft || {};
@@ -304,6 +307,8 @@ async function upsertDiscoveredEntry(
     batchWeek,
     forceBatchWeek: Boolean(forceBatchWeek),
     url: sourceUrl,
+    sourceId,
+    entrypointId,
     draft,
     tagsRequired: false,
     resolveRichLocation: true,
@@ -461,6 +466,8 @@ async function ingestEntries(req, options = {}) {
         entry,
         defaultTags: tags,
         locationResolution,
+        sourceId: options.sourceId,
+        entrypointId: options.entrypointId,
       });
 
       if (outcome.upserted) {
@@ -670,6 +677,10 @@ async function executeCurationRun(runId) {
     }
 
     const maxEvents = run.maxEvents != null ? run.maxEvents : null;
+    const promptHints = job.provider === GENERIC_SITE_PROVIDER
+      ? await loadApprovedHintsForJob(workerReq, tenantKey, job) : [];
+    const extractionRules = job.provider === GENERIC_SITE_PROVIDER
+      ? await loadApprovedRulesForJob(workerReq, tenantKey, job) : [];
     const preview = await previewIngestUrl(workerReq, {
       url: job.url,
       ...(maxEvents != null ? { maxEvents } : {}),
@@ -678,6 +689,8 @@ async function executeCurationRun(runId) {
       // the city timezone to resolve relative dates like "Fri 8pm".
       provider: job.provider,
       timezone: await resolveTenantTimezone(workerReq, tenantKey),
+      promptHints,
+      extractionRules,
     });
 
     if (preview.error) {
@@ -722,9 +735,23 @@ async function executeCurationRun(runId) {
 
     const forceBatchWeek = Boolean(run.forceBatchWeek);
     const defaultTags = Array.isArray(job.defaultTags) ? job.defaultTags : [];
+    // Older and Relay-promoted jobs can predate the explicit source link.
+    // Resolve only an exact job or entrypoint URL, never a shared provider host.
+    let sourceId = job.sourceId;
+    if (!sourceId) {
+      const { PivotCitySource } = getGlobalModels(workerReq, 'PivotCitySource');
+      if (PivotCitySource?.findOne) {
+        const linked = await PivotCitySource.findOne({ tenantKey, provider: job.provider,
+          $or: [{ curationJobId: String(job._id) }, { url: job.url }] })
+          .select('_id').lean();
+        sourceId = linked?._id || null;
+      }
+    }
 
     const { events, failures } = await ingestEntries(workerReq, {
       tenantKey,
+      sourceId,
+      entrypointId: job._id,
       batchWeek: run.batchWeek,
       forceBatchWeek,
       entries,
@@ -757,6 +784,14 @@ async function executeCurationRun(runId) {
       finishedAt,
       events,
     });
+    if (job.provider === GENERIC_SITE_PROVIDER) {
+      try {
+        await recordScrapeLearningRun(workerReq, { tenantKey, jobId, runKey: `local:${runId}`,
+          stats, hintCount: promptHints.length, estimatedCredits: 5, completedAt: finishedAt });
+      } catch (error) {
+        logPivot('warn', 'scrape learning run record failed', { tenantKey, jobId: String(jobId), message: error.message });
+      }
+    }
 
     // A batch emits one aggregate completion summary of its own. Logging every
     // child completion makes a large refresh unnecessarily noisy, while a

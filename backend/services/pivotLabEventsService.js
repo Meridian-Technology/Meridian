@@ -75,6 +75,8 @@ function serializeLabEvent(event, intentStatsByEventId, options = {}) {
     featured: pivot.featured === true,
     rankingOverride: readRankingOverride(event),
     source: pivot.source || null,
+    entrypointId: pivot.entrypointId ? String(pivot.entrypointId) : null,
+    scrapeEvidence: pivot.scrapeEvidence || null,
     batchWeek: pivot.batchWeek || null,
     outOfReviewRange:
       batchWeek && dropDayOfWeek != null

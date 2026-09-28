@@ -5,6 +5,7 @@ import { useNotification } from '../../../NotificationContext';
 import PivotTagMultiSelect from '../PivotLab/PivotTagMultiSelect';
 import { buildAdminCreateJobRequest } from './pivotComputeJobActions';
 import PivotComputeJobRunStatus, { useTenantComputeJob } from './PivotComputeJobRunStatus';
+import PivotSourceIntelligence from './PivotSourceIntelligence';
 import './PivotTenantSourcesPanel.scss';
 
 const NO_FETCH_CACHE = { enabled: false };
@@ -32,20 +33,6 @@ function normalizeComputeApplyPolicy(value) {
       : DEFAULT_COMPUTE_APPLY_POLICY.autoApplyOrigins,
   };
 }
-
-const STATUS_OPTIONS = [
-  { value: 'all', label: 'All' },
-  { value: 'qualified', label: 'Qualified' },
-  { value: 'rejected', label: 'Rejected' },
-];
-
-const REJECTION_LABELS = {
-  'no-events': 'No events on page',
-  'below-threshold': 'Too few events',
-  'scrape-failed': 'Scrape failed',
-  'no-index-page': 'No calendar page',
-  'blocked-host': 'Blocked host',
-};
 
 const FLOW_OPTIONS = [
   {
@@ -78,20 +65,6 @@ function defaultOptions() {
   };
 }
 
-function SourceStatusCell({ source }) {
-  if (source.status === 'qualified') {
-    return <span className="pivot-lab__pill pivot-lab__pill--ok">Qualified</span>;
-  }
-  return (
-    <span
-      className="pivot-lab__pill pivot-lab__pill--muted"
-      title={source.rejectedReason || undefined}
-    >
-      {REJECTION_LABELS[source.rejectedReason] || 'Rejected'}
-    </span>
-  );
-}
-
 /**
  * Autonomous source discovery for a city.
  *
@@ -111,9 +84,10 @@ function PivotTenantSourcesPanel({
   onJobsChanged,
 }) {
   const { addNotification } = useNotification();
-  const [statusFilter, setStatusFilter] = useState('all');
   const [optionsOpen, setOptionsOpen] = useState(false);
-  const [sitesExpanded, setSitesExpanded] = useState(false);
+  const [newSource, setNewSource] = useState({ sourceKey: '', label: '', url: '', provider: 'luma' });
+  const [creatingSource, setCreatingSource] = useState(false);
+  const [recomputingScores, setRecomputingScores] = useState(false);
   const [options, setOptions] = useState(defaultOptions);
   const [starting, setStarting] = useState(false);
   const [savingConfig, setSavingConfig] = useState(false);
@@ -133,16 +107,12 @@ function PivotTenantSourcesPanel({
   const sourcesUrl = tenantKey
     ? `/admin/pivot/tenants/${encodeURIComponent(tenantKey)}/sources`
     : null;
-  const sourcesParams = useMemo(
-    () => (statusFilter === 'all' ? undefined : { status: statusFilter }),
-    [statusFilter],
-  );
   const {
     data: sourcesResponse,
     loading: sourcesLoading,
     error: sourcesError,
     refetch: refetchSources,
-  } = useFetch(sourcesUrl, { params: sourcesParams, cache: NO_FETCH_CACHE });
+  } = useFetch(sourcesUrl, { cache: NO_FETCH_CACHE });
 
   // The plan is resolved server-side so the ceiling shown here comes from the
   // same seed logic the run will use.
@@ -214,21 +184,6 @@ function PivotTenantSourcesPanel({
     }));
   }, [plan]);
 
-  const counts = useMemo(() => {
-    let qualified = 0;
-    let rejected = 0;
-    let events = 0;
-    for (const source of sources) {
-      if (source.status === 'qualified') {
-        qualified += 1;
-        events += source.lastEventCount || 0;
-      } else {
-        rejected += 1;
-      }
-    }
-    return { qualified, rejected, events };
-  }, [sources]);
-
   const handleDiscover = useCallback(async () => {
     if (!tenantKey) return;
 
@@ -288,6 +243,42 @@ function PivotTenantSourcesPanel({
     },
     [addNotification, refetchSources, tenantKey],
   );
+
+  const createSource = useCallback(async () => {
+    let host;
+    try { host = new URL(newSource.url).hostname.replace(/^www\./, '').toLowerCase(); }
+    catch { addNotification({ title: 'Valid URL required', type: 'warning' }); return; }
+    setCreatingSource(true);
+    const { data, error } = await authenticatedRequest(sourcesUrl, {
+      method: 'POST', data: { ...newSource, host },
+    });
+    setCreatingSource(false);
+    if (error || !data?.success) {
+      addNotification({ title: 'Source creation failed', message: error || data?.message, type: 'error' });
+      return;
+    }
+    setNewSource({ sourceKey: '', label: '', url: '', provider: 'luma' });
+    refetchSources();
+  }, [addNotification, newSource, refetchSources, sourcesUrl]);
+
+  const setSourceTier = useCallback(async (source, tier) => {
+    const { data, error } = await authenticatedRequest(`${sourcesUrl}/${encodeURIComponent(source._id)}`, {
+      method: 'PATCH', data: { rankingOverride: tier === 'standard' ? null : { tier } },
+    });
+    if (error || !data?.success) addNotification({ title: 'Source ranking update failed', message: error || data?.message, type: 'error' });
+    else refetchSources();
+  }, [addNotification, refetchSources, sourcesUrl]);
+
+  const refreshScores = useCallback(async () => {
+    setRecomputingScores(true);
+    const { data, error } = await authenticatedRequest(`${sourcesUrl}/recompute-scores`, { method: 'POST' });
+    setRecomputingScores(false);
+    if (error || !data?.success) addNotification({ title: 'Score refresh failed', message: error || data?.message, type: 'error' });
+    else {
+      refetchSources();
+      addNotification({ title: 'Source evidence updated', message: `${data.data?.updated || 0} sources recalculated.`, type: 'success' });
+    }
+  }, [addNotification, refetchSources, sourcesUrl]);
 
   const handleSaveConfig = useCallback(async () => {
     if (!tenantKey) return;
@@ -365,10 +356,28 @@ function PivotTenantSourcesPanel({
 
   return (
     <section className="linear-section pivot-lab__section pivot-sources" aria-labelledby="curation-sources">
+      <PivotSourceIntelligence
+        sources={sources}
+        tenantKey={tenantKey}
+        cityLabel={cityDisplayName}
+        catalogTags={catalogTags}
+        rankingSignals={sourcesResponse?.data?.rankingSignals}
+        loading={sourcesLoading}
+        error={sourcesError}
+        onRefresh={refetchSources}
+        onRecompute={refreshScores}
+        recomputing={recomputingScores}
+        onCreate={createSource}
+        creating={creatingSource}
+        newSource={newSource}
+        onNewSourceChange={setNewSource}
+        onSetTier={setSourceTier}
+        onToggleEnabled={toggleEnabled}
+      />
       <div
         className={`pivot-sources__agent${running ? ' pivot-sources__agent--live' : ''}`}
         role="region"
-        aria-labelledby="curation-sources"
+        aria-labelledby="curation-discovery"
       >
         <div className="pivot-sources__agent-main">
           <span className="pivot-sources__agent-orb" aria-hidden="true">
@@ -376,7 +385,7 @@ function PivotTenantSourcesPanel({
           </span>
           <div className="pivot-sources__agent-copy">
             <div className="pivot-sources__agent-title-row">
-              <h2 id="curation-sources" className="pivot-sources__agent-title">
+              <h2 id="curation-discovery" className="pivot-sources__agent-title">
                 Discovery agent
               </h2>
               <span className="pivot-sources__agent-city">{cityDisplayName || tenantKey}</span>
@@ -658,142 +667,6 @@ function PivotTenantSourcesPanel({
         />
       </div>
 
-      <div className="pivot-sources__registry">
-        <button
-          type="button"
-          className="pivot-sources__collapse-toggle"
-          onClick={() => setSitesExpanded((open) => !open)}
-          aria-expanded={sitesExpanded}
-        >
-          <span className="pivot-sources__collapse-label">
-            Sites
-            <span className="pivot-sources__collapse-meta">
-              {counts.qualified} qualified · {counts.rejected} ruled out
-              {counts.events ? ` · ${counts.events} events seen` : ''}
-            </span>
-          </span>
-          <span className="pivot-sources__collapse-chevron" aria-hidden="true">
-            {sitesExpanded ? '▾' : '▸'}
-          </span>
-        </button>
-
-        {sitesExpanded ? (
-          <>
-            <div className="pivot-sources__toolbar">
-              <label className="linear-field">
-                <span className="linear-field__label">Show</span>
-                <select
-                  className="linear-input"
-                  value={statusFilter}
-                  onChange={(e) => setStatusFilter(e.target.value)}
-                >
-                  {STATUS_OPTIONS.map((opt) => (
-                    <option key={opt.value} value={opt.value}>
-                      {opt.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <p className="pivot-sources__counts">
-                Rejected hosts are kept so later runs can skip them.
-              </p>
-              <button
-                type="button"
-                className="linear-btn linear-btn--ghost"
-                onClick={refetchSources}
-                disabled={sourcesLoading}
-              >
-                Refresh
-              </button>
-            </div>
-
-            {sourcesError ? <p className="pivot-lab__error">{String(sourcesError)}</p> : null}
-
-            {sourcesLoading && !sources.length ? (
-              <p className="pivot-lab__empty">Loading sources…</p>
-            ) : sources.length ? (
-              <div className="pivot-lab__table-wrap">
-                <table className="pivot-lab__table">
-                  <thead>
-                    <tr>
-                      <th scope="col">Site</th>
-                      <th scope="col">Provider</th>
-                      <th scope="col">Status</th>
-                      <th scope="col">Events</th>
-                      <th scope="col">Categories</th>
-                      <th scope="col">Found via</th>
-                      <th scope="col">Job</th>
-                      <th scope="col">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {sources.map((source) => (
-                      <tr
-                        key={source._id}
-                        className={source.enabled === false ? 'is-disabled' : undefined}
-                      >
-                        <td>
-                          <strong>{source.label || source.host}</strong>
-                          <a
-                            className="pivot-sources__url"
-                            href={source.url}
-                            target="_blank"
-                            rel="noreferrer"
-                            title={source.url}
-                          >
-                            {source.host}
-                          </a>
-                        </td>
-                        <td>{source.provider}</td>
-                        <td>
-                          <SourceStatusCell source={source} />
-                        </td>
-                        <td>
-                          {source.status === 'qualified' ? source.lastEventCount || 0 : '—'}
-                        </td>
-                        <td>{source.seedTags?.length ? source.seedTags.join(', ') : '—'}</td>
-                        <td
-                          className="pivot-sources__query"
-                          title={source.discoveredVia || undefined}
-                        >
-                          {source.discoveredVia || '—'}
-                        </td>
-                        <td>
-                          {source.curationJobId ? (
-                            <span className="pivot-lab__pill pivot-lab__pill--info">Linked</span>
-                          ) : (
-                            <span className="pivot-lab__pill pivot-lab__pill--muted">—</span>
-                          )}
-                        </td>
-                        <td>
-                          {source.status === 'qualified' ? (
-                            <button
-                              type="button"
-                              className="linear-btn linear-btn--ghost pivot-lab__edit-btn"
-                              onClick={() => toggleEnabled(source)}
-                              title={
-                                source.enabled === false
-                                  ? 'Include this source in future refresh crawls'
-                                  : 'Stop crawling this source without forgetting it'
-                              }
-                            >
-                              {source.enabled === false ? 'Enable' : 'Mute'}
-                            </button>
-                          ) : null}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            ) : (
-              <p className="pivot-lab__empty">
-                No sources yet. Start discovery above — you only need the city, no URLs.
-              </p>
-            )}
-          </>
-        ) : null}
-      </div>
 
     </section>
   );

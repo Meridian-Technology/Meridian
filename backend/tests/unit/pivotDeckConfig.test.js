@@ -22,6 +22,7 @@ describe('pivotDeckConfig', () => {
         personalInterest: 0.7,
         crewSignal: 0.2,
         negativeTag: 0.4,
+        sourceQuality: 0.45,
       });
     });
 
@@ -160,6 +161,7 @@ describe('pivotDeckConfig', () => {
           personalInterest: 0.7,
           crewSignal: 0.2,
           negativeTag: 0.4,
+          sourceQuality: 0.45,
         },
       });
     });

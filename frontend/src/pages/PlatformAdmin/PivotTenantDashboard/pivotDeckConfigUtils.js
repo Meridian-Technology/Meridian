@@ -17,6 +17,7 @@ export const PIVOT_DECK_CONFIG_DEFAULTS = Object.freeze({
     personalInterest: 0.7,
     crewSignal: 0.2,
     negativeTag: 0.4,
+    sourceQuality: 0.45,
   }),
 });
 
@@ -143,7 +144,7 @@ export function validateEffectiveDeckConfig(config) {
     const result = clampNumber(weights[field], `weights.${field}`, { min: 0, max: 1 });
     if (result.error) return result;
   }
-  for (const field of ['friendGoing', 'friendInterested', 'negativeTag']) {
+  for (const field of ['friendGoing', 'friendInterested', 'negativeTag', 'sourceQuality']) {
     const result = clampNumber(weights[field], `weights.${field}`, {
       min: 0,
       max: SCORE_WEIGHT_MAX,
@@ -213,4 +214,5 @@ export const DROP_DECK_SCORE_FORMULA = [
   '  + personalInterest × matching interest tags',
   '  + crew interest bleed (≤ crew config maxWeight)',
   '  − negativeTag × tags from events rated under 3',
+  '  + bounded source quality and reputation adjustment',
 ].join('\n');

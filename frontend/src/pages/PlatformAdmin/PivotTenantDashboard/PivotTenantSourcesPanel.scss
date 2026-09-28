@@ -8,7 +8,7 @@
   /* Compact agent strip — reads like a runnable worker, not a promo card. */
   &__agent {
     position: relative;
-    margin: 0 0 14px;
+    margin: 20px 0 14px;
     padding: 12px 14px;
     overflow: hidden;
     border: 1px solid var(--pivot-ops-border, rgba(26, 23, 20, 0.12));
@@ -165,57 +165,6 @@
     color: var(--la-text-muted, rgba(0, 0, 0, 0.55));
   }
 
-  &__registry {
-    margin-top: 4px;
-  }
-
-  &__collapse-toggle {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-    width: 100%;
-    margin: 0;
-    padding: 10px 12px;
-    border: 1px solid var(--pivot-ops-border, rgba(26, 23, 20, 0.12));
-    border-radius: var(--pivot-ops-radius-card, 12px);
-    background: var(--pivot-ops-surface, #fff);
-    color: inherit;
-    font: inherit;
-    text-align: left;
-    cursor: pointer;
-    transition: background 0.12s ease, border-color 0.12s ease;
-
-    &:hover {
-      background: var(--la-row-hover, rgba(0, 0, 0, 0.04));
-    }
-
-    &[aria-expanded='true'] {
-      margin-bottom: 12px;
-    }
-  }
-
-  &__collapse-label {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: baseline;
-    gap: 8px 12px;
-    font-size: 14px;
-    font-weight: 600;
-  }
-
-  &__collapse-meta {
-    font-size: 12.5px;
-    font-weight: 400;
-    color: var(--la-text-muted, rgba(0, 0, 0, 0.55));
-  }
-
-  &__collapse-chevron {
-    flex: 0 0 auto;
-    color: var(--la-text-tertiary, rgba(0, 0, 0, 0.45));
-    font-size: 14px;
-  }
-
   &__form-grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
@@ -244,46 +193,4 @@
     font-weight: 400;
   }
 
-  &__toolbar {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: flex-end;
-    gap: 12px 16px;
-    margin: 0 0 14px;
-
-    .linear-field {
-      flex: 0 0 auto;
-      min-width: 140px;
-    }
-  }
-
-  &__counts {
-    flex: 1 1 auto;
-    margin: 0;
-    font-size: 13px;
-    color: var(--la-text-muted, rgba(0, 0, 0, 0.6));
-  }
-
-  &__url {
-    display: block;
-    max-width: 320px;
-    overflow: hidden;
-    font-size: 12px;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    color: var(--la-text-muted, rgba(0, 0, 0, 0.55));
-  }
-
-  &__query {
-    max-width: 240px;
-    overflow: hidden;
-    font-size: 12px;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    color: var(--la-text-muted, rgba(0, 0, 0, 0.55));
-  }
-
-  .is-disabled {
-    opacity: 0.55;
-  }
 }

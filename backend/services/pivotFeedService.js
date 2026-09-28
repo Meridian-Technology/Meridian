@@ -1,5 +1,7 @@
 const mongoose = require('mongoose');
 const getModels = require('./getModelService');
+const getGlobalModels = require('./getGlobalModelService');
+const { sourceAdjustment } = require('./pivotSourceScoreService');
 const { getTenantByKey } = require('./tenantConfigService');
 const { isValidIsoWeek, shiftIsoWeek } = require('../utilities/pivotIsoWeek');
 const {
@@ -46,7 +48,7 @@ const FEED_CREW_CONFIG_CACHE_TTL_MS = 60_000;
 const PIVOT_EVENT_STATUSES = ['approved', 'not-applicable'];
 const LOW_FEEDBACK_RATING_THRESHOLD = 3;
 /** Ranker id stamped on feed payloads + deck impressions. */
-const PIVOT_FEED_RANKER_VERSION = 'rules_v2_editorial';
+const PIVOT_FEED_RANKER_VERSION = 'rules_v3_source';
 const PUBLIC_EVENT_FIELDS =
   'name description location richLocation start_time end_time externalLink type registrationCount image customFields.pivot';
 const CATALOG_PROBE_FIELDS = 'start_time end_time customFields.pivot';
@@ -853,7 +855,10 @@ function explainDropDeckScore(
     : 0;
   const negative =
     (Number(weights.negativeTag) || 0) * countNegativeTagOverlap(event, negativeFeedbackTags);
-  const organicTotal = friendGoing + friendInterested + crew + personal + bleed - negative;
+  const sourceId = event.customFields?.pivot?.sourceId;
+  const source = sourceId ? rankOptions.sourcesById?.get(String(sourceId)) : null;
+  const sourceScore = sourceAdjustment(source, Number(weights.sourceQuality) || 0);
+  const organicTotal = friendGoing + friendInterested + crew + personal + bleed - negative + sourceScore;
   const editorial = editorialAdjustmentForEvent(event, userInterestTags).adjustment;
   const total = organicTotal + editorial;
   return {
@@ -865,6 +870,7 @@ function explainDropDeckScore(
     personal,
     bleed,
     negative,
+    source: sourceScore,
     editorial,
   };
 }
@@ -1336,6 +1342,13 @@ async function getPivotFeed(req, options = {}) {
     interestBleed: crewRankConfig.interestBleed,
     crewBleedTags,
   };
+  const sourceIds = [...new Set(catalogEvents.map((event) => String(event.customFields?.pivot?.sourceId || '')).filter(Boolean))];
+  if (sourceIds.length) {
+    const { PivotCitySource } = getGlobalModels(req, 'PivotCitySource');
+    const sources = await PivotCitySource.find({ tenantKey: tenant.tenantKey, _id: { $in: sourceIds } })
+      .select('_id score rankingOverride').lean();
+    rankOptions.sourcesById = new Map(sources.map((source) => [String(source._id), source]));
+  }
   const deckConfig = getFeedDeckConfigFromTenant(tenant);
 
   let deckEvents = catalogEvents;

@@ -7,6 +7,7 @@ const {
   CURATION_PROVIDERS,
   BATCH_WEEK_STRATEGIES,
 } = require('../schemas/pivotCurationJob');
+const { validateExtractionHints, mergeExtractionHints } = require('../utilities/pivotExtractionHints');
 
 function actorFromReq(req) {
   return req?.user?.email || req?.user?.globalUserId || req?.user?.userId || null;
@@ -20,6 +21,7 @@ function serializeCurationJob(doc) {
     label: row.label,
     url: row.url || null,
     provider: row.provider,
+    sourceId: row.sourceId ? String(row.sourceId) : null,
     defaultBatchWeekStrategy: row.defaultBatchWeekStrategy || 'next-drop',
     defaultTags: Array.isArray(row.defaultTags) ? row.defaultTags : [],
     enabled: row.enabled !== false,
@@ -36,6 +38,14 @@ function serializeCurationJob(doc) {
           updated: Boolean(event?.updated),
         }))
       : [],
+    extractionProfile: {
+      promptHints: row.extractionProfile?.promptHints || [],
+      suggestedHints: row.extractionProfile?.suggestedHints || [],
+      extractionRules: row.extractionProfile?.extractionRules || [],
+      learningRuns: row.extractionProfile?.learningRuns || [],
+      updatedAt: row.extractionProfile?.updatedAt || null,
+      updatedBy: row.extractionProfile?.updatedBy || null,
+    },
     createdBy: row.createdBy || null,
     createdAt: row.createdAt || null,
     updatedAt: row.updatedAt || null,
@@ -223,16 +233,28 @@ async function createCurationJob(req, options = {}) {
   if (tagsResult.error) return tagsResult;
 
   const enabled = options.enabled === undefined ? true : Boolean(options.enabled);
+  const hintResult = options.promptHints === undefined ? { hints: [] } : validateExtractionHints(options.promptHints);
+  if (hintResult.error) return { error: hintResult.error, status: 400, code: 'INVALID_EXTRACTION_HINTS' };
 
-  const { PivotCurationJob } = getGlobalModels(req, 'PivotCurationJob');
+  const { PivotCurationJob, PivotCitySource } = getGlobalModels(req, 'PivotCurationJob', 'PivotCitySource');
+  if (options.sourceId) {
+    if (!mongoose.Types.ObjectId.isValid(options.sourceId)
+      || !await PivotCitySource.exists({ _id: options.sourceId, tenantKey, provider: urlResult.provider })) {
+      return { error: 'Source not found in this tenant.', status: 404, code: 'SOURCE_NOT_FOUND' };
+    }
+  }
   const doc = await PivotCurationJob.create({
     tenantKey,
     label,
     url: urlResult.url,
     provider: urlResult.provider,
+    sourceId: options.sourceId || null,
     defaultBatchWeekStrategy: strategyResult.strategy,
     defaultTags: tagsResult,
     enabled,
+    extractionProfile: { promptHints: hintResult.hints,
+      updatedAt: hintResult.hints.length ? new Date() : null,
+      updatedBy: hintResult.hints.length ? actorFromReq(req) : null },
     createdBy: actorFromReq(req),
   });
 
@@ -284,6 +306,45 @@ async function updateCurationJob(req, options = {}) {
 
   if (options.enabled !== undefined) {
     doc.enabled = Boolean(options.enabled);
+  }
+  if (options.promptHints !== undefined) {
+    const hintResult = validateExtractionHints(options.promptHints);
+    if (hintResult.error) return { error: hintResult.error, status: 400, code: 'INVALID_EXTRACTION_HINTS' };
+    if (!doc.extractionProfile) doc.extractionProfile = { promptHints: [] };
+    doc.extractionProfile.promptHints = hintResult.hints;
+    doc.extractionProfile.updatedAt = new Date();
+    doc.extractionProfile.updatedBy = actorFromReq(req);
+  }
+  if (options.hintDecision !== undefined) {
+    if (!doc.extractionProfile) doc.extractionProfile = { promptHints: [] };
+    const { id, action, text } = options.hintDecision || {};
+    const suggestions = doc.extractionProfile?.suggestedHints || [];
+    const suggestion = suggestions.find((row) => row.id === id);
+    if (!suggestion || !['approve', 'dismiss'].includes(action)) {
+      return { error: 'Unknown hint suggestion or decision.', status: 400, code: 'INVALID_HINT_DECISION' };
+    }
+    if (action === 'approve') {
+      const hintResult = validateExtractionHints([...(doc.extractionProfile.promptHints || []), text || suggestion.text]);
+      if (hintResult.error) return { error: hintResult.error, status: 400, code: 'INVALID_EXTRACTION_HINTS' };
+      doc.extractionProfile.promptHints = mergeExtractionHints([], hintResult.hints);
+    }
+    doc.extractionProfile.suggestedHints = suggestions.filter((row) => row.id !== id);
+    doc.extractionProfile.updatedAt = new Date();
+    doc.extractionProfile.updatedBy = actorFromReq(req);
+  }
+  if (options.sourceId !== undefined) {
+    const { PivotCitySource } = getGlobalModels(req, 'PivotCitySource');
+    if (options.sourceId && (!mongoose.Types.ObjectId.isValid(options.sourceId)
+      || !await PivotCitySource.exists({ _id: options.sourceId, tenantKey, provider: doc.provider }))) {
+      return { error: 'Source not found in this tenant.', status: 404, code: 'SOURCE_NOT_FOUND' };
+    }
+    doc.sourceId = options.sourceId || null;
+  }
+  if (doc.sourceId && options.provider !== undefined && options.sourceId === undefined) {
+    const { PivotCitySource } = getGlobalModels(req, 'PivotCitySource');
+    if (!await PivotCitySource.exists({ _id: doc.sourceId, tenantKey, provider: doc.provider })) {
+      return { error: 'The linked source has a different provider.', status: 400, code: 'SOURCE_PROVIDER_MISMATCH' };
+    }
   }
 
   await doc.save();

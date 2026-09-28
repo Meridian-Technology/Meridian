@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Popup from '../../../components/Popup/Popup';
 import PivotTagMultiSelect from './PivotTagMultiSelect';
 import { PivotDeckPhonePreview } from './PivotDeckCardPreview';
@@ -164,17 +164,28 @@ function PivotCatalogEventEditModal({
   saveLabel,
   savingLabel,
   notices = [],
+  lockIngestStatus = false,
+  elevated = false,
 }) {
   const [draft, setDraft] = useState(null);
   const [formError, setFormError] = useState('');
+  const [rememberForCalendar, setRememberForCalendar] = useState(true);
+  const [correctionReasons, setCorrectionReasons] = useState({});
+  const openedAtRef = useRef(null);
+  const isImport = mode === 'import';
 
   useEffect(() => {
     if (open && event) {
       setDraft(catalogEventToEditDraft(event));
       setFormError('');
+      setRememberForCalendar(true);
+      setCorrectionReasons({});
+      openedAtRef.current = Date.now();
     } else if (!open) {
       setDraft(null);
+      setCorrectionReasons({});
       setFormError('');
+      openedAtRef.current = null;
     }
   }, [open, event]);
 
@@ -277,23 +288,33 @@ function PivotCatalogEventEditModal({
       return;
     }
 
-    const ok = await onSave?.(draft);
+    const ok = await onSave?.(draft, {
+      rememberForCalendar: !isImport && event?.source === 'generic-site' && Boolean(event?.entrypointId) && rememberForCalendar,
+      correctionReasons: rememberForCalendar ? correctionReasons : {},
+      reviewSeconds: openedAtRef.current ? Math.min(3600, Math.round((Date.now() - openedAtRef.current) / 1000)) : 0,
+    });
     if (ok) {
       onClose?.();
     }
-  }, [draft, onClose, onSave]);
+  }, [draft, event, isImport, onClose, onSave, rememberForCalendar, correctionReasons]);
 
   if (!open || !event) {
     return null;
   }
 
-  const isImport = mode === 'import';
+  const canImproveScrape = !isImport && event.source === 'generic-site' && Boolean(event.entrypointId);
+  const imageChanged = draft?.imageUrl?.trim() !== (event.image || '').trim();
+  const descriptionChanged = draft?.description?.trim() !== (event.description || '').trim();
+  const dateChanged = draft?.startTimeLocal !== isoToDatetimeLocal(event.start_time);
+  const imageCandidates = [...new Set([event.image, ...(event.scrapeEvidence?.imageCandidates || [])]
+    .filter((url) => typeof url === 'string' && /^https?:\/\//i.test(url)))].slice(0, 6);
 
   return (
     <Popup
       isOpen={open}
       onClose={onClose}
       customClassName="pivot-manual-import__shell pivot-catalog-edit__shell"
+      overlayClassName={elevated ? 'popup-overlay--elevated' : ''}
       disableOutsideClick={saving || tagSuggestLoading}
     >
       {draft ? (
@@ -434,6 +455,13 @@ function PivotCatalogEventEditModal({
 
             <section className="pivot-manual-import__section" aria-label="Poster">
               <h3 className="pivot-manual-import__section-title">Poster</h3>
+              {canImproveScrape && imageCandidates.length > 1 ? <div className="pivot-catalog-edit__image-choices" role="group" aria-label="Images found for this event">
+                {imageCandidates.map((url) => <button type="button" key={url}
+                  className={draft.imageUrl === url ? 'is-selected' : ''} aria-label={`Choose image ${url}`}
+                  aria-pressed={draft.imageUrl === url} onClick={() => patchDraft({ imageUrl: url })}>
+                  <img src={url} alt="" loading="lazy" />
+                </button>)}
+              </div> : null}
               <label className="pivot-manual-import__field pivot-manual-import__field--wide">
                 <span className="pivot-manual-import__label">Image URL</span>
                 <input
@@ -575,12 +603,14 @@ function PivotCatalogEventEditModal({
                       <select
                         className="linear-input pivot-manual-import__input"
                         value={draft.ingestStatus}
+                        disabled={lockIngestStatus}
                         onChange={(e) => patchDraft({ ingestStatus: e.target.value })}
                       >
                         <option value="draft">Draft</option>
                         <option value="staged">Staged</option>
                         <option value="published">Published (live feed)</option>
                       </select>
+                      {lockIngestStatus ? <span className="pivot-manual-import__hint">Change publication status from the batch curation queue.</span> : null}
                     </label>
                     <label className="pivot-manual-import__field pivot-manual-import__check">
                       <span className="pivot-manual-import__label">Featured</span>
@@ -738,6 +768,35 @@ function PivotCatalogEventEditModal({
         </div>
 
         {formError ? <p className="pivot-manual-import__error">{formError}</p> : null}
+
+        {canImproveScrape ? <div className="pivot-catalog-edit__learning">
+          {event.scrapeEvidence?.appliedRuleIds?.length ? <p>
+            {event.scrapeEvidence.appliedRuleIds.length} approved extraction rule{event.scrapeEvidence.appliedRuleIds.length === 1 ? '' : 's'} affected this event during its last crawl.
+          </p> : null}
+          <label className="pivot-manual-import__hint"><input type="checkbox" checked={rememberForCalendar}
+            onChange={(e) => setRememberForCalendar(e.target.checked)} />{' '}Improve future scrapes from these corrections</label>
+          {rememberForCalendar ? <>
+            <p>The event correction saves now. A reusable rule will wait for review in Source health.</p>
+            {imageChanged ? <label>Why was the image wrong?
+              <select aria-label="Image correction reason" value={correctionReasons.image || ''}
+                onChange={(e) => setCorrectionReasons((current) => ({ ...current, image: e.target.value }))}>
+                <option value="">Choose a reason</option><option value="venue_logo">Venue or calendar logo</option>
+                <option value="wrong_event">Image from another event</option><option value="low_quality">Low quality image</option>
+              </select></label> : null}
+            {descriptionChanged ? <label>Why was the description wrong?
+              <select aria-label="Description correction reason" value={correctionReasons.description || ''}
+                onChange={(e) => setCorrectionReasons((current) => ({ ...current, description: e.target.value }))}>
+                <option value="">Choose a reason</option><option value="date_not_description">It was a date or time</option>
+                <option value="boilerplate">Repeated venue copy</option><option value="wrong_event">Copy from another event</option>
+              </select></label> : null}
+            {dateChanged ? <label>Why was the start date wrong?
+              <select aria-label="Date correction reason" value={correctionReasons.start_time || ''}
+                onChange={(e) => setCorrectionReasons((current) => ({ ...current, start_time: e.target.value }))}>
+                <option value="">Choose a reason</option><option value="section_heading">Date heading applies to a group</option>
+                <option value="detail_page">Use the event detail page</option><option value="wrong_date">Unrelated date on the page</option>
+              </select></label> : null}
+          </> : null}
+        </div> : null}
 
         <footer className="pivot-manual-import__footer">
           <div className="pivot-manual-import__actions">

@@ -20,6 +20,7 @@ const PIVOT_DECK_CONFIG_DEFAULTS = Object.freeze({
     personalInterest: 0.7,
     crewSignal: 0.2,
     negativeTag: 0.4,
+    sourceQuality: 0.45,
   }),
 });
 
@@ -70,7 +71,7 @@ function validateWeightsPatch(patch) {
 
   const out = {};
   const unitFields = ['personalInterest', 'crewSignal'];
-  const scoreFields = ['friendGoing', 'friendInterested', 'negativeTag'];
+  const scoreFields = ['friendGoing', 'friendInterested', 'negativeTag', 'sourceQuality'];
 
   for (const field of unitFields) {
     // Mongoose materializes omitted fields in this sparse subdocument as null.

@@ -2,6 +2,7 @@ const {
   MAX_PROMPT_HINTS,
   MAX_PROMPT_HINT_BYTES,
   mergeExtractionHints,
+  validateExtractionHints,
   deriveExtractionHintsFromCatalogEdit,
   normalizeIngestFieldLocks,
 } = require('../../utilities/pivotExtractionHints');
@@ -20,6 +21,13 @@ describe('pivotExtractionHints', () => {
     expect(mergeExtractionHints([], Array(MAX_PROMPT_HINTS + 4).fill('x').map((v, i) => `${v}${i}`)))
       .toHaveLength(MAX_PROMPT_HINTS);
     expect(Buffer.byteLength(JSON.stringify(hints), 'utf8')).toBeLessThanOrEqual(MAX_PROMPT_HINT_BYTES);
+  });
+
+  it('rejects duplicate, oversized, and malformed operator hints', () => {
+    expect(validateExtractionHints(['Read the card.', 'read the card.']).error).toMatch(/unique/);
+    expect(validateExtractionHints(['x'.repeat(MAX_PROMPT_HINT_BYTES)]).error).toMatch(/600/);
+    expect(validateExtractionHints([42]).error).toMatch(/array of strings/);
+    expect(validateExtractionHints([' Read the card. '])).toEqual({ hints: ['Read the card.'] });
   });
 
   it('derives hints only for corrected catalog fields', () => {

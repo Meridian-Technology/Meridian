@@ -93,6 +93,7 @@ const {
 } = require('../services/pivotCurationBatchService');
 const {
   listCitySources,
+  createCitySource,
   startCitySourceDiscovery,
   stopCitySourceDiscoveryRun,
   previewCitySourceDiscovery,
@@ -101,6 +102,7 @@ const {
   getCitySourceDiscoveryRun,
   getLatestCitySourceDiscoveryRun,
 } = require('../services/pivotSourceDiscoveryService');
+const { recomputeTenantSourceScores } = require('../services/pivotSourceScoreService');
 const {
   startCitySourceDiscoveryRehearsal,
 } = require('../services/pivotDiscoveryRehearsal');
@@ -2037,6 +2039,43 @@ router.get(
   },
 );
 
+router.post(
+  '/tenants/:tenantKey/sources',
+  verifyToken,
+  requirePlatformAdmin,
+  async (req, res) => {
+    try {
+      const result = await createCitySource(req, { ...req.body, tenantKey: req.params.tenantKey });
+      if (result.error) return res.status(result.status || 400).json({ success: false, message: result.error, code: result.code });
+      return res.status(201).json({ success: true, data: result.data });
+    } catch (err) {
+      logPivotRouteError('POST /admin/pivot/tenants/:tenantKey/sources', err, req);
+      return res.status(500).json({ success: false, message: 'Unable to create source.' });
+    }
+  },
+);
+
+router.post(
+  '/tenants/:tenantKey/sources/recompute-scores',
+  verifyToken,
+  requirePlatformAdmin,
+  async (req, res) => {
+    try {
+      const { connectToDatabase } = require('../connectionsManager');
+      const { resolvePivotTenant } = require('../services/pivotIngestPublishService');
+      const tenantResult = await resolvePivotTenant(req, req.params.tenantKey);
+      if (tenantResult.error) return res.status(tenantResult.status || 400).json({ success: false, message: tenantResult.error });
+      const tenantKey = tenantResult.tenant.tenantKey;
+      const tenantReq = { db: await connectToDatabase(tenantKey), school: tenantKey };
+      const data = await recomputeTenantSourceScores(req, tenantReq, tenantKey);
+      return res.status(200).json({ success: true, data });
+    } catch (err) {
+      logPivotRouteError('POST /admin/pivot/tenants/:tenantKey/sources/recompute-scores', err, req);
+      return res.status(500).json({ success: false, message: 'Unable to recompute source scores.' });
+    }
+  },
+);
+
 /**
  * Walk the pipeline with no outbound calls, so the console can be reviewed
  * before a Firecrawl key exists and before any credits are at stake.
@@ -2249,6 +2288,8 @@ router.patch(
         tenantKey: req.params.tenantKey,
         sourceId: req.params.sourceId,
         enabled: req.body?.enabled,
+        rankingOverride: req.body?.rankingOverride,
+        promptHints: req.body?.promptHints,
       });
       if (result.error) {
         return res.status(result.status || 400).json({
@@ -2271,6 +2312,23 @@ router.patch(
     }
   },
 );
+
+router.get('/tenants/:tenantKey/sources/:sourceId/events',
+  verifyToken, requirePlatformAdmin, async (req, res) => {
+    try {
+      const { listSourceEventHistory } = require('../services/pivotSourceEventHistoryService');
+      const result = await listSourceEventHistory(req, {
+        tenantKey: req.params.tenantKey, sourceId: req.params.sourceId,
+        page: req.query?.page, status: req.query?.status, entrypointId: req.query?.entrypointId,
+      });
+      if (result.error) return res.status(result.status || 400).json({ success: false,
+        message: result.error, code: result.code });
+      return res.status(200).json({ success: true, data: result.data });
+    } catch (err) {
+      logPivotRouteError('GET /admin/pivot/tenants/:tenantKey/sources/:sourceId/events', err, req);
+      return res.status(500).json({ success: false, message: 'Unable to load source events.' });
+    }
+  });
 
 router.get(
   '/tenants/:tenantKey/sources/discovery-plan',
@@ -2398,9 +2456,11 @@ router.post(
         label: req.body?.label,
         url: req.body?.url,
         provider: req.body?.provider,
+        sourceId: req.body?.sourceId,
         defaultBatchWeekStrategy: req.body?.defaultBatchWeekStrategy,
         defaultTags: req.body?.defaultTags,
         enabled: req.body?.enabled,
+        promptHints: req.body?.promptHints,
       });
       if (result.error) {
         return res.status(result.status || 400).json({
@@ -2424,6 +2484,53 @@ router.post(
   },
 );
 
+router.post('/tenants/:tenantKey/curation-jobs/:jobId/review-feedback',
+  verifyToken, requirePlatformAdmin, async (req, res) => {
+    try {
+      const { recordManualReviewFeedback } = require('../services/pivotScrapeLearningService');
+      const { serializeCurationJob } = require('../services/pivotCurationJobService');
+      const result = await recordManualReviewFeedback(req, {
+        tenantKey: req.params.tenantKey, jobId: req.params.jobId,
+        missed: req.body?.missed || 0, discarded: req.body?.discarded || 0,
+        reviewSeconds: req.body?.reviewSeconds || 0,
+      });
+      if (result.error) return res.status(result.status || 400).json({ success: false, message: result.error });
+      return res.status(200).json({ success: true, data: { job: serializeCurationJob(result.data.job) } });
+    } catch (err) {
+      logPivotRouteError('POST /admin/pivot/tenants/:tenantKey/curation-jobs/:jobId/review-feedback', err, req);
+      return res.status(500).json({ success: false, message: 'Unable to record review feedback.' });
+    }
+  });
+
+router.get('/tenants/:tenantKey/curation-jobs/:jobId/extraction-rules/:ruleId/preview',
+  verifyToken, requirePlatformAdmin, async (req, res) => {
+    try {
+      const { previewExtractionRule } = require('../services/pivotScrapeLearningService');
+      const result = await previewExtractionRule(req, { tenantKey: req.params.tenantKey,
+        jobId: req.params.jobId, ruleId: req.params.ruleId });
+      if (result.error) return res.status(result.status || 400).json({ success: false, message: result.error });
+      return res.status(200).json({ success: true, data: result.data });
+    } catch (err) {
+      logPivotRouteError('GET extraction rule preview', err, req);
+      return res.status(500).json({ success: false, message: 'Unable to preview extraction rule.' });
+    }
+  });
+
+router.post('/tenants/:tenantKey/curation-jobs/:jobId/extraction-rules/:ruleId/decision',
+  verifyToken, requirePlatformAdmin, async (req, res) => {
+    try {
+      const { decideExtractionRule } = require('../services/pivotScrapeLearningService');
+      const result = await decideExtractionRule(req, { tenantKey: req.params.tenantKey,
+        jobId: req.params.jobId, ruleId: req.params.ruleId,
+        action: req.body?.action, scope: req.body?.scope });
+      if (result.error) return res.status(result.status || 400).json({ success: false, message: result.error });
+      return res.status(200).json({ success: true });
+    } catch (err) {
+      logPivotRouteError('POST extraction rule decision', err, req);
+      return res.status(500).json({ success: false, message: 'Unable to update extraction rule.' });
+    }
+  });
+
 router.patch(
   '/tenants/:tenantKey/curation-jobs/:jobId',
   verifyToken,
@@ -2436,9 +2543,12 @@ router.patch(
         label: req.body?.label,
         url: req.body?.url,
         provider: req.body?.provider,
+        sourceId: req.body?.sourceId,
         defaultBatchWeekStrategy: req.body?.defaultBatchWeekStrategy,
         defaultTags: req.body?.defaultTags,
         enabled: req.body?.enabled,
+        promptHints: req.body?.promptHints,
+        hintDecision: req.body?.hintDecision,
       });
       if (result.error) {
         return res.status(result.status || 400).json({
@@ -3211,9 +3321,38 @@ router.get('/tmdb/movies/:tmdbId', verifyToken, requirePlatformAdmin, async (req
 
 router.post('/ingest/preview', verifyToken, requirePlatformAdmin, async (req, res) => {
   try {
+    let job = null;
+    let promptHints = [];
+    let extractionRules = [];
+    if (req.body?.jobId) {
+      if (!require('mongoose').Types.ObjectId.isValid(req.body.jobId)) {
+        return res.status(400).json({ success: false, message: 'Invalid website job id.' });
+      }
+      const getGlobalModels = require('../services/getGlobalModelService');
+      const { loadApprovedHintsForJob, loadApprovedRulesForJob } = require('../services/pivotScrapeLearningService');
+      const { PivotCurationJob } = getGlobalModels(req, 'PivotCurationJob');
+      job = await PivotCurationJob.findOne({ _id: req.body.jobId,
+        tenantKey: req.body?.tenantKey }).lean();
+      if (!job || job.url !== req.body?.url) {
+        return res.status(400).json({ success: false, message: 'Job and preview URL must match.' });
+      }
+      promptHints = await loadApprovedHintsForJob(req, req.body.tenantKey, job);
+      extractionRules = await loadApprovedRulesForJob(req, req.body.tenantKey, job);
+      if (req.body?.ruleId) {
+        const { ruleInstruction } = require('../utilities/pivotStructuredExtractionRules');
+        const proposed = job.extractionProfile?.extractionRules?.find((rule) => rule.id === req.body.ruleId
+          && rule.status === 'proposed');
+        if (!proposed) return res.status(400).json({ success: false, message: 'Proposed rule not found for this job.' });
+        extractionRules = [...extractionRules, { ...proposed, status: 'active' }];
+        promptHints = [...promptHints, ruleInstruction(proposed)];
+      }
+    }
     const result = await previewIngestUrl(req, {
       url: req.body?.url,
       tenantKey: req.body?.tenantKey,
+      provider: job?.provider || req.body?.provider,
+      promptHints,
+      extractionRules,
     });
     if (result.error) {
       return res.status(result.status || 400).json({
@@ -3221,6 +3360,33 @@ router.post('/ingest/preview', verifyToken, requirePlatformAdmin, async (req, re
         message: result.error,
         code: result.code,
       });
+    }
+
+    if (job && result.data?.mode === 'batch') {
+      const ids = [...new Set((result.data.drafts || [])
+        .map((entry) => entry.duplicate?.existingEventId)
+        .filter((id) => id && require('mongoose').Types.ObjectId.isValid(id))
+        .map(String))];
+      if (ids.length) {
+        const { connectToDatabase } = require('../connectionsManager');
+        const getModels = require('../services/getModelService');
+        const db = await connectToDatabase(req.body.tenantKey);
+        const { Event } = getModels({ db }, 'Event');
+        const existing = await Event.find({ _id: { $in: ids }, isDeleted: { $ne: true } })
+          .select('name description image start_time end_time location customFields.pivot.host customFields.pivot.sourceUrl')
+          .lean();
+        const byId = new Map(existing.map((event) => [String(event._id), event]));
+        result.data.drafts = result.data.drafts.map((entry) => {
+          const event = byId.get(String(entry.duplicate?.existingEventId || ''));
+          if (!event) return entry;
+          return { ...entry, catalogEvent: {
+            name: event.name || '', description: event.description || '', image: event.image || null,
+            start_time: event.start_time || null, end_time: event.end_time || null,
+            location: event.location || '', hostName: event.customFields?.pivot?.host?.name || '',
+            sourceUrl: event.customFields?.pivot?.sourceUrl || null,
+          } };
+        });
+      }
     }
 
     return res.status(200).json({
@@ -3462,6 +3628,9 @@ router.patch('/ingest/:eventId', verifyToken, requirePlatformAdmin, async (req, 
       eventId: req.params.eventId,
       tenantKey: req.body?.tenantKey,
       overrides: req.body?.overrides,
+      rememberForCalendar: req.body?.rememberForCalendar,
+      reviewSeconds: req.body?.reviewSeconds,
+      correctionReasons: req.body?.correctionReasons,
     });
     if (result.error) {
       return res.status(result.status || 400).json({

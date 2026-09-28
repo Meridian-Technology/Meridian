@@ -116,6 +116,7 @@ function emptyJobForm() {
     label: '',
     url: '',
     provider: 'generic-site',
+    sourceId: '',
     defaultBatchWeekStrategy: 'next-drop',
     defaultTags: [],
     enabled: true,
@@ -192,6 +193,11 @@ function PivotTenantCurationPage({ tenantKey, cityDisplayName }) {
   const [jobsExpanded, setJobsExpanded] = useState(false);
   const [editingJobId, setEditingJobId] = useState(null);
   const [jobForm, setJobForm] = useState(emptyJobForm);
+  const { data: sourceCatalogResponse, refetch: refetchSourceCatalog } = useFetch(
+    tenantKey ? `/admin/pivot/tenants/${encodeURIComponent(tenantKey)}/sources` : null,
+    { cache: { enabled: false } },
+  );
+  const sourceCatalog = sourceCatalogResponse?.data?.sources || [];
   const [manualImportOpen, setManualImportOpen] = useState(false);
   const [manualImportSticky, setManualImportSticky] = useState({
     organizerName: '',
@@ -648,13 +654,15 @@ function PivotTenantCurationPage({ tenantKey, cityDisplayName }) {
   }, []);
 
   const openCreateJob = useCallback(() => {
+    refetchSourceCatalog();
     setJobsExpanded(true);
     setEditingJobId(null);
     setJobForm(emptyJobForm());
     setJobFormOpen(true);
-  }, []);
+  }, [refetchSourceCatalog]);
 
   const openEditJob = useCallback((job) => {
+    refetchSourceCatalog();
     setJobsExpanded(true);
     setEditingJobId(job._id);
     setJobForm({
@@ -663,12 +671,13 @@ function PivotTenantCurationPage({ tenantKey, cityDisplayName }) {
       // A saved job without a provider predates the field; read it off the URL
       // rather than assuming, so editing one cannot relabel it by accident.
       provider: job.provider || detectProviderFromUrl(job.url) || 'generic-site',
+      sourceId: job.sourceId || '',
       defaultBatchWeekStrategy: job.defaultBatchWeekStrategy || 'next-drop',
       defaultTags: Array.isArray(job.defaultTags) ? [...job.defaultTags] : [],
       enabled: job.enabled !== false,
     });
     setJobFormOpen(true);
-  }, []);
+  }, [refetchSourceCatalog]);
 
   const handleSaveJob = useCallback(async () => {
     if (!tenantKey) return;
@@ -702,6 +711,7 @@ function PivotTenantCurationPage({ tenantKey, cityDisplayName }) {
       label,
       url: url || undefined,
       provider,
+      sourceId: jobForm.sourceId || null,
       defaultBatchWeekStrategy: jobForm.defaultBatchWeekStrategy,
       defaultTags: jobForm.defaultTags,
       enabled: jobForm.enabled,
@@ -1133,12 +1143,12 @@ function PivotTenantCurationPage({ tenantKey, cityDisplayName }) {
   }, [addNotification, committedWeek, selectedEvents, unreleaseEvents]);
 
   const patchEventOverrides = useCallback(
-    async (eventId, overrides) => {
+    async (eventId, overrides, learning = {}) => {
       const { data, error } = await authenticatedRequest(
         `/admin/pivot/ingest/${eventId}`,
         {
           method: 'PATCH',
-          data: { tenantKey, overrides },
+          data: { tenantKey, overrides, ...learning },
         },
       );
       if (error || !data?.success) {
@@ -1524,7 +1534,7 @@ function PivotTenantCurationPage({ tenantKey, cityDisplayName }) {
   ]);
 
   const handleSaveCatalogEdit = useCallback(
-    async (draft) => {
+    async (draft, learning = {}) => {
       if (!editingEvent || !tenantKey) return false;
       setEditSaving(true);
       const wantsPublish = draft.ingestStatus === 'published';
@@ -1544,7 +1554,7 @@ function PivotTenantCurationPage({ tenantKey, cityDisplayName }) {
           return false;
         }
         const { ingestStatus: _ingestStatus, ...metadataOverrides } = overrides;
-        const result = await patchEventOverrides(editingEvent._id, metadataOverrides);
+        const result = await patchEventOverrides(editingEvent._id, metadataOverrides, learning);
         if (result.error) {
           setEditSaving(false);
           addNotification({
@@ -1589,7 +1599,7 @@ function PivotTenantCurationPage({ tenantKey, cityDisplayName }) {
 
       if (wantsUnpublish) {
         const { ingestStatus: _ingestStatus, ...metadataOverrides } = overrides;
-        const result = await patchEventOverrides(editingEvent._id, metadataOverrides);
+        const result = await patchEventOverrides(editingEvent._id, metadataOverrides, learning);
         if (result.error) {
           setEditSaving(false);
           addNotification({
@@ -1611,7 +1621,7 @@ function PivotTenantCurationPage({ tenantKey, cityDisplayName }) {
         return true;
       }
 
-      const result = await patchEventOverrides(editingEvent._id, overrides);
+      const result = await patchEventOverrides(editingEvent._id, overrides, learning);
       setEditSaving(false);
       if (result.error) {
         addNotification({
@@ -2393,12 +2403,21 @@ function PivotTenantCurationPage({ tenantKey, cityDisplayName }) {
                     <select
                       className="linear-input"
                       value={jobForm.provider}
-                      onChange={(e) => setJobForm((f) => ({ ...f, provider: e.target.value }))}
+                      onChange={(e) => setJobForm((f) => ({ ...f, provider: e.target.value, sourceId: '' }))}
                     >
                       {PROVIDER_OPTIONS.map((opt) => (
                         <option key={opt.value} value={opt.value}>
                           {opt.label}
                         </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="linear-field">
+                    <span className="linear-field__label">Catalog source</span>
+                    <select className="linear-input" value={jobForm.sourceId} onChange={(e) => setJobForm((f) => ({ ...f, sourceId: e.target.value }))}>
+                      <option value="">Unlinked</option>
+                      {sourceCatalog.filter((source) => source.provider === jobForm.provider).map((source) => (
+                        <option key={source._id} value={source._id}>{source.label || source.sourceKey}</option>
                       ))}
                     </select>
                   </label>
@@ -2414,6 +2433,7 @@ function PivotTenantCurationPage({ tenantKey, cityDisplayName }) {
                           ...f,
                           url: nextUrl,
                           provider: detected || f.provider,
+                          sourceId: detected && detected !== f.provider ? '' : f.sourceId,
                         }));
                       }}
                       placeholder="https://partiful.com/explore/…"

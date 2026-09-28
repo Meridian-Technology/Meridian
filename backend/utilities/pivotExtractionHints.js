@@ -70,6 +70,18 @@ function mergeExtractionHints(existingHints, additions, options = {}) {
   return merged;
 }
 
+function validateExtractionHints(values) {
+  if (!Array.isArray(values) || values.some((value) => typeof value !== 'string'
+    || value.trim().length > MAX_PROMPT_HINT_LENGTH)) {
+    return { error: `Hints must be an array of strings of at most ${MAX_PROMPT_HINT_LENGTH} characters.` };
+  }
+  const hints = mergeExtractionHints([], values);
+  if (hints.length !== values.filter((value) => value.trim()).length) {
+    return { error: `Hints must be unique and fit within ${MAX_PROMPT_HINTS} entries and ${MAX_PROMPT_HINT_BYTES} bytes.` };
+  }
+  return { hints };
+}
+
 function valueForField(row, field) {
   const pivot = row?.customFields?.pivot || row?.pivot || {};
   switch (field) {
@@ -137,6 +149,7 @@ module.exports = {
   truncateUtf8,
   normalizePromptHint,
   mergeExtractionHints,
+  validateExtractionHints,
   deriveExtractionHintsFromCatalogEdit,
   normalizeIngestFieldLocks,
 };

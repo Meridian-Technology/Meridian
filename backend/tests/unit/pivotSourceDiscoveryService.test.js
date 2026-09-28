@@ -560,9 +560,9 @@ describe('pivotSourceDiscoveryService', () => {
       const nativeWrites = PivotCitySource.findOneAndUpdate.mock.calls.filter(
         ([filter]) => filter.host === 'luma.com',
       );
-      expect(nativeWrites).toHaveLength(1);
-      const [filter, update] = nativeWrites[0];
-      expect(filter).toEqual({ tenantKey: 'iowacity', host: 'luma.com' });
+      expect(nativeWrites).toHaveLength(2);
+      const [filter, update] = nativeWrites[1];
+      expect(filter).toEqual({ tenantKey: 'iowacity', host: 'luma.com', sourceKey: 'luma.com' });
       expect(update.$set).toMatchObject({
         provider: 'luma',
         status: 'qualified',
@@ -605,8 +605,8 @@ describe('pivotSourceDiscoveryService', () => {
       const nativeWrites = PivotCitySource.findOneAndUpdate.mock.calls.filter(
         ([filter]) => filter.host === 'partiful.com',
       );
-      expect(nativeWrites).toHaveLength(1);
-      expect(nativeWrites[0][1].$set).toMatchObject({
+      expect(nativeWrites).toHaveLength(2);
+      expect(nativeWrites[1][1].$set).toMatchObject({
         provider: 'partiful',
         status: 'qualified',
         url: 'https://partiful.com/explore/iowa-city',
@@ -1297,7 +1297,7 @@ describe('pivotSourceDiscoveryService', () => {
           lumaSlug: 'iowa-city',
         });
 
-        expect(updateCurationJob).not.toHaveBeenCalled();
+        expect(updateCurationJob).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ sourceId: expect.any(String) }));
       });
 
       it('does not rewrite URLs in preview mode', async () => {
@@ -1970,25 +1970,40 @@ describe('pivotSourceDiscoveryService', () => {
               status: 'qualified',
               seedTags: ['live-music'],
               lastEventCount: 4,
+              score: { quality: 0.8, reputation: 0.6 },
+              rankingOverride: { tier: 'promote' },
             },
           ]),
         }),
       });
 
+      PivotCurationJob.find.mockReturnValue({ select: jest.fn().mockReturnValue({ lean: jest.fn().mockResolvedValue([{
+        _id: 'job-1', sourceId: '665a1b2c3d4e5f6789012399', label: 'Main calendar',
+        lastRunStatus: 'completed', lastRunStats: { discovered: 7, upserted: 4, failed: 0 },
+      }]) }) });
       const result = await listCitySources(mockReq(), { tenantKey: 'iowacity' });
 
       expect(result.data.sources).toHaveLength(1);
+      expect(result.data.rankingSignals).toEqual({
+        personalInterest: 0.7,
+        friendInterested: 0.5,
+        friendGoing: 1.5,
+      });
       expect(result.data.sources[0]).toMatchObject({
         host: 'englert.org',
         status: 'qualified',
         lastEventCount: 4,
+        deckImpact: { manual: 0.35, total: 0.539 },
+        entrypoints: [{ id: 'job-1', lastRunStats: { discovered: 7, upserted: 4, failed: 0 } }],
       });
+      expect(result.data.sources[0].deckImpact.automatic).toBeCloseTo(0.189);
     });
 
     it('filters by status when requested', async () => {
       const lean = jest.fn().mockResolvedValue([]);
       PivotCitySource.find.mockReturnValue({ sort: jest.fn().mockReturnValue({ lean }) });
 
+      PivotCurationJob.find.mockReturnValue({ select: jest.fn().mockReturnValue({ lean: jest.fn().mockResolvedValue([]) }) });
       await listCitySources(mockReq(), { tenantKey: 'iowacity', status: 'rejected' });
 
       expect(PivotCitySource.find).toHaveBeenCalledWith({

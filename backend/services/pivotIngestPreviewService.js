@@ -1588,6 +1588,8 @@ async function previewGenericSiteIngest(options = {}) {
     maxEvents: batchLimit,
     timezone: options.timezone,
     now: options.now,
+    promptHints: options.promptHints,
+    extractionRules: options.extractionRules,
   });
   if (scraped.error) {
     return scraped;

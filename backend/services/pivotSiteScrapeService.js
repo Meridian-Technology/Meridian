@@ -17,6 +17,8 @@ const axios = require('axios');
 
 const { enrichIngestDraft, parseEventDateTime } = require('../utilities/pivotFieldParsingUtils');
 const { identityFromDisplayName } = require('../utilities/pivotHostIdentity');
+const { mergeExtractionHints } = require('../utilities/pivotExtractionHints');
+const { activeRuleHints, applyStructuredRules } = require('../utilities/pivotStructuredExtractionRules');
 
 const FIRECRAWL_SCRAPE_URL = 'https://api.firecrawl.dev/v2/scrape';
 const FIRECRAWL_SEARCH_URL = 'https://api.firecrawl.dev/v2/search';
@@ -94,6 +96,9 @@ const SITE_EVENT_SCHEMA = {
             description: 'Public-facing organizer, promoter, or venue presenting the event.',
           },
           imageUrl: { type: 'string', description: 'Absolute URL of the event poster image.' },
+          imageCandidates: { type: 'array', maxItems: 6,
+            description: 'Up to six images associated with this specific event card or detail page, including the chosen image.',
+            items: { type: 'string' } },
           eventUrl: { type: 'string', description: 'Absolute URL of this event detail page.' },
           tags: {
             type: 'array',
@@ -270,18 +275,22 @@ function resolveSiteBatchLimit(maxEvents) {
  * Listing pages routinely show dates as "Fri 8pm" with no year, so the extractor
  * needs today's date and the city's timezone to resolve them correctly.
  */
-function buildExtractionPrompt({ now = new Date(), timezone = 'UTC' } = {}) {
+function buildExtractionPrompt({ now = new Date(), timezone = 'UTC', promptHints = [], extractionRules = [] } = {}) {
   const today = now.toISOString().slice(0, 10);
-  return [
+  const base = [
     'Extract every distinct upcoming event listed on this page.',
     `Today's date is ${today}. The venue is in the ${timezone} timezone.`,
     'Resolve relative or partial dates (for example "Fri 8pm" or "March 4") against that date and timezone, choosing the next future occurrence.',
     'Return startTime and endTime as ISO-8601 with an explicit timezone offset.',
     'Set eventUrl to the absolute URL of the event detail page whenever the listing links to one.',
+    'For each event, include up to six imageCandidates from its own card or detail page. Prefer a specific event poster over a site or venue logo for imageUrl.',
     'hostName is the public-facing organizer, promoter, or presenting venue — never the website name if a more specific organizer is shown.',
     'Ignore navigation links, newsletter signups, past events, and generic venue pages that are not a specific dated event.',
     'Omit any field you cannot read from the page. Do not guess dates, URLs, or venues.',
-  ].join(' ');
+  ];
+  const hints = mergeExtractionHints(activeRuleHints(extractionRules), promptHints);
+  if (hints.length) base.push(`Approved guidance for this calendar: ${hints.map((hint, index) => `${index + 1}. ${hint}`).join(' ')}`);
+  return base.join(' ');
 }
 
 function absoluteUrl(candidate, baseUrl) {
@@ -347,13 +356,20 @@ function normalizeSourceTags(raw) {
  * Map one extracted row onto the draft shape produced by the Partiful/Luma
  * parsers, so downstream publish/duplicate handling is provider-agnostic.
  */
-function buildSiteEventDraft(row, { pageUrl, timezone, now } = {}) {
+function buildSiteEventDraft(row, { pageUrl, timezone, now, extractionRules = [] } = {}) {
+  const extractedImage = row?.imageUrl;
+  const corrected = applyStructuredRules(row, extractionRules);
+  row = corrected.row;
   const sourceUrl = resolveDraftSourceUrl(row, pageUrl, { timezone, now });
+  const imageCandidates = [...new Set([extractedImage, row?.imageUrl,
+    ...(Array.isArray(row?.imageCandidates) ? row.imageCandidates : [])]
+    .map((url) => absoluteUrl(url, pageUrl)).filter(Boolean))].slice(0, 6);
   const draft = enrichIngestDraft(
     {
       name: trimString(row?.name) || null,
       description: trimString(row?.description) || null,
       image: absoluteUrl(row?.imageUrl, pageUrl),
+      scrapeEvidence: { imageCandidates, appliedRuleIds: corrected.applied },
       start_time: trimString(row?.startTime) || null,
       end_time: trimString(row?.endTime) || null,
       location: trimString(row?.location) || null,
@@ -464,7 +480,8 @@ async function scrapeSiteEvents(options = {}) {
           {
             type: 'json',
             schema: SITE_EVENT_SCHEMA,
-            prompt: buildExtractionPrompt({ now: options.now, timezone: options.timezone }),
+            prompt: buildExtractionPrompt({ now: options.now, timezone: options.timezone,
+              promptHints: options.promptHints, extractionRules: options.extractionRules }),
           },
         ],
       },
@@ -510,6 +527,7 @@ async function scrapeSiteEvents(options = {}) {
       pageUrl: normalized.url,
       timezone: options.timezone,
       now: options.now,
+      extractionRules: options.extractionRules,
     });
     if (seen.has(built.sourceUrl)) continue;
     seen.add(built.sourceUrl);

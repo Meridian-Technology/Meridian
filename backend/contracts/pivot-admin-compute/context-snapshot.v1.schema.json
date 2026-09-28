@@ -193,6 +193,21 @@
           "maxItems": 16,
           "items": { "type": "string", "maxLength": 64 }
         },
+        "promptHints": {
+          "type": "array",
+          "maxItems": 30,
+          "items": { "type": "string", "maxLength": 600 }
+        },
+        "extractionRules": {
+          "type": "array", "maxItems": 30,
+          "items": { "type": "object", "additionalProperties": false,
+            "required": ["id", "field", "reason", "badValue", "status"],
+            "properties": { "id": { "type": "string", "maxLength": 200 },
+              "field": { "enum": ["image", "description", "start_time"] },
+              "reason": { "enum": ["venue_logo", "wrong_event", "low_quality", "date_not_description", "boilerplate", "wrong_date", "section_heading", "detail_page"] },
+              "badValue": { "type": "string", "maxLength": 1000 },
+              "status": { "const": "active" } } }
+        },
         "linkedSourceHost": { "oneOf": [{ "type": "string", "maxLength": 253 }, { "type": "null" }] }
       }
     },

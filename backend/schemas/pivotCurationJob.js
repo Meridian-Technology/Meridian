@@ -23,6 +23,45 @@ const extractionProfileSchema = new mongoose.Schema(
     },
     updatedAt: { type: Date, default: null },
     updatedBy: { type: String, default: null, trim: true, maxlength: 320 },
+    suggestedHints: {
+      type: [{
+        id: { type: String, required: true },
+        field: { type: String, required: true },
+        text: { type: String, required: true, maxlength: MAX_PROMPT_HINT_LENGTH },
+        eventId: { type: String, default: null },
+        createdAt: { type: Date, default: Date.now },
+      }],
+      default: [],
+    },
+    extractionRules: { type: [{
+      id: { type: String, required: true },
+      field: { type: String, required: true, enum: ['image', 'description', 'start_time'] },
+      reason: { type: String, required: true },
+      badValue: { type: String, required: true, maxlength: 1000 },
+      exampleId: { type: String, required: true },
+      before: { type: String, default: null, maxlength: 1000 },
+      after: { type: String, default: null, maxlength: 1000 },
+      status: { type: String, enum: ['proposed', 'active', 'disabled'], default: 'proposed' },
+      createdAt: { type: Date, default: Date.now },
+      updatedAt: { type: Date, default: Date.now },
+      updatedBy: { type: String, default: null },
+    }], default: [] },
+    learningRuns: {
+      type: [{
+        runKey: { type: String, required: true },
+        completedAt: { type: Date, default: Date.now },
+        hintCount: { type: Number, default: 0 },
+        discovered: { type: Number, default: 0 },
+        upserted: { type: Number, default: 0 },
+        failed: { type: Number, default: 0 },
+        corrections: { type: Number, default: 0 },
+        discarded: { type: Number, default: 0 },
+        missed: { type: Number, default: 0 },
+        reviewSeconds: { type: Number, default: 0 },
+        estimatedCredits: { type: Number, default: 0 },
+      }],
+      default: [],
+    },
   },
   { _id: false },
 );
@@ -59,6 +98,8 @@ const pivotCurationJobSchema = new mongoose.Schema(
       trim: true,
       lowercase: true,
     },
+    /** A job is one crawl entrypoint; several jobs can feed one source. */
+    sourceId: { type: mongoose.Schema.Types.ObjectId, ref: 'PivotCitySource', default: null },
     label: {
       type: String,
       required: true,
@@ -140,6 +181,15 @@ pivotCurationJobSchema.pre('validate', function normalizeFields() {
       [],
       this.extractionProfile.promptHints,
     );
+    if (this.extractionProfile.suggestedHints?.length > 30) {
+      this.extractionProfile.suggestedHints = this.extractionProfile.suggestedHints.slice(-30);
+    }
+    if (this.extractionProfile.extractionRules?.length > 30) {
+      this.extractionProfile.extractionRules = this.extractionProfile.extractionRules.slice(-30);
+    }
+    if (this.extractionProfile.learningRuns?.length > 12) {
+      this.extractionProfile.learningRuns = this.extractionProfile.learningRuns.slice(-12);
+    }
     if (this.extractionProfile.updatedBy != null) {
       this.extractionProfile.updatedBy = String(this.extractionProfile.updatedBy).trim() || null;
     }
@@ -148,6 +198,7 @@ pivotCurationJobSchema.pre('validate', function normalizeFields() {
 
 pivotCurationJobSchema.index({ tenantKey: 1, createdAt: -1 });
 pivotCurationJobSchema.index({ tenantKey: 1, enabled: 1 });
+pivotCurationJobSchema.index({ tenantKey: 1, sourceId: 1 });
 
 module.exports = pivotCurationJobSchema;
 module.exports.CURATION_PROVIDERS = CURATION_PROVIDERS;

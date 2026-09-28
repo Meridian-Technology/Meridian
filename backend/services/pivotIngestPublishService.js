@@ -218,6 +218,7 @@ function mergeDraftWithOverrides(draft = {}, overrides = {}) {
         : undefined,
     source: firstNonEmpty(overrides.source, draft.source),
     sourceUrl: firstNonEmpty(overrides.sourceUrl, draft.sourceUrl),
+    scrapeEvidence: draft.scrapeEvidence || null,
     tags: Array.isArray(overrides.tags)
       ? overrides.tags
       : Array.isArray(draft.tags)
@@ -340,7 +341,7 @@ function validateMergedDraft(merged, options = {}) {
   };
 }
 
-function buildPivotMetadata(merged, { batchWeek, sourceUrl, importedBy, tags, ingestStatus }) {
+function buildPivotMetadata(merged, { batchWeek, sourceUrl, importedBy, tags, ingestStatus, sourceId, entrypointId, observedSourceIds, observedEntrypointIds }) {
   const identities = unionHostIdentities(merged.hostIdentities, merged.identities);
   const display = displayFieldsFromIdentities(identities, {
     imageUrl: merged.hostImageUrl,
@@ -359,12 +360,17 @@ function buildPivotMetadata(merged, { batchWeek, sourceUrl, importedBy, tags, in
     batchWeek,
     source: merged.source || 'manual',
     sourceUrl,
+    ...(sourceId ? { sourceId: String(sourceId) } : {}),
+    ...(entrypointId ? { entrypointId: String(entrypointId) } : {}),
+    ...(observedSourceIds?.length ? { observedSourceIds } : {}),
+    ...(observedEntrypointIds?.length ? { observedEntrypointIds } : {}),
     host,
     tags: tags || [],
     ...(merged.timeSlots?.length ? { timeSlots: merged.timeSlots } : {}),
     ...(merged.movie ? { movie: merged.movie } : {}),
     ...(merged.enrichment ? { enrichment: merged.enrichment } : {}),
     ...(merged.parsed ? { parsed: merged.parsed } : {}),
+    ...(merged.scrapeEvidence ? { scrapeEvidence: merged.scrapeEvidence } : {}),
     ...(merged.duplicateRollup ? { duplicateRollup: merged.duplicateRollup } : {}),
     ...(merged.rawLocationText ? { rawLocationText: merged.rawLocationText } : {}),
     ...(merged.locationPolicy?.reviewRequired
@@ -427,7 +433,7 @@ function resolveCreateIngestStatus(options = {}, overrides = {}) {
   return { ingestStatus: DEFAULT_INGEST_STATUS };
 }
 
-function buildEventPayload(merged, { catalogOrgId, sourceUrl, batchWeek, importedBy, tags, ingestStatus }) {
+function buildEventPayload(merged, { catalogOrgId, sourceUrl, batchWeek, importedBy, tags, ingestStatus, sourceId, entrypointId, observedSourceIds, observedEntrypointIds }) {
   const listingUrl = trimString(sourceUrl) || null;
   return {
     name: merged.name,
@@ -453,6 +459,7 @@ function buildEventPayload(merged, { catalogOrgId, sourceUrl, batchWeek, importe
         importedBy,
         tags,
         ingestStatus,
+        sourceId, entrypointId, observedSourceIds, observedEntrypointIds,
       }),
     },
   };
@@ -735,7 +742,19 @@ async function publishIngestEvent(req, options = {}) {
     importedBy,
     tags: tagResult.tags,
     ingestStatus,
+    // Preserve the first credited source when another crawl finds the same event.
+    sourceId: existingDoc?.customFields?.pivot?.sourceId || options.sourceId,
+    entrypointId: existingDoc?.customFields?.pivot?.entrypointId || options.entrypointId,
+    observedSourceIds: [...new Set([...(existingDoc?.customFields?.pivot?.observedSourceIds || []),
+      existingDoc?.customFields?.pivot?.sourceId, options.sourceId].filter(Boolean).map(String))],
+    observedEntrypointIds: [...new Set([...(existingDoc?.customFields?.pivot?.observedEntrypointIds || []),
+      existingDoc?.customFields?.pivot?.entrypointId, options.entrypointId].filter(Boolean).map(String))],
   });
+  if (existingDoc?.customFields?.pivot?.batchWeek === resolvedBatchWeek) {
+    const previousPivot = existingDoc.customFields.pivot;
+    if (previousPivot.featured !== undefined) eventPayload.customFields.pivot.featured = previousPivot.featured;
+    if (previousPivot.rankingOverride) eventPayload.customFields.pivot.rankingOverride = previousPivot.rankingOverride;
+  }
 
   const event = await savePublishedCatalogEvent(
     tenantReq,
@@ -1203,6 +1222,31 @@ async function updateIngestEvent(req, options = {}) {
     { $set: setPayload },
     { new: true, runValidators: true },
   ).lean();
+
+  if (options.rememberForCalendar === true && pivot.entrypointId) {
+    try {
+      const { recordCatalogCorrection } = require('./pivotScrapeLearningService');
+      await recordCatalogCorrection(req, { tenantKey: tenantResult.tenant.tenantKey,
+        before: existing, after: updated, reviewSeconds: options.reviewSeconds,
+        correctionReasons: options.correctionReasons });
+    } catch (error) {
+      logPivot('warn', 'scrape correction record failed after event edit', {
+        tenantKey: tenantResult.tenant.tenantKey, eventId, message: error.message,
+      });
+    }
+  }
+
+  if (pivot.sourceId && (overrides.featured !== undefined
+    || overrides.rankingOverride !== undefined || overrides.ingestStatus !== undefined)) {
+    try {
+      const { recomputeTenantSourceScores } = require('./pivotSourceScoreService');
+      await recomputeTenantSourceScores(req, tenantReq, tenantResult.tenant.tenantKey);
+    } catch (error) {
+      logPivot('warn', 'source score refresh failed after event edit', {
+        tenantKey: tenantResult.tenant.tenantKey, eventId, message: error.message,
+      });
+    }
+  }
 
   return {
     data: {

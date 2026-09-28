@@ -10,6 +10,7 @@ const {
   isStaleContextPreview,
 } = require('../utilities/pivotAdminComputeJobContract');
 const { recordVersion, isoTimestamp } = require('../utilities/pivotComputeContextVersion');
+const { recordScrapeLearningRun } = require('./pivotScrapeLearningService');
 const { resolveEventBatchWeek } = require('../utilities/pivotIsoWeek');
 const {
   findJobByExternalId,
@@ -1726,6 +1727,26 @@ async function applyComputeResult(req, {
       action: activeRow.action,
     } : null);
     throw error;
+  }
+
+  if (result.kind === 'city-curation-refresh') {
+    for (const outcome of result.proposals?.jobOutcomes || []) {
+      if (identities.jobById.get(outcome.jobId)?.provider !== 'generic-site') continue;
+      const proposed = (result.proposals?.events || []).filter((event) => event.linkedJobId === outcome.jobId).length;
+      const applied = manifestRows.filter((row) => row.entityType === 'event'
+        && row.curationJobId === outcome.jobId && ['created', 'updated'].includes(row.disposition)).length;
+      try {
+        await recordScrapeLearningRun(req, { tenantKey: result.cityKey,
+          jobId: outcome.jobId, runKey: `compute:${result.jobId}`,
+          stats: { discovered: proposed, upserted: applied, failed: outcome.outcome === 'failed' ? 1 : 0 },
+          hintCount: outcome.hintCount || 0,
+          estimatedCredits: (outcome.extractionRequests || 0) * 5, completedAt: now });
+      } catch (error) {
+        logPivot('warn', 'scrape learning record failed after compute apply', {
+          tenantKey: result.cityKey, jobId: outcome.jobId, message: error.message,
+        });
+      }
+    }
   }
 
   return {

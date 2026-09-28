@@ -197,6 +197,23 @@ describe('pivotCurationJobService', () => {
   });
 
   describe('updateCurationJob', () => {
+    it('approves a corrected-event hint only after review', async () => {
+      const doc = {
+        ...leanDoc({ provider: 'generic-site' }),
+        extractionProfile: { promptHints: [], suggestedHints: [{ id: 'event:location',
+          field: 'location', text: 'Check the detail page venue.' }], learningRuns: [] },
+        save: jest.fn().mockResolvedValue(undefined),
+        toObject() { return this; },
+      };
+      PivotCurationJob.findOne.mockResolvedValue(doc);
+      const result = await updateCurationJob(mockReq(), { tenantKey: 'nyc', jobId: JOB_ID,
+        hintDecision: { id: 'event:location', action: 'approve', text: 'Use the venue on the detail page.' } });
+      expect(result.error).toBeUndefined();
+      expect(doc.extractionProfile.promptHints).toEqual(['Use the venue on the detail page.']);
+      expect(doc.extractionProfile.suggestedHints).toEqual([]);
+      expect(doc.save).toHaveBeenCalledTimes(1);
+    });
+
     it('updates label and tags for a tenant-scoped job', async () => {
       const doc = {
         ...leanDoc(),

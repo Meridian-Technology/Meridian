@@ -2026,7 +2026,7 @@ function PivotLabPage() {
   }, []);
 
   const handleSaveCatalogEdit = useCallback(
-    async (draft) => {
+    async (draft, learning = {}) => {
       if (!editingEvent || !selectedTenantKey) return false;
 
       setEditSaving(true);
@@ -2038,6 +2038,7 @@ function PivotLabPage() {
           data: {
             tenantKey: selectedTenantKey,
             overrides,
+            ...learning,
           },
         },
       );

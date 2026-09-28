@@ -96,6 +96,15 @@ describe('pivotSiteScrapeService', () => {
   });
 
   describe('buildExtractionPrompt', () => {
+    it('adds approved rule guidance and asks for image alternatives', () => {
+      const prompt = buildExtractionPrompt({ extractionRules: [{ field: 'image', reason: 'venue_logo', status: 'active' }] });
+      expect(prompt).toContain('imageCandidates');
+      expect(prompt).toContain('Never reuse the venue or calendar logo');
+    });
+    it('appends approved guidance to the JSON extraction prompt', () => {
+      const prompt = buildExtractionPrompt({ promptHints: ['Use section dates for every card.'] });
+      expect(prompt).toContain('Use section dates for every card.');
+    });
     it('anchors relative dates to today and the city timezone', () => {
       const prompt = buildExtractionPrompt({
         now: new Date('2026-08-10T12:00:00.000Z'),
@@ -107,6 +116,17 @@ describe('pivotSiteScrapeService', () => {
   });
 
   describe('buildSiteEventDraft', () => {
+    it('retains image alternatives and the approved rule that corrected the chosen image', () => {
+      const { draft } = buildSiteEventDraft({ name: 'Open Mic', startTime: '2026-07-10T20:00:00-05:00',
+        eventUrl: '/events/open-mic', imageUrl: 'https://venue.example/logo.png',
+        imageCandidates: ['https://venue.example/show.jpg'] },
+      { pageUrl: PAGE_URL, extractionRules: [{ id: 'logo-rule', field: 'image',
+        reason: 'venue_logo', badValue: 'https://venue.example/logo.png', status: 'active' }] });
+      expect(draft.image).toBe('https://venue.example/show.jpg');
+      expect(draft.scrapeEvidence).toEqual({ imageCandidates: [
+        'https://venue.example/logo.png', 'https://venue.example/show.jpg',
+      ], appliedRuleIds: ['logo-rule'] });
+    });
     it('maps an extracted row onto the shared draft shape', () => {
       const { draft } = buildSiteEventDraft(
         {
