@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { authenticatedRequest } from '../../../hooks/useFetch';
+import PivotSourceEventHistoryPopup from './PivotSourceEventHistoryPopup';
 
 function lines(value) {
   return (value || []).join('\n');
@@ -31,10 +32,9 @@ const REASON_LABELS = {
   wrong_date: 'Unrelated date', section_heading: 'Section date heading', detail_page: 'Detail-page date',
 };
 
-function RuleCard({ rule, tenantKey, jobId, canShare, onUpdated }) {
+function RuleCard({ rule, tenantKey, jobId, canShare, onUpdated, onPreview }) {
   const [scope, setScope] = useState('entrypoint');
   const [preview, setPreview] = useState(null);
-  const [livePreview, setLivePreview] = useState(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const url = `/admin/pivot/tenants/${encodeURIComponent(tenantKey)}/curation-jobs/${encodeURIComponent(jobId)}/extraction-rules/${encodeURIComponent(rule.id)}`;
@@ -61,7 +61,8 @@ function RuleCard({ rule, tenantKey, jobId, canShare, onUpdated }) {
       data: { tenantKey, jobId, ruleId: rule.id, url: rule.jobUrl } });
     setBusy(false);
     if (result.error || !result.data?.success) setError(result.error || result.data?.message || 'Live preview failed.');
-    else setLivePreview(result.data.data?.drafts || []);
+    else onPreview({ job: { id: jobId, label: rule.jobLabel, url: rule.jobUrl },
+      data: result.data.data, label: 'Preview with proposed rule' });
   }
 
   return <div className="pivot-source-intel__rule">
@@ -85,16 +86,14 @@ function RuleCard({ rule, tenantKey, jobId, canShare, onUpdated }) {
       {preview.examples.map((example) => <p key={example.eventId}>{example.name}: {example.before || 'Empty'} → {example.after || 'Empty'}</p>)}
       <button type="button" disabled={busy} onClick={testOnPage}>Test current page with rule (~5 credits)</button>
     </div> : null}
-    {livePreview ? <p role="status">Current page extracted {livePreview.length} events with this rule. {livePreview.slice(0, 3).map((row) => row.draft?.name).filter(Boolean).join(' · ')}</p> : null}
     {error ? <p role="alert">{error}</p> : null}
   </div>;
 }
 
-function JobLearning({ tenantKey, job, sourceHints, canShare, onUpdated }) {
+function JobLearning({ tenantKey, job, sourceHints, canShare, onUpdated, onPreview }) {
   const [draft, setDraft] = useState(lines(job.extractionProfile?.promptHints));
   const [busy, setBusy] = useState(false);
   const [feedback, setFeedback] = useState('');
-  const [preview, setPreview] = useState(null);
   const [review, setReview] = useState({ missed: 0, discarded: 0, minutes: 0 });
   const [suggestionDrafts, setSuggestionDrafts] = useState({});
 
@@ -115,7 +114,6 @@ function JobLearning({ tenantKey, job, sourceHints, canShare, onUpdated }) {
 
   async function testPreview() {
     setBusy(true);
-    setPreview(null);
     const result = await authenticatedRequest('/admin/pivot/ingest/preview', { method: 'POST',
       data: { tenantKey, jobId: job.id, url: job.url } });
     setBusy(false);
@@ -123,14 +121,7 @@ function JobLearning({ tenantKey, job, sourceHints, canShare, onUpdated }) {
       setFeedback(result.error || result.data?.message || 'Preview failed.');
       return;
     }
-    const data = result.data.data;
-    setPreview({ count: data?.drafts?.length || 0,
-      warnings: data?.warnings || [],
-      samples: (data?.drafts || []).slice(0, 4).map((row) => ({
-        name: row.draft?.name, start: row.draft?.start_time || row.draft?.startTime,
-        location: row.draft?.location,
-      })).filter((row) => row.name) });
-    setFeedback('Preview uses the currently approved hints. Saving a new hint affects the next preview.');
+    onPreview({ job, data: result.data.data, label: 'Preview with approved hints' });
   }
 
   async function saveReview() {
@@ -177,12 +168,8 @@ function JobLearning({ tenantKey, job, sourceHints, canShare, onUpdated }) {
       {(job.extractionProfile?.extractionRules || []).length ? <div className="pivot-source-intel__suggestions">
         <strong>Correction rules</strong>
         {(job.extractionProfile?.extractionRules || []).map((rule) => <RuleCard key={rule.id}
-          rule={{ ...rule, jobUrl: job.url }} tenantKey={tenantKey} jobId={job.id} canShare={canShare} onUpdated={onUpdated} />)}
-      </div> : null}
-      {preview ? <div role="status" className="pivot-source-intel__preview">
-        <strong>Preview found {preview.count} events</strong>
-        {preview.warnings.map((warning) => <p key={warning}>{warning}</p>)}
-        {preview.samples.map((sample) => <p key={sample.name}>{sample.name} · {sample.start || 'Time missing'} · {sample.location || 'Venue missing'}</p>)}
+          rule={{ ...rule, jobUrl: job.url, jobLabel: job.label }} tenantKey={tenantKey} jobId={job.id}
+          canShare={canShare} onUpdated={onUpdated} onPreview={onPreview} />)}
       </div> : null}
       <h5>Results over time</h5>
       <RunHistory runs={job.extractionProfile?.learningRuns} />
@@ -205,6 +192,7 @@ export default function PivotScrapeLearningPanel({ tenantKey, source, onUpdated 
   const [sourceDraft, setSourceDraft] = useState(lines(source.promptHints));
   const [saving, setSaving] = useState(false);
   const [feedback, setFeedback] = useState('');
+  const [preview, setPreview] = useState(null);
   useEffect(() => { setSourceDraft(lines(source.promptHints)); }, [source.promptHints]);
   const jobs = (source.entrypoints || []).filter((entrypoint) => entrypoint.provider === 'generic-site');
   if (source.provider !== 'generic-site' && !jobs.length) return null;
@@ -233,14 +221,18 @@ export default function PivotScrapeLearningPanel({ tenantKey, source, onUpdated 
       <button type="button" disabled={saving} onClick={saveSource}>Save shared hints</button>
       {feedback ? <p role="status">{feedback}</p> : null}
       {jobs.map((job) => <JobLearning key={job.id} tenantKey={tenantKey} job={job}
-        sourceHints={source.promptHints || []} canShare={Boolean(source._id)} onUpdated={onUpdated} />)}
+        sourceHints={source.promptHints || []} canShare={Boolean(source._id)}
+        onUpdated={onUpdated} onPreview={setPreview} />)}
       {(source.extractionRules || []).length && jobs.length ? <div className="pivot-source-intel__suggestions">
         <strong>Shared source rules</strong>
-        {source.extractionRules.map((rule) => <RuleCard key={rule.id} rule={{ ...rule, jobUrl: jobs[0].url }}
-          tenantKey={tenantKey} jobId={jobs[0].id} canShare={false} onUpdated={onUpdated} />)}
+        {source.extractionRules.map((rule) => <RuleCard key={rule.id}
+          rule={{ ...rule, jobUrl: jobs[0].url, jobLabel: jobs[0].label }}
+          tenantKey={tenantKey} jobId={jobs[0].id} canShare={false} onUpdated={onUpdated} onPreview={setPreview} />)}
       </div> : null}
       {!jobs.length ? <p className="pivot-source-intel__empty">Link a website Saved job to use source guidance and measure its crawls.</p> : null}
       <small>Estimated credits assume five Firecrawl credits per JSON extraction request. Results compare runs, not identical pages; changes in calendar content can also affect counts.</small>
+      <PivotSourceEventHistoryPopup open={Boolean(preview)} source={source} tenantKey={tenantKey}
+        preview={preview} onClose={() => setPreview(null)} />
     </div>
   );
 }

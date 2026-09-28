@@ -3362,6 +3362,33 @@ router.post('/ingest/preview', verifyToken, requirePlatformAdmin, async (req, re
       });
     }
 
+    if (job && result.data?.mode === 'batch') {
+      const ids = [...new Set((result.data.drafts || [])
+        .map((entry) => entry.duplicate?.existingEventId)
+        .filter((id) => id && require('mongoose').Types.ObjectId.isValid(id))
+        .map(String))];
+      if (ids.length) {
+        const { connectToDatabase } = require('../connectionsManager');
+        const getModels = require('../services/getModelService');
+        const db = await connectToDatabase(req.body.tenantKey);
+        const { Event } = getModels({ db }, 'Event');
+        const existing = await Event.find({ _id: { $in: ids }, isDeleted: { $ne: true } })
+          .select('name description image start_time end_time location customFields.pivot.host customFields.pivot.sourceUrl')
+          .lean();
+        const byId = new Map(existing.map((event) => [String(event._id), event]));
+        result.data.drafts = result.data.drafts.map((entry) => {
+          const event = byId.get(String(entry.duplicate?.existingEventId || ''));
+          if (!event) return entry;
+          return { ...entry, catalogEvent: {
+            name: event.name || '', description: event.description || '', image: event.image || null,
+            start_time: event.start_time || null, end_time: event.end_time || null,
+            location: event.location || '', hostName: event.customFields?.pivot?.host?.name || '',
+            sourceUrl: event.customFields?.pivot?.sourceUrl || null,
+          } };
+        });
+      }
+    }
+
     return res.status(200).json({
       success: true,
       data: result.data,

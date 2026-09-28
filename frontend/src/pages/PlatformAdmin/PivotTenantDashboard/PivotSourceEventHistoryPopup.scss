@@ -5,6 +5,10 @@
   overflow: hidden;
 }
 
+.popup-overlay .popup-content.pivot-source-history__shell--preview {
+  width: min(1120px, calc(100vw - 24px));
+}
+
 .pivot-source-history {
   color: #20201f;
   display: flex;
@@ -41,10 +45,30 @@
   button:disabled { opacity: .5; cursor: default; }
   a { color: #a4422c; }
   > p { padding: 0 24px; }
+  &__event--preview { align-items: flex-start; }
+  &__event--preview .pivot-source-history__event-main { display: grid; gap: 12px; }
+  &__comparison { border: 1px solid #e7e3dd; border-radius: 8px; overflow: hidden; font-size: 12px; }
+  &__comparison-head, &__comparison-row { display: grid; grid-template-columns: 100px repeat(2, minmax(0, 1fr)); gap: 10px; padding: 9px 11px; }
+  &__comparison--new .pivot-source-history__comparison-head,
+  &__comparison--new .pivot-source-history__comparison-row { grid-template-columns: 100px minmax(0, 1fr); }
+  &__comparison-head { background: #f6f3ee; }
+  &__comparison-row { border-top: 1px solid #eeeae4; }
+  &__comparison-row.is-changed { background: #fff5ed; }
+  &__comparison-row b { color: #6b625c; }
+  &__comparison-row span { overflow-wrap: anywhere; white-space: pre-wrap; }
+  &__field-image { display: block; width: 92px; height: 62px; margin-bottom: 4px; border-radius: 6px; object-fit: cover; }
+  &__candidate-images { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 12px; }
+  &__candidate-images img { width: 48px; height: 48px; border-radius: 6px; object-fit: cover; }
+  &__preview-warnings { padding: 8px 24px; background: #fff7e7; }
+  &__preview-warnings p { margin: 4px 0; font-size: 12px; }
+  &__preview-warning { color: #9c5d27 !important; }
 }
 
 @media (max-width: 560px) {
   .pivot-source-history__header, .pivot-source-history__toolbar, .pivot-source-history__event { padding-left: 14px; padding-right: 14px; }
   .pivot-source-history__event > img, .pivot-source-history__no-image { width: 52px; height: 52px; flex-basis: 52px; }
   .pivot-source-history__event-heading { display: block; }
+  .pivot-source-history__comparison-head, .pivot-source-history__comparison-row { grid-template-columns: 72px repeat(2, minmax(0, 1fr)); gap: 6px; }
+  .pivot-source-history__comparison--new .pivot-source-history__comparison-head,
+  .pivot-source-history__comparison--new .pivot-source-history__comparison-row { grid-template-columns: 72px minmax(0, 1fr); }
 }

@@ -4,6 +4,9 @@ import PivotScrapeLearningPanel from './PivotScrapeLearningPanel';
 import { authenticatedRequest } from '../../../hooks/useFetch';
 
 jest.mock('../../../hooks/useFetch', () => ({ authenticatedRequest: jest.fn() }));
+jest.mock('./PivotSourceEventHistoryPopup', () => ({ open, preview }) => open
+  ? <div role="dialog" aria-label="Scrape preview">{preview?.data?.drafts?.map((entry) => entry.draft?.name).join(', ')}</div>
+  : null);
 
 const source = {
   _id: 'source-1', provider: 'generic-site', promptHints: ['Use section dates.'],
@@ -43,6 +46,15 @@ describe('PivotScrapeLearningPanel', () => {
         text: 'Check each event detail page for its venue.' } } },
     ));
     await waitFor(() => expect(onUpdated).toHaveBeenCalled());
+  });
+
+  it('opens the source event panel with the full approved-hint preview', async () => {
+    authenticatedRequest.mockResolvedValue({ data: { success: true, data: { mode: 'batch',
+      drafts: [{ draft: { name: 'Previewed show', image: 'https://venue.example/poster.jpg',
+        description: 'New event copy' } }], warnings: [] } } });
+    render(<PivotScrapeLearningPanel tenantKey="nyc" source={source} onUpdated={jest.fn()} />);
+    fireEvent.click(screen.getByRole('button', { name: /Preview with approved hints/ }));
+    expect(await screen.findByRole('dialog', { name: 'Scrape preview' })).toHaveTextContent('Previewed show');
   });
 
   it('previews a proposed rule before approving it for the source', async () => {

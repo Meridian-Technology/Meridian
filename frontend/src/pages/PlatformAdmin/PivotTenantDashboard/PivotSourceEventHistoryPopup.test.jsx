@@ -50,4 +50,25 @@ describe('PivotSourceEventHistoryPopup', () => {
     }));
     await waitFor(() => expect(onUpdated).toHaveBeenCalled());
   });
+
+  it('shows rich preview fields beside the matching catalog event without loading history', () => {
+    render(<PivotSourceEventHistoryPopup open source={source} tenantKey="nyc" onClose={jest.fn()}
+      preview={{ label: 'Preview with approved hints', job: { label: 'Main calendar' }, data: {
+        drafts: [{ sourceUrl: 'https://venue.example/show', draft: {
+          name: 'Previewed show', description: 'Event-specific copy',
+          image: 'https://venue.example/poster.jpg', start_time: '2026-09-26T20:00:00Z',
+          location: 'Venue', hostName: 'New organizer', sourceUrl: 'https://venue.example/show',
+          scrapeEvidence: { imageCandidates: ['https://venue.example/poster.jpg', 'https://venue.example/other.jpg'] },
+        }, catalogEvent: { name: 'Previewed show', description: 'Sep 26 at 8pm',
+          image: 'https://venue.example/logo.jpg', start_time: '2026-09-26T20:00:00Z',
+          location: 'Venue', hostName: 'Old organizer', sourceUrl: 'https://venue.example/show' } }],
+      } }} />);
+    expect(screen.getByRole('dialog', { name: /Preview with approved hints for Main calendar/ })).toBeInTheDocument();
+    expect(screen.getByRole('table', { name: 'Previewed show field comparison' })).toHaveTextContent('Event-specific copy');
+    expect(screen.getByRole('table', { name: 'Previewed show field comparison' })).toHaveTextContent('Sep 26 at 8pm');
+    expect(screen.getByRole('table', { name: 'Previewed show field comparison' })).toHaveTextContent('New organizer');
+    expect(screen.getByText('3 changed fields')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Edit event' })).not.toBeInTheDocument();
+    expect(authenticatedRequest).not.toHaveBeenCalled();
+  });
 });
