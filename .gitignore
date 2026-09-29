@@ -42,7 +42,8 @@ venv/
 
 .vscode/
 
-backend/scripts/
+backend/scripts/*
+!backend/scripts/backfillJustGoSemanticText.js
 .env*
 .flaskenv*
 !.env.project

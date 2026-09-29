@@ -1,4 +1,5 @@
 const getModels = require('./getModelService');
+const { setJustGoSemanticText } = require('../utilities/justGoSemanticText');
 const {
   getMergedTenants,
   provisionPivotCatalogOrg,
@@ -473,6 +474,7 @@ async function savePublishedCatalogEvent(
   { sharedSourceUrl = false } = {},
 ) {
   const { Event } = getModels(tenantReq, 'Event');
+  setJustGoSemanticText(eventPayload);
 
   // A fuzzy (fingerprint) duplicate resolves to a specific existing event that may have a
   // different or no source URL, so update it by id rather than upserting on sourceUrl.

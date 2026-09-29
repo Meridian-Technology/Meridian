@@ -77,6 +77,9 @@ export default function PivotCarouselCurationWorkspace({
   const [eventPreset, setEventPreset] = useState('photo-note');
   const [idempotencyKey] = useState(() => newIdempotencyKey());
   const [results, setResults] = useState([]);
+  const [related, setRelated] = useState(null);
+  const [relatedLoading, setRelatedLoading] = useState(false);
+  const [relatedEnabled, setRelatedEnabled] = useState(false);
   const [sources, setSources] = useState([]);
   const [cursor, setCursor] = useState(null);
   const [complete, setComplete] = useState(true);
@@ -194,6 +197,7 @@ export default function PivotCarouselCurationWorkspace({
       return;
     }
     const data = result.data.data;
+    setRelatedEnabled(data.relatedEnabled === true);
     setResults((current) => (append ? [...current, ...data.candidates] : data.candidates));
     setSources(data.sources || []);
     setCursor(data.continuation?.cursor || null);
@@ -232,6 +236,22 @@ export default function PivotCarouselCurationWorkspace({
     const result = addSelection(selected, candidate);
     setSelected(result.selected);
     setError(result.duplicate ? 'That event is already in the tray.' : null);
+  };
+
+  const findRelated = async (candidate) => {
+    setRelatedLoading(true);
+    setRelated(null);
+    setError(null);
+    const result = await authenticatedRequest(`${path}/related`, {
+      method: 'POST',
+      data: candidate.ref,
+    });
+    setRelatedLoading(false);
+    if (!result.data?.success) {
+      setError(result.data?.message || result.error || 'Could not find related events.');
+      return;
+    }
+    setRelated(result.data.data);
   };
 
   const failedSources = sources.filter((row) => row.status === 'failed');
@@ -406,7 +426,31 @@ export default function PivotCarouselCurationWorkspace({
               loading={loading}
               keyword={query.keyword}
               onToggle={toggleCandidate}
+              onFindRelated={relatedEnabled ? findRelated : undefined}
             />
+            {relatedLoading && <p role="status">Finding related events…</p>}
+            {related && (
+              <section aria-label="Related event proposal">
+                <h3>{related.group.label}</h3>
+                <p>{related.group.explanation}</p>
+                <button type="button" className="linear-btn linear-btn--ghost" onClick={() => setRelated(null)}>Close proposal</button>
+                {related.candidates.length > 0 && (
+                  <button type="button" className="linear-btn linear-btn--secondary" onClick={() => {
+                    setSelected(addVisibleSelection(selected, related.candidates).selected);
+                    if (!theme.trim()) setTheme(related.group.label);
+                  }}>Add suggested bundle</button>
+                )}
+                {related.candidates.length ? (
+                  <PivotCarouselCurationCatalog
+                    candidates={related.candidates}
+                    selectedKeys={selectedKeys}
+                    loading={false}
+                    keyword=""
+                    onToggle={toggleCandidate}
+                  />
+                ) : <p>No eligible related events were found.</p>}
+              </section>
+            )}
             {cursor && (
               <button type="button" className="linear-btn linear-btn--secondary jg-curate__more" onClick={() => search({ ...query, cursor }, true)} disabled={loading}>
                 More
@@ -541,4 +585,3 @@ export default function PivotCarouselCurationWorkspace({
     </div>
   );
 }
-

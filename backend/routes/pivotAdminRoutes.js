@@ -14,6 +14,7 @@ const {
   patchCarouselVoice,
 } = require('../services/pivotCarouselVoiceService');
 const { searchCarouselCatalog } = require('../services/pivotCarouselCatalogService');
+const { findRelatedCurationEvents } = require('../services/pivotCarouselRelatedService');
 const { setSlideImage } = require('../services/pivotCarouselDeckService');
 const { upload } = require('../services/imageUploadService');
 const {
@@ -950,6 +951,20 @@ router.post(
     } catch (err) {
       logPivotRouteError('POST carousel curation search', err, req);
       return res.status(500).json({ success: false, message: 'Unable to search the catalog.' });
+    }
+  },
+);
+
+router.post(
+  '/carousel-accounts/:accountId/curation/related',
+  verifyToken,
+  requirePlatformAdmin,
+  async (req, res) => {
+    try {
+      return sendDeckResult(res, await findRelatedCurationEvents(req, req.params.accountId, req.body || {}));
+    } catch (err) {
+      logPivotRouteError('POST carousel curation related', err, req);
+      return res.status(500).json({ success: false, message: 'Unable to find related events.' });
     }
   },
 );

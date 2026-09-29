@@ -1,0 +1,19 @@
+services:
+  mongo-search:
+    image: mongodb/mongodb-atlas-local:preview
+    ports:
+      - '127.0.0.1:27017:27017'
+    environment:
+      MONGODB_INITDB_ROOT_USERNAME: ${LOCAL_SEARCH_MONGO_USER:?Set LOCAL_SEARCH_MONGO_USER}
+      MONGODB_INITDB_ROOT_PASSWORD: ${LOCAL_SEARCH_MONGO_PASSWORD:?Set LOCAL_SEARCH_MONGO_PASSWORD}
+      VOYAGE_API_KEY: ${VOYAGE_API_KEY:?Set VOYAGE_API_KEY}
+      VOYAGE_EMBEDDING_PROVIDER_ENDPOINT: ${VOYAGE_EMBEDDING_PROVIDER_ENDPOINT:-https://ai.mongodb.com/v1/embeddings}
+    volumes:
+      - db:/data/db
+      - configdb:/data/configdb
+      - mongot:/data/mongot
+
+volumes:
+  db:
+  configdb:
+  mongot:

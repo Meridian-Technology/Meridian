@@ -212,7 +212,10 @@ async function searchCatalogCandidates(ctx) {
   ));
 
   return {
-    data: mergeSourcePages(sourceResults, spec),
+    data: {
+      ...mergeSourcePages(sourceResults, spec),
+      relatedEnabled: process.env.PIVOT_CURATION_RELATED_ENABLED === 'true',
+    },
   };
 }
 
