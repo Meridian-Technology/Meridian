@@ -118,6 +118,11 @@ const { getTenantOpsBundle } = require('../services/pivotTenantOpsService');
 const { getFleetOpsBundle } = require('../services/pivotFleetOpsService');
 const { previewAdminDropDeck } = require('../services/pivotAdminDropDeckService');
 const { getPivotExplorePreview } = require('../services/pivotExploreService');
+const {
+  listPivotExploreCollections,
+  upsertPivotExploreCollection,
+  deletePivotExploreCollection,
+} = require('../services/pivotExploreSectionsService');
 const { getPivotRetention } = require('../services/pivotRetentionService');
 const { listPivotLabEvents } = require('../services/pivotLabEventsService');
 const {
@@ -1755,6 +1760,117 @@ router.get(
       return res.status(500).json({
         success: false,
         message: 'Unable to load explore preview.',
+      });
+    }
+  },
+);
+
+/**
+ * Admin-curated Explore collections — a handful of hand-picked events that
+ * render as one themed Explore row (weekly themes, holidays, etc.).
+ */
+router.get(
+  '/tenants/:tenantKey/explore/collections',
+  verifyToken,
+  requirePlatformAdmin,
+  async (req, res) => {
+    try {
+      const result = await listPivotExploreCollections(req, {
+        tenantKey: req.params.tenantKey,
+        batchWeek: req.query?.batchWeek,
+      });
+      return sendDeckResult(res, result);
+    } catch (err) {
+      logPivotRouteError('GET /admin/pivot/tenants/:tenantKey/explore/collections', err, req);
+      return res.status(500).json({
+        success: false,
+        message: 'Unable to load explore collections.',
+      });
+    }
+  },
+);
+
+router.post(
+  '/tenants/:tenantKey/explore/collections',
+  verifyToken,
+  requirePlatformAdmin,
+  async (req, res) => {
+    try {
+      const result = await upsertPivotExploreCollection(req, {
+        tenantKey: req.params.tenantKey,
+        batchWeek: req.body?.batchWeek,
+        title: req.body?.title,
+        subtitle: req.body?.subtitle,
+        layout: req.body?.layout,
+        eventIds: req.body?.eventIds,
+        position: req.body?.position,
+        active: req.body?.active,
+        actor: req.user?.email || req.user?.userId,
+      });
+      return sendDeckResult(res, result, 201);
+    } catch (err) {
+      logPivotRouteError('POST /admin/pivot/tenants/:tenantKey/explore/collections', err, req);
+      return res.status(500).json({
+        success: false,
+        message: 'Unable to create the explore collection.',
+      });
+    }
+  },
+);
+
+router.patch(
+  '/tenants/:tenantKey/explore/collections/:collectionId',
+  verifyToken,
+  requirePlatformAdmin,
+  async (req, res) => {
+    try {
+      const result = await upsertPivotExploreCollection(req, {
+        tenantKey: req.params.tenantKey,
+        collectionId: req.params.collectionId,
+        batchWeek: req.body?.batchWeek,
+        title: req.body?.title,
+        subtitle: req.body?.subtitle,
+        layout: req.body?.layout,
+        eventIds: req.body?.eventIds,
+        position: req.body?.position,
+        active: req.body?.active,
+        actor: req.user?.email || req.user?.userId,
+      });
+      return sendDeckResult(res, result);
+    } catch (err) {
+      logPivotRouteError(
+        'PATCH /admin/pivot/tenants/:tenantKey/explore/collections/:collectionId',
+        err,
+        req,
+      );
+      return res.status(500).json({
+        success: false,
+        message: 'Unable to save the explore collection.',
+      });
+    }
+  },
+);
+
+router.delete(
+  '/tenants/:tenantKey/explore/collections/:collectionId',
+  verifyToken,
+  requirePlatformAdmin,
+  async (req, res) => {
+    try {
+      const result = await deletePivotExploreCollection(req, {
+        tenantKey: req.params.tenantKey,
+        collectionId: req.params.collectionId,
+      });
+      return sendDeckResult(res, result);
+    } catch (err) {
+      logPivotRouteError(
+        'DELETE /admin/pivot/tenants/:tenantKey/explore/collections/:collectionId',
+        err,
+        req,
+      );
+      return res.status(500).json({
+        success: false,
+        message: 'Unable to delete the explore collection.',
       });
     }
   },

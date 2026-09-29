@@ -87,10 +87,13 @@ function PivotBatchExplorePreview({
   const rails = exploreData?.rails ?? [];
   const chips = useMemo(() => buildExploreFilterChips(rails), [rails]);
   const showRails = shouldShowExploreRails(activeChip, searchQuery);
-  const railSections = useMemo(
-    () => (showRails ? buildExploreRailSections(events, rails) : []),
-    [events, rails, showRails],
-  );
+  // Prefer the server's real sections (rules_v0 or admin-curated collections)
+  // over the client-side approximation, so this preview matches the app.
+  const railSections = useMemo(() => {
+    if (!showRails) return [];
+    if (exploreData?.sections?.length) return exploreData.sections;
+    return buildExploreRailSections(events, rails);
+  }, [events, exploreData?.sections, rails, showRails]);
 
   const cityLabel = (cityDisplayName || exploreData?.cityDisplayName || tenantKey || 'city')
     .trim()

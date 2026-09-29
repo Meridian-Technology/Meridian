@@ -28,12 +28,26 @@ function isJustGoPublicHost(host) {
   return JUSTGO_PUBLIC_HOSTS.includes(hostnameFromHostHeader(host));
 }
 
+/**
+ * Tailscale's CGNAT range (100.64.0.0/10) — lets a dev hit the API from
+ * another device on their tailnet (phone, second laptop) during local testing.
+ */
+function isTailscaleDevOrigin(origin) {
+  const match = /^http:\/\/(\d{1,3})\.(\d{1,3})\.\d{1,3}\.\d{1,3}(?::\d+)?$/.exec(
+    String(origin || ''),
+  );
+  if (!match) return false;
+  const first = Number(match[1]);
+  const second = Number(match[2]);
+  return first === 100 && second >= 64 && second <= 127;
+}
+
 function isAllowedCorsOrigin(origin, options = {}) {
   const nodeEnv = options.nodeEnv ?? process.env.NODE_ENV;
   const baseDomain = options.baseDomain ?? BASE_DOMAIN;
   if (!origin) return true;
   if (nodeEnv !== 'production') {
-    return String(origin).startsWith('http://localhost');
+    return String(origin).startsWith('http://localhost') || isTailscaleDevOrigin(origin);
   }
   if (STATIC_PRODUCTION_ORIGINS.includes(origin)) return true;
   const escaped = String(baseDomain).replace(/\./g, '\\.');
@@ -44,5 +58,6 @@ module.exports = {
   STATIC_PRODUCTION_ORIGINS,
   JUSTGO_PUBLIC_HOSTS,
   isJustGoPublicHost,
+  isTailscaleDevOrigin,
   isAllowedCorsOrigin,
 };

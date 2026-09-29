@@ -80,6 +80,49 @@ const pivotLocationMigrationLeaseSchema = require('../schemas/pivotLocationMigra
 const pivotSafetyReportSchema = require('../schemas/pivotSafetyReport');
 const pivotUserBlockSchema = require('../schemas/pivotUserBlock');
 const pivotDropPushRunSchema = require('../schemas/pivotDropPushRun');
+const mongoose = require('mongoose');
+const { isValidIsoWeek } = require('../utilities/pivotIsoWeek');
+
+/**
+ * Admin-curated Explore row (a handful of hand-picked events rendered as one
+ * themed row, e.g. a Halloween or finals-week bundle). Tenant-scoped via the
+ * city DB connection, same as PivotBatch — no tenantKey field needed.
+ * TODO: extract to schemas/pivotExploreCollection.js to match sibling models.
+ */
+const PIVOT_EXPLORE_COLLECTION_LAYOUTS = Object.freeze(['rail', 'grid', 'list']);
+const pivotExploreCollectionSchema = new mongoose.Schema(
+    {
+        batchWeek: {
+            type: String,
+            required: true,
+            trim: true,
+            validate: {
+                validator(value) {
+                    return isValidIsoWeek(value);
+                },
+                message: 'batchWeek must be ISO week format YYYY-Www',
+            },
+        },
+        title: { type: String, required: true, trim: true },
+        subtitle: { type: String, default: null, trim: true },
+        layout: {
+            type: String,
+            enum: PIVOT_EXPLORE_COLLECTION_LAYOUTS,
+            default: 'rail',
+        },
+        eventIds: {
+            type: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Event' }],
+            default: [],
+        },
+        position: { type: Number, default: 0 },
+        active: { type: Boolean, default: true },
+        createdBy: { type: String, default: null, trim: true },
+        updatedBy: { type: String, default: null, trim: true },
+    },
+    { timestamps: true },
+);
+pivotExploreCollectionSchema.index({ batchWeek: 1, position: 1 });
+
 const registeredConnections = new WeakSet();
 const MODEL_DEFINITIONS = Object.freeze({
     BadgeGrant: { modelName: 'BadgeGrant', schema: badgeGrantSchema, collection: 'badgegrants' },
@@ -222,6 +265,11 @@ const MODEL_DEFINITIONS = Object.freeze({
         schema: pivotDropPushRunSchema,
         collection: 'pivotDropPushRuns',
     },
+    PivotExploreCollection: {
+        modelName: 'PivotExploreCollection',
+        schema: pivotExploreCollectionSchema,
+        collection: 'pivotExploreCollections',
+    },
     ResourcesConfig: { modelName: 'ResourcesConfig', schema: resourcesConfigSchema, collection: 'resourcesConfigs' },
     ShuttleConfig: { modelName: 'ShuttleConfig', schema: shuttleConfigSchema, collection: 'shuttleConfigs' },
     NoticeConfig: { modelName: 'NoticeConfig', schema: noticeConfigSchema, collection: 'noticeConfigs' },
@@ -263,3 +311,4 @@ const getModels = (req, ...names) => {
 // const { User, Event } = getModels(req, 'User', 'Event');
 
 module.exports = getModels;
+module.exports.PIVOT_EXPLORE_COLLECTION_LAYOUTS = PIVOT_EXPLORE_COLLECTION_LAYOUTS;
