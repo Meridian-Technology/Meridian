@@ -65,6 +65,34 @@
     .pivot-curation-sheet__search { flex: 1 1 260px; }
   }
 
+  &__mode {
+    display: inline-flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    padding: 4px;
+    margin-bottom: 16px;
+    border: 1px solid var(--pivot-ops-border, rgba(26, 23, 20, 0.12));
+    border-radius: var(--pivot-ops-radius-control, 14px);
+    background: var(--pivot-ops-surface-subtle, #f7f6f4);
+
+    button {
+      padding: 8px 14px;
+      border: 0;
+      border-radius: 10px;
+      background: transparent;
+      color: var(--pivot-ops-ink-muted, rgba(26, 23, 20, 0.72));
+      font: inherit;
+      font-size: 13px;
+      cursor: pointer;
+
+      &.is-active {
+        background: var(--pivot-ops-surface, #fff);
+        color: var(--pivot-ops-ink, #1a1714);
+        box-shadow: 0 1px 4px rgba(26, 23, 20, 0.1);
+      }
+    }
+  }
+
   &__empty {
     margin: 12px 0;
     color: var(--pivot-ops-ink-muted, rgba(26, 23, 20, 0.72));
@@ -182,5 +210,93 @@
     align-items: flex-start;
     overflow-x: auto;
     padding-bottom: 8px;
+  }
+}
+
+.jg-curate-groups {
+  &__heading {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin-bottom: 20px;
+
+    h2 { margin: 0 0 4px; font-size: 19px; font-weight: 600; letter-spacing: -0.03em; }
+    p { margin: 0; max-width: 600px; color: var(--pivot-ops-ink-muted, rgba(26, 23, 20, 0.72)); font-size: 13px; }
+  }
+
+  &__grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr));
+    gap: 18px;
+  }
+
+  &__card {
+    min-width: 0;
+    padding: 16px;
+    border: 1px solid var(--pivot-ops-border, rgba(26, 23, 20, 0.12));
+    border-radius: var(--pivot-ops-radius-card, 22px);
+    background: var(--pivot-ops-surface, #fff);
+  }
+
+  &__fan {
+    display: block;
+    position: relative;
+    height: 148px;
+    margin-bottom: 4px;
+  }
+
+  &__fan--empty {
+    display: grid;
+    place-items: center;
+    color: var(--pivot-ops-ink-soft, rgba(26, 23, 20, 0.5));
+    font-size: 30px;
+  }
+
+  &__photo {
+    position: absolute;
+    left: 50%;
+    top: 18px;
+    width: 78px;
+    margin-left: -39px;
+    padding: 5px;
+    background: #fffdf8;
+    border-radius: 12px;
+    box-shadow: inset 0 1px 1px #fff, 1px 2px 2px #1a171414, 4px 8px 10px #1a171412;
+    filter: drop-shadow(1px 2px 2px #1a17141a) drop-shadow(4px 8px 10px #1a171414);
+    transform: translateX(var(--fan-x, 0px)) rotate(var(--fan-r, 0deg));
+    transition: transform 220ms ease;
+
+    img { display: block; width: 100%; aspect-ratio: 4 / 5; object-fit: cover; border-radius: 7px; }
+  }
+
+  &__card:hover &__photo {
+    transform: translateX(calc(var(--fan-x, 0px) * 1.5)) rotate(calc(var(--fan-r, 0deg) * 1.3));
+  }
+
+  &__copy {
+    text-align: center;
+    min-height: 128px;
+    h3 { margin: 6px 0; font-size: 16px; font-weight: 600; letter-spacing: -0.02em; }
+    p { margin: 0 0 8px; color: var(--pivot-ops-ink-muted, rgba(26, 23, 20, 0.72)); font-size: 13px; }
+  }
+
+  &__eyebrow { color: var(--pivot-ops-accent, #ff4f1f); font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; }
+  &__count { color: var(--pivot-ops-ink-soft, rgba(26, 23, 20, 0.5)); font-size: 12px; }
+  &__actions { display: flex; justify-content: center; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+
+  &__events {
+    list-style: none;
+    padding: 12px 0 0;
+    margin: 14px 0 0;
+    border-top: 1px solid var(--pivot-ops-border, rgba(26, 23, 20, 0.12));
+
+    li { display: flex; align-items: center; gap: 8px; padding: 6px 0; }
+    img, .jg-curate-groups__event-fallback { width: 34px; height: 42px; flex: none; object-fit: cover; border-radius: 5px; background: var(--pivot-ops-surface-subtle, #f7f6f4); }
+    li > span:not(.jg-curate-groups__event-fallback) { min-width: 0; flex: 1; }
+    strong, small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    strong { font-size: 12px; font-weight: 600; }
+    small { color: var(--pivot-ops-ink-soft, rgba(26, 23, 20, 0.5)); font-size: 11px; }
   }
 }

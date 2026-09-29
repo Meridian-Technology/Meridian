@@ -255,6 +255,48 @@ describe('meridian notification definitions', () => {
     expect(disabled.enqueued).toHaveLength(0);
   });
 
+  it('enqueues weekly drops at 18:00 in each city rather than one UTC instant', async () => {
+    await seedPivotTenant(req, 'tokyo', 'Asia/Tokyo');
+    await seedPivotTenant(req, 'nyc', 'America/New_York');
+    await seedPivotTenant(req, 'la', 'America/Los_Angeles');
+    await createMeridianNotificationDefinition(req, {
+      definitionKey: 'weekly_drop',
+      handlerKey: 'weekly_drop',
+      scheduleCron: '0 18 * * 4',
+    });
+
+    const checks = [
+      ['2026-06-04T09:00:00.000Z', 'tokyo'],
+      ['2026-06-04T22:00:00.000Z', 'nyc'],
+      ['2026-06-05T01:00:00.000Z', 'la'],
+    ];
+    for (const [instant, tenantKey] of checks) {
+      const result = await evaluateMeridianNotificationSchedules(req, { now: new Date(instant) });
+      expect(result.enqueued.map((row) => row.tenantKey)).toEqual([tenantKey]);
+      expect(result.enqueued[0].runKey).toBe(`weekly_drop:${tenantKey}:2026-W23`);
+    }
+  });
+
+  it('uses the city calendar week for a weekly drop near the UTC week boundary', async () => {
+    await seedPivotTenant(req, 'la', 'America/Los_Angeles');
+    await createMeridianNotificationDefinition(req, {
+      definitionKey: 'weekly_drop',
+      handlerKey: 'weekly_drop',
+      scheduleCron: '30 21 * * 0',
+    });
+
+    // Monday in UTC is still Sunday in Los Angeles.
+    const result = await evaluateMeridianNotificationSchedules(req, {
+      now: new Date('2026-06-08T04:30:00.000Z'),
+    });
+    expect(result.enqueued).toHaveLength(1);
+    expect(result.enqueued[0].runKey).toBe('weekly_drop:la:2026-W23');
+    const { MeridianJobRun } = getGlobalModels(req, 'MeridianJobRun');
+    const run = await MeridianJobRun.findOne({ runKey: result.enqueued[0].runKey }).lean();
+    expect(run.payload.batchWeek).toBe('2026-W23');
+    expect(run.payload.timezone).toBe('America/Los_Angeles');
+  });
+
   it('does not enqueue a matching cron during quiet hours', async () => {
     await seedPivotTenant(req, 'nyc', 'America/New_York');
     await createMeridianNotificationDefinition(req, {

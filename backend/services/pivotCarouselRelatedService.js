@@ -6,11 +6,15 @@ const { getTenantByKey } = require('./tenantConfigService');
 const { loadAccount } = require('./pivotCarouselIssueService');
 const { parseCurationQuery, buildCurationMongoQuery, serializeCurationCandidate } = require('./pivotCarouselCurationQuery');
 const { buildJustGoSemanticText } = require('../utilities/justGoSemanticText');
+const { loadIntentStatsByEventId } = require('./pivotLabEventsService');
 
 const INDEX_NAME = 'just_go_event_autoembed_v1';
 const TEXT_PATH = 'customFields.pivot.semanticText';
 const FETCH_LIMIT = 60;
 const RESULT_LIMIT = 5;
+const GROUP_LIMIT = 4;
+const SEED_SCAN_LIMIT = 250;
+const SEED_ATTEMPT_LIMIT = 16;
 
 function relatedPipeline(text) {
   return [
@@ -50,6 +54,15 @@ function chooseNeighbors(hits, events, seed, limit = RESULT_LIMIT) {
   return chosen;
 }
 
+function eligibleRelatedEvents(now) {
+  const parsed = parseCurationQuery({ temporalMode: 'upcoming', publication: 'published' });
+  const match = buildCurationMongoQuery(parsed.spec, { now });
+  match.status = { $in: ['approved', 'not-applicable'] };
+  match.visibility = 'public';
+  match['customFields.pivot.rankingOverride.tier'] = { $ne: 'hidden' };
+  return { parsed, match };
+}
+
 async function findRelatedCurationEvents(req, accountId, raw = {}, options = {}) {
   if (process.env.PIVOT_CURATION_RELATED_ENABLED !== 'true' && !options.enabled) {
     return { error: 'Related-event proposals are disabled.', status: 503, code: 'PROVIDER_UNAVAILABLE' };
@@ -64,14 +77,10 @@ async function findRelatedCurationEvents(req, accountId, raw = {}, options = {})
   if (!mongoose.isValidObjectId(eventId)) {
     return { error: 'A valid seed event is required.', status: 400, code: 'INVALID_EVENT_ID' };
   }
-  const parsed = parseCurationQuery({ temporalMode: 'upcoming', publication: 'published' });
   const now = options.now || new Date();
   const db = await connectToDatabase(tenantKey);
   const { Event } = getModels({ db }, 'Event');
-  const match = buildCurationMongoQuery(parsed.spec, { now });
-  match.status = { $in: ['approved', 'not-applicable'] };
-  match.visibility = 'public';
-  match['customFields.pivot.rankingOverride.tier'] = { $ne: 'hidden' };
+  const { parsed, match } = eligibleRelatedEvents(now);
   const seed = await Event.findOne({ ...match, _id: eventId }).lean();
   if (!seed) return { error: 'The seed event is unavailable.', status: 404, code: 'SEED_UNAVAILABLE' };
   const semanticText = buildJustGoSemanticText(seed);
@@ -120,4 +129,105 @@ async function findRelatedCurationEvents(req, accountId, raw = {}, options = {})
   return { data: { group, candidates } };
 }
 
-module.exports = { INDEX_NAME, TEXT_PATH, relatedPipeline, chooseNeighbors, findRelatedCurationEvents };
+function seedSignal(event, interestCount = 0) {
+  const pivot = event.customFields?.pivot || {};
+  if (pivot.featured === true) return { kind: 'featured', label: 'Featured', rank: 4 };
+  const tier = pivot.rankingOverride?.tier;
+  if (['must_show', 'strong_promote', 'promote'].includes(tier)) {
+    return { kind: 'promoted', label: 'Promoted', rank: 3 };
+  }
+  if (interestCount > 0) return { kind: 'interest', label: `${interestCount} interested`, rank: 2 };
+  return { kind: 'upcoming', label: 'Upcoming', rank: 1 };
+}
+
+function orderGroupSeeds(seeds) {
+  const sorted = [...seeds].sort((a, b) => (
+    b.signal.rank - a.signal.rank
+    || b.interestCount - a.interestCount
+    || new Date(a.event.start_time) - new Date(b.event.start_time)
+    || `${a.tenantKey}:${a.event._id}`.localeCompare(`${b.tenantKey}:${b.event._id}`)
+  ));
+  // Give editorial picks and audience interest a place in the first four cards.
+  const first = ['featured', 'promoted', 'interest']
+    .map((kind) => sorted.find((seed) => seed.signal.kind === kind))
+    .filter(Boolean);
+  const chosen = new Set(first.map((seed) => `${seed.tenantKey}:${seed.event._id}`));
+  return [...first, ...sorted.filter((seed) => !chosen.has(`${seed.tenantKey}:${seed.event._id}`))];
+}
+
+async function findSuggestedCurationGroups(req, accountId, options = {}) {
+  if (process.env.PIVOT_CURATION_RELATED_ENABLED !== 'true' && !options.enabled) {
+    return { error: 'Related-event proposals are disabled.', status: 503, code: 'PROVIDER_UNAVAILABLE' };
+  }
+  const loaded = await loadAccount(req, accountId);
+  if (loaded.error) return loaded;
+  const now = options.now || new Date();
+  const { parsed, match } = eligibleRelatedEvents(now);
+  const seeds = [];
+  const sources = [];
+
+  for (const tenantKey of loaded.account.sourceTenantKeys) {
+    try {
+      const db = await connectToDatabase(tenantKey);
+      const { Event, PivotEventIntent } = getModels({ db }, 'Event', 'PivotEventIntent');
+      const upcoming = await Event.find(match).sort({ start_time: 1, _id: 1 }).limit(SEED_SCAN_LIMIT).lean();
+      const pinned = await Event.find({ $and: [match, {
+        $or: [
+          { 'customFields.pivot.featured': true },
+          { 'customFields.pivot.rankingOverride.tier': { $in: ['must_show', 'strong_promote', 'promote'] } },
+        ],
+      }] }).sort({ start_time: 1, _id: 1 }).limit(40).lean();
+      const eligible = [...new Map([...upcoming, ...pinned].map((event) => [String(event._id), event])).values()];
+      const stats = await loadIntentStatsByEventId(PivotEventIntent, eligible.map((event) => event._id));
+      for (const event of eligible) {
+        const intent = stats.get(String(event._id));
+        const interestCount = (intent?.interested || 0) + (intent?.registered || 0);
+        seeds.push({ tenantKey, event, interestCount, signal: seedSignal(event, interestCount) });
+      }
+      sources.push({ tenantKey, status: 'ok' });
+    } catch (error) {
+      sources.push({ tenantKey, status: 'failed', error: 'Could not load suggested groups for this city.' });
+    }
+  }
+
+  const groups = [];
+  const used = new Set();
+  for (const seed of orderGroupSeeds(seeds).slice(0, SEED_ATTEMPT_LIMIT)) {
+    if (groups.length === GROUP_LIMIT) break;
+    const seedKey = `${seed.tenantKey}:${seed.event._id}`;
+    if (used.has(seedKey)) continue;
+    const proposal = await findRelatedCurationEvents(req, accountId, {
+      sourceTenantKey: seed.tenantKey, eventId: String(seed.event._id),
+    }, { enabled: true, now });
+    if (proposal.error) {
+      if (proposal.code === 'VECTOR_INDEX_UNAVAILABLE') return proposal;
+      continue;
+    }
+    const candidates = proposal.data.candidates.filter((candidate) => !used.has(`${candidate.ref.sourceTenantKey}:${candidate.ref.eventId}`));
+    if (!candidates.length) continue;
+    const tenant = await getTenantByKey(req, seed.tenantKey);
+    const lead = serializeCurationCandidate(seed.event, {
+      sourceTenantKey: seed.tenantKey,
+      cityName: tenant?.location || tenant?.name || seed.tenantKey,
+      timezone: tenant?.pivotDropTimezone || tenant?.timezone,
+      spec: parsed.spec,
+      capturedAt: now,
+    });
+    const members = [lead, ...candidates];
+    members.forEach((candidate) => used.add(`${candidate.ref.sourceTenantKey}:${candidate.ref.eventId}`));
+    groups.push({
+      id: seedKey,
+      label: proposal.data.group.label,
+      explanation: proposal.data.group.explanation,
+      signal: seed.signal,
+      seed: lead,
+      candidates: members,
+    });
+  }
+  return { data: { groups, sources } };
+}
+
+module.exports = {
+  INDEX_NAME, TEXT_PATH, relatedPipeline, chooseNeighbors, findRelatedCurationEvents,
+  seedSignal, orderGroupSeeds, findSuggestedCurationGroups,
+};

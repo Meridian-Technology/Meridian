@@ -14,7 +14,7 @@ const {
   patchCarouselVoice,
 } = require('../services/pivotCarouselVoiceService');
 const { searchCarouselCatalog } = require('../services/pivotCarouselCatalogService');
-const { findRelatedCurationEvents } = require('../services/pivotCarouselRelatedService');
+const { findRelatedCurationEvents, findSuggestedCurationGroups } = require('../services/pivotCarouselRelatedService');
 const { setSlideImage } = require('../services/pivotCarouselDeckService');
 const { upload } = require('../services/imageUploadService');
 const {
@@ -965,6 +965,20 @@ router.post(
     } catch (err) {
       logPivotRouteError('POST carousel curation related', err, req);
       return res.status(500).json({ success: false, message: 'Unable to find related events.' });
+    }
+  },
+);
+
+router.get(
+  '/carousel-accounts/:accountId/curation/groups',
+  verifyToken,
+  requirePlatformAdmin,
+  async (req, res) => {
+    try {
+      return sendDeckResult(res, await findSuggestedCurationGroups(req, req.params.accountId));
+    } catch (err) {
+      logPivotRouteError('GET carousel curation groups', err, req);
+      return res.status(500).json({ success: false, message: 'Unable to load curated groups.' });
     }
   },
 );

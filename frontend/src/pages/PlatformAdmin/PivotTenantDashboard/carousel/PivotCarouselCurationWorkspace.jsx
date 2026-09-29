@@ -9,6 +9,7 @@ import {
 } from './carouselCurationQuery';
 import { filterCurationCandidates } from './carouselCurationCatalog';
 import PivotCarouselCurationCatalog from './PivotCarouselCurationCatalog';
+import PivotCarouselCuratedGroups from './PivotCarouselCuratedGroups';
 import StudioSlide from './studio/StudioSlide';
 import {
   addSelection,
@@ -21,6 +22,7 @@ import {
   describeCurationDiff,
   diffSelection,
   eventRefKey,
+  MAX_SELECTED,
   moveSelection,
   newIdempotencyKey,
   previousCurationStep,
@@ -80,6 +82,12 @@ export default function PivotCarouselCurationWorkspace({
   const [related, setRelated] = useState(null);
   const [relatedLoading, setRelatedLoading] = useState(false);
   const [relatedEnabled, setRelatedEnabled] = useState(false);
+  const [selectionMode, setSelectionMode] = useState('browse');
+  const [groups, setGroups] = useState([]);
+  const [groupSources, setGroupSources] = useState([]);
+  const [groupsLoading, setGroupsLoading] = useState(false);
+  const [groupsError, setGroupsError] = useState(null);
+  const [groupsLoaded, setGroupsLoaded] = useState(false);
   const [sources, setSources] = useState([]);
   const [cursor, setCursor] = useState(null);
   const [complete, setComplete] = useState(true);
@@ -254,6 +262,33 @@ export default function PivotCarouselCurationWorkspace({
     setRelated(result.data.data);
   };
 
+  const loadGroups = async () => {
+    setGroupsLoading(true);
+    setGroupsError(null);
+    const result = await authenticatedRequest(`${path}/groups`);
+    setGroupsLoading(false);
+    if (!result.data?.success) {
+      setGroupsError(result.data?.message || result.error || 'Could not load curated groups.');
+      return;
+    }
+    setGroups(result.data.data.groups || []);
+    setGroupSources(result.data.data.sources || []);
+    setGroupsLoaded(true);
+  };
+
+  const addGroup = (group) => {
+    let next = selected;
+    let full = false;
+    for (const candidate of group.candidates) {
+      if (next.some((item) => eventRefKey(item.ref) === eventRefKey(candidate.ref))) continue;
+      if (next.length >= MAX_SELECTED) { full = true; break; }
+      next = addSelection(next, candidate).selected;
+    }
+    setSelected(next);
+    if (!theme.trim()) setTheme(group.label);
+    setError(full ? `Only ${MAX_SELECTED} events fit in a carousel. The remaining events were not added.` : null);
+  };
+
   const failedSources = sources.filter((row) => row.status === 'failed');
 
   const goReview = async () => {
@@ -360,6 +395,28 @@ export default function PivotCarouselCurationWorkspace({
 
       {step === 'search' && (
         <>
+          {!issue && format === 'city-picks' && relatedEnabled && (
+            <div className="jg-curate__mode" role="group" aria-label="Choose events by">
+              <button type="button" className={selectionMode === 'browse' ? 'is-active' : ''} aria-pressed={selectionMode === 'browse'} onClick={() => setSelectionMode('browse')}>Browse events</button>
+              <button type="button" className={selectionMode === 'groups' ? 'is-active' : ''} aria-pressed={selectionMode === 'groups'} onClick={() => {
+                setSelectionMode('groups');
+                if (!groupsLoaded && !groupsLoading) loadGroups();
+              }}>Curated groups</button>
+            </div>
+          )}
+          {selectionMode === 'groups' && relatedEnabled && format === 'city-picks' && !issue ? (
+            <PivotCarouselCuratedGroups
+              groups={groups}
+              loading={groupsLoading}
+              error={groupsError}
+              sources={groupSources}
+              selectedKeys={selectedKeys}
+              onToggle={toggleCandidate}
+              onAdd={addGroup}
+              onRetry={loadGroups}
+            />
+          ) : (
+          <>
           <div className="jg-curate__toolbar">
             <label className="pivot-curation-sheet__search">
               <span className="visually-hidden">Filter events</span>
@@ -457,6 +514,8 @@ export default function PivotCarouselCurationWorkspace({
               </button>
             )}
           </div>
+          </>
+          )}
         </>
       )}
 

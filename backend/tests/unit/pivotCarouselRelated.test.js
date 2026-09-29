@@ -5,7 +5,10 @@ jest.mock('../../services/pivotCarouselIssueService', () => ({ loadAccount: jest
 
 const getModels = require('../../services/getModelService');
 const { loadAccount } = require('../../services/pivotCarouselIssueService');
-const { relatedPipeline, chooseNeighbors, findRelatedCurationEvents } = require('../../services/pivotCarouselRelatedService');
+const {
+  relatedPipeline, chooseNeighbors, findRelatedCurationEvents, orderGroupSeeds, seedSignal,
+  findSuggestedCurationGroups,
+} = require('../../services/pivotCarouselRelatedService');
 const { setJustGoSemanticText } = require('../../utilities/justGoSemanticText');
 
 const id = (n) => n.toString(16).padStart(24, '0');
@@ -95,4 +98,57 @@ test('fails closed when Atlas index is absent', async () => {
   } });
   const result = await findRelatedCurationEvents({}, 'account', { sourceTenantKey: 'sf', eventId: seed._id }, { enabled: true, now });
   expect(result.code).toBe('VECTOR_INDEX_UNAVAILABLE');
+});
+
+test('starts with featured, promoted, and audience-interest seeds', () => {
+  const featured = event(1, 'Featured');
+  featured.customFields.pivot.featured = true;
+  const promoted = event(2, 'Promoted');
+  promoted.customFields.pivot.rankingOverride = { tier: 'promote' };
+  const popular = event(3, 'Popular');
+  const plain = event(4, 'Plain');
+  const seeds = [plain, popular, promoted, featured].map((row) => ({
+    event: row,
+    tenantKey: 'sf',
+    interestCount: row === popular ? 8 : 0,
+    signal: seedSignal(row, row === popular ? 8 : 0),
+  }));
+  expect(orderGroupSeeds(seeds).map((seed) => seed.event.name)).toEqual(['Featured', 'Promoted', 'Popular', 'Plain']);
+});
+
+test('keeps curated groups behind the related-event feature flag', async () => {
+  const result = await findSuggestedCurationGroups({}, 'account', { now });
+  expect(result.code).toBe('PROVIDER_UNAVAILABLE');
+  expect(loadAccount).not.toHaveBeenCalled();
+});
+
+test('builds four disjoint groups with the seed included, using eligible events', async () => {
+  const seeds = [1, 2, 3, 4].map((n) => event(n, `Seed ${n}`));
+  seeds[0].customFields.pivot.featured = true;
+  seeds[1].customFields.pivot.rankingOverride = { tier: 'promote' };
+  const neighbors = [5, 6, 7, 8].map((n) => event(n, `Neighbor ${n}`));
+  const byId = new Map([...seeds, ...neighbors].map((row) => [String(row._id), row]));
+  const Event = {
+    find: jest.fn((query) => {
+      const rows = query._id?.$in
+        ? query._id.$in.map((key) => byId.get(String(key))).filter(Boolean)
+        : query.$and ? seeds.slice(0, 2) : seeds;
+      return { sort: () => ({ limit: () => ({ lean: async () => rows }) }), lean: async () => rows };
+    }),
+    findOne: jest.fn((query) => ({ lean: async () => byId.get(String(query._id)) })),
+    aggregate: jest.fn(async (pipeline) => {
+      const text = pipeline[0].$vectorSearch.query.text;
+      const index = seeds.findIndex((row) => text.includes(`Title: ${row.name}`));
+      return index < 0 ? [] : [{ _id: neighbors[index]._id, score: 0.9 }];
+    }),
+  };
+  const PivotEventIntent = { aggregate: jest.fn(async () => [{ _id: seeds[2]._id, interested: 12, registered: 0 }]) };
+  getModels.mockReturnValue({ Event, PivotEventIntent });
+  const result = await findSuggestedCurationGroups({}, 'account', { enabled: true, now });
+  expect(result.data.groups).toHaveLength(4);
+  expect(result.data.groups.map((group) => group.signal.kind)).toEqual(['featured', 'promoted', 'interest', 'upcoming']);
+  expect(result.data.groups.every((group) => group.candidates.length === 2)).toBe(true);
+  expect(result.data.groups[0].candidates[0].ref.eventId).toBe(seeds[0]._id);
+  expect(Event.find.mock.calls[0][0].visibility).toBe('public');
+  expect(Event.find.mock.calls[0][0].start_time.$gte).toEqual(now);
 });
