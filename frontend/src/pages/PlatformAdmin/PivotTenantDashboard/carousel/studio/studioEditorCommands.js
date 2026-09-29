@@ -30,6 +30,19 @@ export const FRAME_RATIOS = Object.freeze([
   { id: '16:9', width: 16, height: 9 },
 ]);
 
+export const PHOTO_BRIGHTNESS_MIN = 0.35;
+export const PHOTO_BRIGHTNESS_MAX = 1.25;
+
+export function clampPhotoBrightness(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return 1;
+  return Math.min(PHOTO_BRIGHTNESS_MAX, Math.max(PHOTO_BRIGHTNESS_MIN, number));
+}
+
+export function photoBrightness(node) {
+  return clampPhotoBrightness(node?.style?.brightness ?? node?.brightness ?? 1);
+}
+
 function clone(value) {
   return JSON.parse(JSON.stringify(value));
 }
@@ -761,8 +774,9 @@ export function setBackgroundImage(doc, slideId, asset) {
     const replacingSource = asset.src != null && asset.src !== previousAsset.src;
     slide.background = {
       kind: 'image',
-      color: previous?.color || slide.background?.color || '#1a1714',
+      color: previous?.color || slide.background?.color || '#faf6ef',
       crop: previous?.crop || { focalX: 0.5, focalY: 0.5, scale: 1 },
+      style: { ...(previous?.style || slide.background?.style || {}) },
       asset: {
         ...(replacingSource ? {} : previousAsset),
         ...asset,
@@ -784,6 +798,32 @@ export function setBackgroundCrop(doc, slideId, crop) {
       ...((crop.panX ?? current.panX) != null ? { panX: Math.max(-1, Math.min(1, crop.panX ?? current.panX)) } : {}),
       ...((crop.panY ?? current.panY) != null ? { panY: Math.max(-1, Math.min(1, crop.panY ?? current.panY)) } : {}),
     };
+  });
+}
+
+export function setSlideEffects(doc, slideId, patch) {
+  return withDocument(doc, (next) => {
+    const slide = slideNode(next, slideId);
+    slide.effects = { ...(slide.effects || {}), ...patch };
+  });
+}
+
+export function setImageBrightness(doc, slideId, id, brightness) {
+  const value = clampPhotoBrightness(brightness);
+  return withDocument(doc, (next) => {
+    const slide = slideNode(next, slideId);
+    const element = findElement(slide, id);
+    if (!element || element.kind !== 'image' || isElementLocked(slide, id)) return;
+    element.style = { ...(element.style || {}), brightness: value };
+  });
+}
+
+export function setBackgroundBrightness(doc, slideId, brightness) {
+  const value = clampPhotoBrightness(brightness);
+  return withDocument(doc, (next) => {
+    const slide = slideNode(next, slideId);
+    if (slide.background?.kind !== 'image') return;
+    slide.background.style = { ...(slide.background.style || {}), brightness: value };
   });
 }
 

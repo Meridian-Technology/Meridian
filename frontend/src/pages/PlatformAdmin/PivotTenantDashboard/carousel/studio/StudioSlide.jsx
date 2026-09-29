@@ -14,11 +14,22 @@ export function frameStyle(element, index = 0) {
   return { left: frame.x, top: frame.y, width: frame.width, height: frame.height,
     transform: `rotate(${rotation}deg)`, zIndex: Number.isFinite(element.stack) ? element.stack : index };
 }
-function cropStyle(element) {
+export function slideEffects(slide) {
+  return {
+    grain: slide?.effects?.grain !== false,
+    filmFilter: slide?.effects?.filmFilter !== false,
+  };
+}
+
+function cropStyle(element, filmFilter = true) {
   const crop = element.crop || {};
+  const brightness = element.style?.brightness ?? element.brightness ?? 1;
+  const filter = filmFilter
+    ? `saturate(1.06) contrast(1.03) brightness(${brightness})`
+    : (brightness !== 1 ? `brightness(${brightness})` : undefined);
   return { objectPosition: `${(crop.focalX ?? 0.5) * 100}% ${(crop.focalY ?? 0.5) * 100}%`,
     transform: `translate(${(crop.panX || 0) * Math.max(0, (crop.scale || 1) - 1) * 50}%, ${(crop.panY || 0) * Math.max(0, (crop.scale || 1) - 1) * 50}%) scale(${crop.scale || 1}) rotate(${element.style?.imageRotation || 0}deg)`,
-    filter: `saturate(1.06) contrast(1.03) brightness(${element.style?.brightness ?? 1})` };
+    ...(filter ? { filter } : {}) };
 }
 export function readEditableText(node) {
   return String(node?.innerText ?? node?.textContent ?? '').replace(/\u00a0/g, ' ').replace(/\n$/, '');
@@ -82,7 +93,7 @@ function TextBlock({ element, editing, editingLabel, onEdit, onMeasure, timezone
     >{editing ? null : element.style?.lettering ? value.split('\n').map((line, lineIndex) => <div className="studio-art__letter-line" key={lineIndex}><span style={{ background: element.style.textBackground || undefined }}>{Array.from(line).map((letter, i) => <span key={i} style={{ transform: `translateY(${[0, 2.16, -1.62, 2.16, 0, -1.62, 2.16][i % 7]}px) rotate(${[-2, 1, -1, 2, -2, 1, 2][i % 7]}deg)` }}>{letter === ' ' ? '\u00a0' : letter}</span>)}</span></div>) : dateContent || (!value && onEdit && element.placeholder ? <span className="studio-art__text-placeholder">{element.placeholder}</span> : null) || (element.style?.textBackground ? <span className="studio-art__paper-text" style={{ background: element.style.textBackground }}>{value}</span> : value)}</div>
   </>;
 }
-function ElementNode({ element, index, editingId, onEdit, onMeasure, onImageRequest, timezone, inheritedLocked = false }) {
+function ElementNode({ element, index, editingId, onEdit, onMeasure, onImageRequest, timezone, inheritedLocked = false, filmFilter = true }) {
   if (!element || element.visibility === 'hidden' || element.presence === 'removed') return null;
   if (element.role === 'event-logistics' && element.kind === 'card' && (element.children || []).every(child => child.presence === 'removed' || child.visibility === 'hidden')) return null;
   const locked = inheritedLocked || element.locked;
@@ -92,11 +103,11 @@ function ElementNode({ element, index, editingId, onEdit, onMeasure, onImageRequ
   const classes = `studio-art__node studio-art__node--${element.kind}${treatment ? ` studio-art__node--${treatment}` : ''}${blankText ? ' is-blank' : ''}${element.style?.borderTop ? ' has-rule' : ''}${element.style?.shadow ? ' has-shadow' : ''}`;
   return <div className={classes} data-element-id={element.id} data-kind={element.kind} data-locked={locked ? 'true' : 'false'}
     data-frame={`${element.frame.x},${element.frame.y},${element.frame.width},${element.frame.height}`} data-rotation={element.rotation || 0} style={style}>
-    {element.kind === 'card' ? (element.children || []).map((child, childIndex) => <ElementNode key={child.id} element={child} index={childIndex} editingId={editingId} onEdit={onEdit} onMeasure={onMeasure} onImageRequest={onImageRequest} timezone={timezone} inheritedLocked={locked} />)
+    {element.kind === 'card' ? (element.children || []).map((child, childIndex) => <ElementNode key={child.id} element={child} index={childIndex} editingId={editingId} onEdit={onEdit} onMeasure={onMeasure} onImageRequest={onImageRequest} timezone={timezone} inheritedLocked={locked} filmFilter={filmFilter} />)
       : element.kind === 'text' ? <TextBlock element={element} editing={!locked && editingId === element.id} editingLabel={!locked && editingId === `${element.id}:label`} onEdit={onEdit} onMeasure={onMeasure} timezone={timezone} />
         : element.role === 'back-badge' ? <img draggable={false} className="studio-art__badge" src={element.asset?.src || appStoreBadge} alt={element.asset?.alt || 'Download on the App Store'} />
         : element.kind === 'image' ? <div className={`studio-art__photo-mask${element.style?.mask ? ` studio-art__photo-mask--${element.style.mask}` : ''}`}>
-          {element.asset?.src ? <img src={element.asset.src} alt={element.asset.alt || ''} draggable={false} style={cropStyle(element)} /> : onImageRequest ? <button type="button" data-add-photo="true" className="studio-art__missing" disabled={locked} onClick={event => { event.stopPropagation(); onImageRequest(element.id); }}><span>＋</span><span>Add a photograph</span></button> : <div className="studio-art__missing"><span>＋</span><span>Add a photograph</span></div>}
+          {element.asset?.src ? <img src={element.asset.src} alt={element.asset.alt || ''} draggable={false} style={cropStyle(element, filmFilter)} /> : onImageRequest ? <button type="button" data-add-photo="true" className="studio-art__missing" disabled={locked} onClick={event => { event.stopPropagation(); onImageRequest(element.id); }}><span>＋</span><span>Add a photograph</span></button> : <div className="studio-art__missing"><span>＋</span><span>Add a photograph</span></div>}
         </div>
           : element.kind === 'sticker' ? <img draggable={false} className="studio-art__sticker" src={element.asset?.src || (element.asset?.finish === 'dark' || element.style?.finish === 'dark' ? stickerDark : stickerLight)} alt={element.asset?.alt || 'Just Go'} /> : null}
   </div>;
@@ -125,12 +136,16 @@ export default function StudioSlide({ doc, width = 1080, slideIndex = 0, editing
   if (!slide) return null;
   const logicalWidth = slide.width || doc.width || 1080; const logicalHeight = slide.height || doc.height || 1350;
   const scale = width / logicalWidth;
+  const effects = slideEffects(slide);
+  const surfaceFill = slide.background?.kind === 'image'
+    ? 'transparent'
+    : (slide.background?.color || slide.background?.fill || '#faf6ef');
   return <div className="studio-art" style={{ width, height: logicalHeight * scale }}>
     <div className="studio-art__surface" data-export-root="true" data-slide-width={logicalWidth} data-slide-height={logicalHeight}
-      data-font-faces={SLIDE_FONTS.join(', ')} style={{ width: logicalWidth, height: logicalHeight, transform: `scale(${scale})`, background: slide.background?.color || slide.background?.fill || '#faf6ef' }}>
-      {slide.background?.kind === 'image' && slide.background.asset?.src && <img className="studio-art__background" src={slide.background.asset.src} alt="" draggable={false} style={cropStyle(slide.background)} />}
-      {(slide.elements || []).map((element, index) => <ElementNode key={element.id} element={element} index={index} editingId={editingId} onEdit={onEdit} onMeasure={measure} onImageRequest={onImageRequest} timezone={slide.sourceTimezone || doc.editorial?.curation?.snapshots?.find(item => item.ref?.eventId === slide.source?.eventId && item.ref?.sourceTenantKey === slide.source?.sourceTenantKey)?.snapshot?.city?.timezone || 'UTC'} />)}
-      <div className="studio-art__grain" aria-hidden="true" />
+      data-font-faces={SLIDE_FONTS.join(', ')} style={{ width: logicalWidth, height: logicalHeight, transform: `scale(${scale})`, background: surfaceFill }}>
+      {slide.background?.kind === 'image' && slide.background.asset?.src && <img className="studio-art__background" src={slide.background.asset.src} alt="" draggable={false} style={cropStyle(slide.background, effects.filmFilter)} />}
+      {(slide.elements || []).map((element, index) => <ElementNode key={element.id} element={element} index={index} editingId={editingId} onEdit={onEdit} onMeasure={measure} onImageRequest={onImageRequest} filmFilter={effects.filmFilter} timezone={slide.sourceTimezone || doc.editorial?.curation?.snapshots?.find(item => item.ref?.eventId === slide.source?.eventId && item.ref?.sourceTenantKey === slide.source?.sourceTenantKey)?.snapshot?.city?.timezone || 'UTC'} />)}
+      {effects.grain ? <div className="studio-art__grain" aria-hidden="true" /> : null}
     </div>
   </div>;
 }

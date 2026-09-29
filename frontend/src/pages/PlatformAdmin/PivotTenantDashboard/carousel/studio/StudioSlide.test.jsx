@@ -101,6 +101,21 @@ test('legacy ISO dates display as bold local dates without rewriting saved copy'
   expect(doc.elements[0].text).toContain(value);
 });
 
+test('slide finish toggles grain and film color independently', () => {
+  const doc = {
+    width: 1080,
+    height: 1350,
+    slides: [{
+      id: 's',
+      effects: { grain: false, filmFilter: false },
+      elements: [{ id: 'photo', kind: 'image', frame: { x: 0, y: 0, width: 400, height: 400 }, asset: { src: 'https://images.test/photo.jpg' } }],
+    }],
+  };
+  const { container } = render(<StudioSlide doc={doc} width={200} slideIndex={0} />);
+  expect(container.querySelector('.studio-art__grain')).toBeNull();
+  expect(container.querySelector('[data-element-id="photo"] img').style.filter).toBe('');
+});
+
 test('blank text fields are marked and filled fields are not', () => {
   const doc = { width: 1080, height: 1350, elements: [
     { id: 'empty', kind: 'text', text: '', presence: 'blank', frame: { x: 10, y: 10, width: 200, height: 40 } },

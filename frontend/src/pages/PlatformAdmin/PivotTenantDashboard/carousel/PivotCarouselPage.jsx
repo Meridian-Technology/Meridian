@@ -23,7 +23,7 @@ import PivotCarouselEditor from './PivotCarouselEditor';
 import PivotCarouselLibrary from './PivotCarouselLibrary';
 import PivotCarouselCurationWorkspace from './PivotCarouselCurationWorkspace';
 import StudioEditor from './studio/StudioEditor';
-import { librarySelection } from './carouselLibrary';
+import { carouselAccountSelection, librarySelection } from './carouselLibrary';
 import { candidateToSelection } from './carouselCurationSelection';
 import useCarouselExport from './useCarouselExport';
 import PivotCarouselExportPanel from './PivotCarouselExportPanel';
@@ -158,7 +158,7 @@ export default function PivotCarouselPage({ tenantKey, cityDisplayName }) {
     const accountRows = accountList.data?.success ? accountList.data.data?.accounts || [] : [];
     setLibrary(rows);
     setAccounts(accountRows);
-    setAccountId((current) => requestedAccountId || current || accountRows[0]?.id || '');
+    setAccountId((current) => carouselAccountSelection(accountRows, requestedAccountId, current).account?.id || '');
 
     if (requestedCurationId) {
       setLibraryMode('curate');
@@ -497,6 +497,9 @@ export default function PivotCarouselPage({ tenantKey, cityDisplayName }) {
     setSearchParams(next);
   }, [searchParams, setSearchParams]);
 
+  const curationAccountSelection = carouselAccountSelection(accounts, requestedAccountId, accountId);
+  const curationAccount = curationAccountSelection.account;
+
   return (
     <PivotTenantPage
       className={`pivot-carousel-page${focused || draft?.schemaVersion === 2 ? ' is-carousel-focused' : ''}`}
@@ -534,9 +537,14 @@ export default function PivotCarouselPage({ tenantKey, cityDisplayName }) {
             onBack={closeLibrary}
           />
         </div>
-        ) : requestedCurationId && (accounts.find((account) => account.id === accountId) || accounts[0]) ? (
+        ) : requestedCurationId && curationAccountSelection.invalidRequestedId ? (
+          <div className="jg-curate__alert" role="alert">
+            This curation link belongs to a different carousel account. Return to the carousel list and start a new draft.
+            <button type="button" className="linear-btn linear-btn--secondary" onClick={closeLibrary}>All carousels</button>
+          </div>
+        ) : requestedCurationId && curationAccount ? (
           <PivotCarouselCurationWorkspace
-            account={accounts.find((account) => account.id === accountId) || accounts[0]}
+            account={curationAccount}
             draftId={requestedCurationId}
             issue={draft && requestedDeckId ? {
               id: draft._id,
@@ -545,7 +553,7 @@ export default function PivotCarouselPage({ tenantKey, cityDisplayName }) {
               curation: draft.curation,
               document: draft.document,
             } : null}
-            onDraftId={(id) => openCuration(id, accounts.find((account) => account.id === accountId))}
+            onDraftId={(id) => openCuration(id, curationAccount)}
             onCreated={(data) => {
               const next = new URLSearchParams(searchParams);
               next.delete('curation');

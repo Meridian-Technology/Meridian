@@ -117,6 +117,12 @@ function normalizeSlide(slide, index) {
   if (slide.detached) next.detached = true;
   if (slide.legacyType) next.legacyType = slide.legacyType;
   if (slide.properties) next.properties = clone(slide.properties);
+  if (slide.effects && typeof slide.effects === 'object') {
+    const effects = {};
+    if (typeof slide.effects.grain === 'boolean') effects.grain = slide.effects.grain;
+    if (typeof slide.effects.filmFilter === 'boolean') effects.filmFilter = slide.effects.filmFilter;
+    if (Object.keys(effects).length) next.effects = effects;
+  }
   next.stack = Number.isFinite(slide.stack) ? slide.stack : index;
   return next;
 }

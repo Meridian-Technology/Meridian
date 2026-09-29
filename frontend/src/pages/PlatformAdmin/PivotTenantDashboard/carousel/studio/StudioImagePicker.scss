@@ -11,8 +11,8 @@
   nav button[aria-pressed='true'] { background: #25221f; color: white; border-color: #25221f; }
   &__upload { margin-left: auto; position: relative; padding: 10px 14px; border-radius: 10px; background: #f15a29; color: white; cursor: pointer; font-size: 13px; }
   &__upload input { position: absolute; width: 1px; height: 1px; opacity: 0; } &__upload:focus-within { outline: 2px solid #25221f; }
-  form { display: flex; gap: 8px; padding: 16px 28px 0; }
-  form input { flex: 1; min-width: 0; border: 1px solid #ded9d1; border-radius: 10px; padding: 12px; font: inherit; font-size: 13px; }
+  form, &__link { display: flex; gap: 8px; padding: 16px 28px 0; }
+  form input, &__link input { flex: 1; min-width: 0; border: 1px solid #ded9d1; border-radius: 10px; padding: 12px; font: inherit; font-size: 13px; }
   &__content { overflow: auto; flex: 1; padding: 22px 28px; min-height: 0; }
   &__grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px 14px; }
   article { min-width: 0; } article button { width: 100%; padding: 0; overflow: hidden; text-align: left; display: block; }

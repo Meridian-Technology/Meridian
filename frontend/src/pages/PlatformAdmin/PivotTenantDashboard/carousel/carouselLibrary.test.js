@@ -1,4 +1,4 @@
-import { latestIssue, librarySelection, listPastIssues } from './carouselLibrary';
+import { carouselAccountSelection, latestIssue, librarySelection, listPastIssues } from './carouselLibrary';
 
 describe('carousel issue list', () => {
   const decks = [
@@ -23,5 +23,14 @@ describe('carousel issue list', () => {
 
   test('the list is newest first and hides archived issues', () => {
     expect(listPastIssues(decks).map((issue) => issue._id)).toEqual(['bbb', 'aaa']);
+  });
+
+  test('never opens a curation draft under a different account', () => {
+    const accounts = [{ id: 'sf-account' }, { id: 'nyc-account' }];
+    expect(carouselAccountSelection(accounts, 'outside-account', 'sf-account')).toEqual({
+      account: null, invalidRequestedId: true,
+    });
+    expect(carouselAccountSelection(accounts, 'nyc-account', 'sf-account').account.id).toBe('nyc-account');
+    expect(carouselAccountSelection(accounts, null, 'sf-account').account.id).toBe('sf-account');
   });
 });
