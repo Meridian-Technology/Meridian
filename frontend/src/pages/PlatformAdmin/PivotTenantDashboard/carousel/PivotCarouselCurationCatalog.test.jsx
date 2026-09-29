@@ -55,4 +55,24 @@ describe('carousel catalog rows', () => {
     fireEvent.doubleClick(screen.getByText('Tonight', { selector: '.pivot-curation-sheet__name' }));
     expect(screen.getByRole('complementary', { name: /tonight details/i })).toBeInTheDocument();
   });
+
+  test('find related proposes from a seed without selecting it', () => {
+    const onToggle = jest.fn();
+    const onFindRelated = jest.fn();
+    const upcoming = {
+      ...CANDIDATES[0],
+      snapshot: { ...CANDIDATES[0].snapshot, startTime: '2030-10-01T20:00:00.000Z' },
+    };
+    render(
+      <PivotCarouselCurationCatalog
+        candidates={[upcoming]}
+        selectedKeys={new Set()}
+        onToggle={onToggle}
+        onFindRelated={onFindRelated}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Find related' }));
+    expect(onFindRelated).toHaveBeenCalledWith(upcoming);
+    expect(onToggle).not.toHaveBeenCalled();
+  });
 });

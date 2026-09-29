@@ -37,7 +37,7 @@ function EventDetailPopup({ candidate, onClose }) {
   );
 }
 
-function CatalogPickRow({ candidate, selected, onToggle, onInspect }) {
+function CatalogPickRow({ candidate, selected, onToggle, onInspect, onFindRelated }) {
   const event = candidateToCatalogEvent(candidate);
   const tags = event.tags || [];
   const sourceHref = candidate.snapshot?.externalLink || candidate.snapshot?.sourceUrl;
@@ -68,6 +68,12 @@ function CatalogPickRow({ candidate, selected, onToggle, onInspect }) {
       <td>
         <span className="pivot-curation-sheet__name">{event.name || 'Untitled'}</span>
         <div className="pivot-curation-sheet__host">{event.organizerName || 'No host'}</div>
+        {onFindRelated && new Date(candidate.snapshot?.startTime).getTime() > Date.now() ? (
+          <button type="button" className="linear-btn linear-btn--ghost" onClick={(clickEvent) => {
+            clickEvent.stopPropagation();
+            onFindRelated(candidate);
+          }}>Find related</button>
+        ) : null}
         <div className="pivot-curation-sheet__mobile-when">
           {formatEventWhenWithShowtimes(event)}
         </div>
@@ -111,6 +117,7 @@ export default function PivotCarouselCurationCatalog({
   loading,
   keyword,
   onToggle,
+  onFindRelated,
 }) {
   const [detail, setDetail] = useState(null);
   if (!candidates.length && loading) {
@@ -148,6 +155,7 @@ export default function PivotCarouselCurationCatalog({
                   candidate={candidate}
                   selected={selectedKeys.has(key)}
                   onToggle={onToggle}
+                  onFindRelated={onFindRelated}
                   onInspect={setDetail}
                 />
               );

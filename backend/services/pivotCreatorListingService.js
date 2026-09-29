@@ -12,6 +12,7 @@
  */
 
 const mongoose = require('mongoose');
+const { setJustGoSemanticText } = require('../utilities/justGoSemanticText');
 const getModels = require('./getModelService');
 const { connectToDatabase } = require('../connectionsManager');
 const {
@@ -1039,6 +1040,7 @@ async function createListing(req, payload = {}) {
     });
   }
 
+  setJustGoSemanticText(eventPayload);
   const created = await Event.create(eventPayload);
   const event =
     typeof created.toObject === 'function' ? created.toObject() : created;
@@ -1266,6 +1268,12 @@ async function updateListing(req, eventId, payload = {}) {
   }
   // Published: batchWeek + ingestStatus stay as ops left them (locked default).
 
+  setJustGoSemanticText({
+    ...existing,
+    ...setPayload,
+    customFields: { ...existing.customFields, pivot },
+  });
+  // The helper mutates pivot through the shared reference above.
   setPayload['customFields.pivot'] = pivot;
 
   const updated = await Event.findByIdAndUpdate(

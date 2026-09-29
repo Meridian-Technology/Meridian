@@ -1,0 +1,141 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+usage() {
+  cat <<'USAGE'
+Usage: copy-tenant-prod-to-staging --tenant-db DB --global-db DB \
+  --prod-config FILE --staging-config FILE [--backup-dir DIR]
+
+Copies one tenant database and the global database from production Atlas to
+staging Atlas. Keeps staging's global tenant_config collection so its MongoDB
+routing is not replaced with production routing. A macOS confirmation dialog
+must be completed before any dump or restore runs.
+USAGE
+}
+
+tenant_db=''
+global_db=''
+prod_config=''
+staging_config=''
+backup_dir=''
+while (($#)); do
+  case "$1" in
+    --tenant-db|--global-db|--prod-config|--staging-config|--backup-dir)
+      if (($# < 2)); then usage >&2; exit 2; fi
+      case "$1" in
+        --tenant-db) tenant_db=$2 ;;
+        --global-db) global_db=$2 ;;
+        --prod-config) prod_config=$2 ;;
+        --staging-config) staging_config=$2 ;;
+        --backup-dir) backup_dir=$2 ;;
+      esac
+      shift 2
+      ;;
+    --help|-h) usage; exit 0 ;;
+    *) usage >&2; exit 2 ;;
+  esac
+done
+
+if [[ -z "$tenant_db" || -z "$global_db" || -z "$prod_config" || -z "$staging_config" ]]; then
+  usage >&2
+  exit 2
+fi
+if [[ "$tenant_db" == "$global_db" ]]; then
+  echo 'Tenant and global databases must differ.' >&2
+  exit 2
+fi
+for db in "$tenant_db" "$global_db"; do
+  if [[ ! "$db" =~ ^[A-Za-z0-9_-]+$ ]]; then
+    echo "Invalid database name: $db" >&2
+    exit 2
+  fi
+done
+for config in "$prod_config" "$staging_config"; do
+  if [[ ! -r "$config" ]]; then
+    echo "Config file is not readable: $config" >&2
+    exit 2
+  fi
+done
+for command in python3 osascript mongodump mongorestore; do
+  if ! command -v "$command" >/dev/null 2>&1; then
+    echo "Required command is missing: $command" >&2
+    exit 2
+  fi
+done
+
+# Read only the host lists from the URI configs. Never print or pass credentials
+# to the confirmation dialog. The config URI must not include a database path.
+mapfile_hosts=$(python3 - "$prod_config" "$staging_config" <<'PY'
+import re
+import sys
+from pathlib import Path
+from urllib.parse import urlsplit
+
+hosts = []
+for path in sys.argv[1:]:
+    text = Path(path).read_text()
+    matches = re.findall(r'^\s*uri:\s*(.*?)\s*$', text, re.MULTILINE)
+    if len(matches) != 1:
+        if text.lstrip().startswith(('mongodb://', 'mongodb+srv://')):
+            raise SystemExit(f'{path} contains a bare connection string; use uri: "mongodb+srv://..." instead')
+        raise SystemExit(f'Expected exactly one uri entry in {path}')
+    uri = matches[0].strip().strip(chr(34) + chr(39))
+    parsed = urlsplit(uri)
+    if parsed.scheme not in ('mongodb', 'mongodb+srv') or not parsed.netloc:
+        raise SystemExit(f'Invalid MongoDB URI in {path}')
+    if parsed.path not in ('', '/'):
+        raise SystemExit(f'URI must have no database path: {path}')
+    host_list = parsed.netloc.rsplit('@', 1)[-1].lower()
+    hosts.append(host_list)
+if hosts[0] == hosts[1]:
+    raise SystemExit('Production and staging configs resolve to the same host list')
+print('\n'.join(hosts))
+PY
+)
+prod_host=${mapfile_hosts%%$'\n'*}
+staging_host=${mapfile_hosts#*$'\n'}
+
+if [[ -z "$backup_dir" ]]; then
+  backup_dir="$HOME/meridian-mongo-backups/$(date -u +%Y%m%dT%H%M%SZ)-${tenant_db}-to-staging"
+fi
+if [[ -e "$backup_dir" ]]; then
+  echo "Backup directory already exists: $backup_dir" >&2
+  exit 2
+fi
+
+printf -v summary 'SOURCE: production Atlas (%s)\nDESTINATION: staging Atlas (%s)\n\nReplace staging %s and %s collections from production. Keep staging %s.tenant_config. Staging-only collections are not removed.\n\nBack up both staging databases and save production dumps in:\n%s\n\nStop staging app writers and workers before continuing. Type COPY PROD TO STAGING to proceed.' \
+  "$prod_host" "$staging_host" "$tenant_db" "$global_db" "$global_db" "$backup_dir"
+if ! confirmation=$(osascript - "$summary" <<'APPLESCRIPT'
+on run argv
+    set messageText to item 1 of argv
+    set dialogResult to display dialog messageText with title "Confirm MongoDB production to staging copy" default answer "" buttons {"Cancel", "Copy"} default button "Cancel" cancel button "Cancel"
+    if text returned of dialogResult is not "COPY PROD TO STAGING" then error "Confirmation phrase did not match."
+    return "CONFIRMED"
+end run
+APPLESCRIPT
+); then
+  echo 'Canceled: no database commands ran.' >&2
+  exit 1
+fi
+if [[ "$confirmation" != 'CONFIRMED' ]]; then
+  echo 'Canceled: confirmation failed.' >&2
+  exit 1
+fi
+
+umask 077
+mkdir -p "$backup_dir"
+echo "Saving staging backups and production dumps to $backup_dir"
+mongodump --config="$staging_config" --db="$tenant_db" --gzip --archive="$backup_dir/staging-${tenant_db}.archive.gz"
+mongodump --config="$staging_config" --db="$global_db" --gzip --archive="$backup_dir/staging-${global_db}.archive.gz"
+mongodump --config="$prod_config" --db="$tenant_db" --gzip --archive="$backup_dir/production-${tenant_db}.archive.gz"
+mongodump --config="$prod_config" --db="$global_db" --gzip --archive="$backup_dir/production-${global_db}.archive.gz"
+
+echo 'Checking both production archives against the staging restore target...'
+mongorestore --config="$staging_config" --gzip --archive="$backup_dir/production-${tenant_db}.archive.gz" --nsInclude="$tenant_db.*" --dryRun --stopOnError
+mongorestore --config="$staging_config" --gzip --archive="$backup_dir/production-${global_db}.archive.gz" --nsInclude="$global_db.*" --nsExclude="$global_db.tenant_config" --dryRun --stopOnError
+
+echo "Replacing staging $tenant_db collections..."
+mongorestore --config="$staging_config" --gzip --archive="$backup_dir/production-${tenant_db}.archive.gz" --nsInclude="$tenant_db.*" --drop --stopOnError
+echo "Replacing staging $global_db collections except tenant_config..."
+mongorestore --config="$staging_config" --gzip --archive="$backup_dir/production-${global_db}.archive.gz" --nsInclude="$global_db.*" --nsExclude="$global_db.tenant_config" --drop --stopOnError
+echo "Copy complete. Archives: $backup_dir"

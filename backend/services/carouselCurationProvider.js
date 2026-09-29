@@ -1,9 +1,9 @@
 /**
  * Versioned candidate-provider seam for carousel curation.
  *
- * Catalog search is implemented now. Vector group proposals are reserved for
- * Phase 7 and must fail closed so a missing embedding plane cannot change
- * Explore, Drop, or manual curation.
+ * Catalog search is the default. The vector search provider for broad query
+ * results remains reserved. Seed-based related proposals use their own
+ * curator action in pivotCarouselRelatedService and fail closed separately.
  */
 
 const CATALOG_PROVIDER_ID = 'catalog';
