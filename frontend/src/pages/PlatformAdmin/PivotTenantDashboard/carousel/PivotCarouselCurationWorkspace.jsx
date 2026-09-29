@@ -98,6 +98,8 @@ export default function PivotCarouselCurationWorkspace({
   const [revalidation, setRevalidation] = useState(null);
   const [diff, setDiff] = useState(null);
   const [ready, setReady] = useState(!draftId);
+  const [loadError, setLoadError] = useState(null);
+  const [loadAttempt, setLoadAttempt] = useState(0);
   const saveTimer = useRef(null);
   const previousRefs = issue?.curation?.refs || issue?.sources || [];
 
@@ -145,6 +147,9 @@ export default function PivotCarouselCurationWorkspace({
   useEffect(() => {
     let cancelled = false;
     async function boot() {
+      clearTimeout(saveTimer.current);
+      setReady(false);
+      setLoadError(null);
       if (!draftId) {
         const local = readCurationDraftLocal(storageKey);
         if (local?.selected?.length) {
@@ -159,7 +164,13 @@ export default function PivotCarouselCurationWorkspace({
       const result = await authenticatedRequest(`${path}/drafts/${draftId}`);
       if (cancelled) return;
       if (!result.data?.success) {
-        setReady(true);
+        clearTimeout(saveTimer.current);
+        setLoadError({
+          missing: result.code === 404,
+          message: result.code === 404
+            ? 'This curation draft is no longer available for this carousel account. Start a new carousel from the list.'
+            : result.error || result.data?.message || 'Could not load this curation draft.',
+        });
         return;
       }
       const loaded = result.data.data.draft;
@@ -177,7 +188,7 @@ export default function PivotCarouselCurationWorkspace({
     }
     boot();
     return () => { cancelled = true; };
-  }, [draftId, path, storageKey]);
+  }, [draftId, path, storageKey, loadAttempt]);
 
   const snapshot = useMemo(() => ({
     format, query, selected, theme, coverPreset, coverVariation, eventPreset,
@@ -323,19 +334,25 @@ export default function PivotCarouselCurationWorkspace({
       id = created.data.data.draft.id;
       setDraft(created.data.data.draft);
       onDraftId(id);
+    } else {
+      const saved = await persist(id, snapshot);
+      if (!saved.data?.success) {
+        setLoading(false);
+        setError(saved.error || saved.data?.message || 'Could not save your selection.');
+        return;
+      }
+      setDraft(saved.data.data.draft);
     }
     const checked = await authenticatedRequest(`${path}/drafts/${id}/revalidate`, { method: 'POST' });
     if (!checked.data?.success) {
       setLoading(false);
-      setError(checked.data?.message || 'Could not revalidate the selection.');
+      setError(checked.error || checked.data?.message || 'Could not revalidate the selection.');
       return;
     }
     const recheck = checked.data.data.revalidation;
     setDraft(checked.data.data.draft);
     setSelected(checked.data.data.draft.selected || selected);
     setRevalidation(recheck);
-    const persisted = await persist(id, snapshot);
-    if (!persisted.data?.success) { setLoading(false); setError('Could not save your selection. Try again.'); return; }
     const stale = recheck && (
       recheck.missing?.length || recheck.unavailable?.length || recheck.complete === false
     );
@@ -382,6 +399,17 @@ export default function PivotCarouselCurationWorkspace({
       )}
     </>
   );
+
+  if (loadError) {
+    return (
+      <PivotOpsSection className="jg-curate__panel" title="Curation draft unavailable" description={loadError.message} actions={(
+        <>
+          <button type="button" className="linear-btn linear-btn--secondary" onClick={onCancel}>All carousels</button>
+          {!loadError.missing && <button type="button" className="linear-btn linear-btn--ghost" onClick={() => setLoadAttempt((attempt) => attempt + 1)}>Retry</button>}
+        </>
+      )} />
+    );
+  }
 
   return (
     <div className="jg-curate">

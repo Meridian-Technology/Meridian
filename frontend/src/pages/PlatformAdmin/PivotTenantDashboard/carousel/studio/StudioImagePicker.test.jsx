@@ -24,6 +24,34 @@ test('Unsplash browse/search/select tracks selection before applying and credits
   expect(screen.getByRole('link', { name: 'Pat' })).toHaveAttribute('href', photo.photographerUrl);
   expect(authenticatedRequest).toHaveBeenLastCalledWith('/admin/pivot/carousel-accounts/a/unsplash/select', { method: 'POST', data: { photoId: 'abc' } });
 });
+test('import link accepts Unsplash pages and direct image URLs', async () => {
+  const photo = { src: 'https://images.test/photo.jpg', alt: 'Lanterns', provider: 'unsplash', photoId: 'J0-DwclQQs8' };
+  authenticatedRequest.mockResolvedValueOnce({ data: { success: true, data: { asset: photo } } });
+  const onChoose = jest.fn();
+  const onClose = jest.fn();
+  render(<StudioImagePicker accountId="a" events={[]} assets={[]} onChoose={onChoose} onClose={onClose} />);
+  fireEvent.click(screen.getByRole('button', { name: 'Import link', exact: true }));
+  fireEvent.change(screen.getByLabelText('Image or Unsplash link'), {
+    target: { value: 'https://unsplash.com/photos/red-japanese-hanging-lanterns-J0-DwclQQs8' },
+  });
+  fireEvent.click(screen.getByRole('button', { name: 'Use link' }));
+  await waitFor(() => expect(onChoose).toHaveBeenCalledWith(photo));
+  expect(authenticatedRequest).toHaveBeenCalledWith('/admin/pivot/carousel-accounts/a/unsplash/select', {
+    method: 'POST',
+    data: { photoId: 'J0-DwclQQs8' },
+  });
+
+  onChoose.mockClear();
+  onClose.mockClear();
+  render(<StudioImagePicker events={[]} assets={[]} onChoose={onChoose} onClose={onClose} />);
+  fireEvent.click(screen.getAllByRole('button', { name: 'Import link', exact: true })[1]);
+  fireEvent.change(screen.getAllByLabelText('Image or Unsplash link')[1], {
+    target: { value: 'https://cdn.example.com/night.jpg' },
+  });
+  fireEvent.click(screen.getAllByRole('button', { name: 'Use link' })[1]);
+  expect(onChoose).toHaveBeenCalledWith({ src: 'https://cdn.example.com/night.jpg', alt: 'Imported photograph' });
+});
+
 test('Unsplash failures leave picker open and do not choose a photo', async () => {
   authenticatedRequest.mockRejectedValue(new Error('Service unavailable'));
   const onChoose = jest.fn(); const onClose = jest.fn();

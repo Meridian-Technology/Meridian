@@ -43,6 +43,32 @@ function cardDocument() {
 }
 
 describe('carousel document v2', () => {
+  test('round-trip keeps photo brightness on elements and backgrounds', () => {
+    const doc = cardDocument();
+    doc.slides[0].elements.find((element) => element.id === 'photo').style = { brightness: 0.72 };
+    doc.slides[0].background = {
+      kind: 'image',
+      color: '#faf6ef',
+      style: { brightness: 0.85 },
+      crop: { focalX: 0.5, focalY: 0.5, scale: 1 },
+      asset: { src: 'https://images.test/bg.jpg' },
+    };
+    const prepared = prepareDocument(doc);
+    expect(prepared.error).toBeUndefined();
+    const loaded = loadDocument(JSON.stringify(serializeDocument(prepared.document)));
+    expect(loaded.document.slides[0].elements.find((element) => element.id === 'photo').style.brightness).toBe(0.72);
+    expect(loaded.document.slides[0].background.style.brightness).toBe(0.85);
+  });
+
+  test('round-trip keeps slide finish effects', () => {
+    const doc = cardDocument();
+    doc.slides[0].effects = { grain: false, filmFilter: false };
+    const prepared = prepareDocument(doc);
+    expect(prepared.error).toBeUndefined();
+    const loaded = loadDocument(JSON.stringify(serializeDocument(prepared.document)));
+    expect(loaded.document.slides[0].effects).toEqual({ grain: false, filmFilter: false });
+  });
+
   test('round-trip keeps transforms, crop, text, visibility, and stacking', () => {
     const prepared = prepareDocument(cardDocument());
     expect(prepared.error).toBeUndefined();

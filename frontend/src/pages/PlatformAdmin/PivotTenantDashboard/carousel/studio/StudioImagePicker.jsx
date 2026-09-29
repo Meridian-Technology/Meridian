@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { authenticatedRequest } from '../../../../../hooks/useFetch';
+import { parseImageImportLink } from './studioImageImport';
 import './StudioImagePicker.scss';
 
 export function eventImages(document) {
@@ -32,6 +33,7 @@ export default function StudioImagePicker({ accountId, events, assets, onChoose,
   const [loading, setLoading] = useState(false);
   const [choosing, setChoosing] = useState(false);
   const [error, setError] = useState('');
+  const [linkValue, setLinkValue] = useState('');
   useEffect(() => {
     const previous = document.activeElement;
     if (dialogRef.current?.showModal) dialogRef.current.showModal();
@@ -52,26 +54,46 @@ export default function StudioImagePicker({ accountId, events, assets, onChoose,
     } catch (failure) { if (id === requestId.current) setError(failure.response?.data?.message || failure.message); }
     finally { if (id === requestId.current) setLoading(false); }
   };
+  const resolveUnsplash = async photoId => {
+    if (!accountId) throw new Error('Choose an account to use Unsplash.');
+    const result = await authenticatedRequest(`/admin/pivot/carousel-accounts/${accountId}/unsplash/select`, { method: 'POST', data: { photoId } });
+    if (!result.data?.success) throw new Error(result.data?.message || 'Could not select this photograph.');
+    return result.data.data.asset;
+  };
   const choose = async asset => {
     setChoosing(true); setError('');
     try {
       if (asset.provider === 'unsplash') {
-        if (!accountId) throw new Error('Choose an account to use Unsplash.');
-        const result = await authenticatedRequest(`/admin/pivot/carousel-accounts/${accountId}/unsplash/select`, { method: 'POST', data: { photoId: asset.photoId } });
-        if (!result.data?.success) throw new Error(result.data?.message || 'Could not select this photograph.');
-        asset = result.data.data.asset;
+        asset = await resolveUnsplash(asset.photoId);
       }
       onChoose(asset); onClose();
     } catch (failure) { setError(failure.response?.data?.message || failure.message); setChoosing(false); }
   };
-  const visible = tab === 'events' ? events : tab === 'assets' ? assets : photos;
+  const importLink = async event => {
+    event.preventDefault();
+    const parsed = parseImageImportLink(linkValue);
+    if (parsed.error) { setError(parsed.error); return; }
+    setChoosing(true); setError('');
+    try {
+      const asset = parsed.kind === 'unsplash'
+        ? await resolveUnsplash(parsed.photoId)
+        : { src: parsed.src, alt: 'Imported photograph' };
+      onChoose(asset); onClose();
+    } catch (failure) {
+      setError(failure.response?.data?.message || failure.message);
+      setChoosing(false);
+    }
+  };
+  const visible = tab === 'events' ? events : tab === 'assets' ? assets : tab === 'unsplash' ? photos : [];
   return <dialog ref={dialogRef} className="jg-image-picker" aria-label="Choose a photograph" onCancel={event => { event.preventDefault(); if (!choosing) onClose(); }} onClick={event => { if (event.target === event.currentTarget && !choosing) onClose(); }} onKeyDown={event => event.stopPropagation()}>
     <header><div><span>IMAGE LIBRARY</span><h2>Choose a photograph</h2><p>Use an event photo, a saved image, or find something new.</p></div><button type="button" aria-label="Close image picker" disabled={choosing} onClick={onClose}>×</button></header>
-    <nav aria-label="Image sources">{[['events', 'Event photos'], ['assets', 'Saved assets'], ['unsplash', 'Unsplash']].map(([value, title]) => <button key={value} type="button" aria-pressed={tab === value} disabled={choosing} onClick={() => { requestId.current += 1; setLoading(false); setTab(value); setError(''); if (value === 'unsplash' && !photos.length) load(query); }}>{title}</button>)}<label className="jg-image-picker__upload">{choosing ? 'Working…' : 'Upload image'}<input aria-label="Upload photograph" type="file" disabled={choosing} accept="image/png,image/jpeg,image/webp,image/gif" onChange={async event => { const file = event.target.files?.[0]; event.target.value = ''; if (!file) return; setChoosing(true); setError(''); const success = await onUpload(file); if (success === true) onClose(); else { setError(typeof success === 'string' ? success : 'The upload failed. Your photograph was not changed. Please try again.'); setChoosing(false); } }} /></label></nav>
+    <nav aria-label="Image sources">{[['events', 'Event photos'], ['assets', 'Saved assets'], ['unsplash', 'Unsplash'], ['link', 'Import link']].map(([value, title]) => <button key={value} type="button" aria-pressed={tab === value} disabled={choosing} onClick={() => { requestId.current += 1; setLoading(false); setTab(value); setError(''); if (value === 'unsplash' && !photos.length) load(query); }}>{title}</button>)}<label className="jg-image-picker__upload">{choosing ? 'Working…' : 'Upload image'}<input aria-label="Upload photograph" type="file" disabled={choosing} accept="image/png,image/jpeg,image/webp,image/gif" onChange={async event => { const file = event.target.files?.[0]; event.target.value = ''; if (!file) return; setChoosing(true); setError(''); const success = await onUpload(file); if (success === true) onClose(); else { setError(typeof success === 'string' ? success : 'The upload failed. Your photograph was not changed. Please try again.'); setChoosing(false); } }} /></label></nav>
     {tab === 'unsplash' && <form onSubmit={event => { event.preventDefault(); load(query); }}><input aria-label="Search Unsplash" placeholder="Try city nights, dinner, live music…" value={query} onChange={event => setQuery(event.target.value)} maxLength={200} /><button type="submit" disabled={choosing}>Search</button></form>}
+    {tab === 'link' && <form className="jg-image-picker__link" onSubmit={importLink}><input aria-label="Image or Unsplash link" placeholder="https://images.example.com/photo.jpg or unsplash.com/photos/…" value={linkValue} onChange={event => setLinkValue(event.target.value)} disabled={choosing} /><button type="submit" disabled={choosing || !linkValue.trim()}>Use link</button></form>}
     <div className="jg-image-picker__content" aria-busy={loading || choosing}>
       {error && <p role="alert">{error}</p>}
-      {!visible.length && !loading && !error && <p>{tab === 'events' ? 'No event photos yet. Upload a photograph or browse Unsplash.' : tab === 'assets' ? 'Uploaded account images will appear here.' : 'No photographs found. Try another search.'}</p>}
+      {tab === 'link' && !error && <p>Paste a direct image URL or an Unsplash photo page. Unsplash links are tracked and credited automatically.</p>}
+      {!visible.length && !loading && !error && tab !== 'link' && <p>{tab === 'events' ? 'No event photos yet. Upload a photograph or browse Unsplash.' : tab === 'assets' ? 'Uploaded account images will appear here.' : 'No photographs found. Try another search.'}</p>}
       <div className="jg-image-picker__grid">{visible.filter(asset => asset.src).map(asset => <article key={asset.id || asset.src}><button type="button" disabled={choosing} onClick={() => choose(asset)} aria-label={`Use ${asset.alt || 'photograph'}`}><img loading="lazy" draggable="false" src={asset.thumbnail || asset.src} alt="" /><span>{asset.alt || 'Photograph'}</span></button><PhotoCredit asset={asset} /></article>)}</div>
       {loading && <p role="status">Loading photographs…</p>}{tab === 'unsplash' && hasMore && !loading && <button type="button" disabled={choosing} onClick={() => load(searchTerm, page + 1)}>Load more</button>}
     </div><footer>PNG, JPEG, WebP or GIF · Uploads up to 8 MB · Choosing a photo is undoable.</footer>

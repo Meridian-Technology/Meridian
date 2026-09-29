@@ -9,6 +9,14 @@ export function librarySelection(decks, requestedId) {
   return { mode: 'open', deckId: String(match._id) };
 }
 
+/** A URL account must belong to this city's carousel accounts. */
+export function carouselAccountSelection(accounts, requestedId, currentId) {
+  const rows = accounts || [];
+  const matches = (id) => rows.find((account) => String(account.id) === String(id));
+  if (requestedId && !matches(requestedId)) return { account: null, invalidRequestedId: true };
+  return { account: matches(requestedId) || matches(currentId) || rows[0] || null, invalidRequestedId: false };
+}
+
 export function issueName(issue) {
   return issue?.name || issue?.title || 'Untitled carousel';
 }

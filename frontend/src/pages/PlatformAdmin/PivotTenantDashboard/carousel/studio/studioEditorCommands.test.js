@@ -16,6 +16,8 @@ import {
   screenDeltaToLocal,
   sendBackward,
   setLocked,
+  setImageBrightness,
+  setBackgroundBrightness,
   snapTranslation,
   ungroupElements,
 } from './studioEditorCommands';
@@ -120,5 +122,17 @@ describe('studio editor commands', () => {
     const locked = setLocked(doc, 's', ['a'], true);
     const resized = resizeElement(locked, 's', 'a', 'e', 30, 0);
     expect(findElement(resized.slides[0], 'a').frame.width).toBe(20);
+  });
+
+  test('brightness clamps and applies to images and backgrounds', () => {
+    let doc = issue([{
+      id: 's',
+      elements: [{ id: 'p', kind: 'image', layout: 'free', frame: { x: 0, y: 0, width: 100, height: 100 }, asset: { src: 'a.jpg' } }],
+      background: { kind: 'image', color: '#faf6ef', crop: { focalX: 0.5, focalY: 0.5, scale: 1 }, asset: { src: 'b.jpg' } },
+    }]);
+    doc = setImageBrightness(doc, 's', 'p', 0.55);
+    doc = setBackgroundBrightness(doc, 's', 2);
+    expect(findElement(doc.slides[0], 'p').style.brightness).toBe(0.55);
+    expect(doc.slides[0].background.style.brightness).toBe(1.25);
   });
 });
