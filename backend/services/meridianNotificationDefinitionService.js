@@ -1,7 +1,8 @@
 const getGlobalModels = require('./getGlobalModelService');
 const { connectToGlobalDatabase } = require('../connectionsManager');
 const { getMergedTenants, getTenantByKey, upsertStoredTenantRow } = require('./tenantConfigService');
-const { isPivotTenant } = require('../utilities/pivotDropSchedule');
+const { isPivotTenant, PIVOT_DROP_PILOT_DEFAULTS } = require('../utilities/pivotDropSchedule');
+const { toIsoWeekInTimeZone } = require('../utilities/pivotIsoWeek');
 const {
   validateThirtyMinuteCron,
   floorToThirtyMinuteBucket,
@@ -427,7 +428,7 @@ function scheduleTargets(definition, tenants) {
   const scoped = normalizeTenantKey(definition.tenantKey);
   if (scoped) {
     const match = tenants.find((row) => row.tenantKey === scoped);
-    return match ? [match] : [{ tenantKey: scoped, pivotDropTimezone: 'UTC' }];
+    return match ? [match] : [];
   }
   return tenants.filter(isPivotTenant);
 }
@@ -463,7 +464,8 @@ async function evaluateMeridianNotificationSchedules(req, { now = new Date() } =
       const handler = getMeridianJobHandler(definition.handlerKey);
       if (!handler) continue;
 
-      const timezone = String(tenant.pivotDropTimezone || '').trim() || 'UTC';
+      const timezone = String(tenant.pivotDropTimezone || '').trim()
+        || PIVOT_DROP_PILOT_DEFAULTS.pivotDropTimezone;
       const bucket = floorToThirtyMinuteBucket(now, timezone);
       if (!cronMatchesBucket(definition.scheduleCron, bucket)) continue;
       if (quietHoursDelayMs(now, timezone, checkConfig.quietHours) > 0) continue;
@@ -473,6 +475,9 @@ async function evaluateMeridianNotificationSchedules(req, { now = new Date() } =
         tenantKey: tenant.tenantKey,
         scheduledFor: now,
         payload: {
+          ...(definition.handlerKey === 'weekly_drop'
+            ? { batchWeek: toIsoWeekInTimeZone(now, timezone) }
+            : {}),
           definitionKey: definition.definitionKey,
           copyTitleKey: definition.copyTitleKey,
           copyBodyKey: definition.copyBodyKey,
