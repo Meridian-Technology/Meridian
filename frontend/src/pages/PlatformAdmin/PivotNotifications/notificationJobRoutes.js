@@ -1,7 +1,9 @@
-export const PIVOT_TENANT_NOTIFICATIONS_PAGE = 9;
+import { PIVOT_TENANT_PAGES } from '../PivotTenantDashboard/pivotTenantPageRoutes';
+
+export const PIVOT_TENANT_NOTIFICATIONS_PAGE = PIVOT_TENANT_PAGES.notifications;
 /** Fleet shell: appended after Analytics so existing ?page= bookmarks stay put. */
 export const PIVOT_FLEET_NOTIFICATIONS_PAGE = 5;
-export const PIVOT_TENANT_COMPUTE_JOBS_PAGE = 10;
+export const PIVOT_TENANT_COMPUTE_JOBS_PAGE = PIVOT_TENANT_PAGES.computeJobs;
 export const JOB_RUN_ID_QUERY = 'jobRunId';
 
 export function notificationJobRunHref({
@@ -32,4 +34,3 @@ export function computeJobInspectorHref({
   if (externalJobId) params.set('computeJobId', String(externalJobId));
   return `/platform-admin/pivot/${encodeURIComponent(key)}?${params.toString()}`;
 }
-

@@ -1,6 +1,8 @@
-export const PIVOT_TENANT_COMPUTE_JOBS_PAGE = 10;
+import { PIVOT_TENANT_PAGES } from './pivotTenantPageRoutes';
+
+export const PIVOT_TENANT_COMPUTE_JOBS_PAGE = PIVOT_TENANT_PAGES.computeJobs;
 export const PIVOT_FLEET_COMPUTE_JOBS_PAGE = 3;
-export const PIVOT_TENANT_CAROUSEL_PAGE = 8;
+export const PIVOT_TENANT_CAROUSEL_PAGE = PIVOT_TENANT_PAGES.carousel;
 
 export const COMPUTE_JOB_KINDS = Object.freeze([
   'city-source-discovery',

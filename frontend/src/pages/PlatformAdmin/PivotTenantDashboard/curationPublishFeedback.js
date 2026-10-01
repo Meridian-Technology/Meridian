@@ -1,3 +1,5 @@
+import { PIVOT_TENANT_PAGES } from './pivotTenantPageRoutes';
+
 const LOCATION_REVIEW_COPY = {
   ambiguous_provider_matches: [
     'Google found multiple plausible places',
@@ -57,7 +59,7 @@ export function locationReviewBlock(event) {
 
 export function locationReviewHref(tenantKey, batchWeek) {
   if (!tenantKey) return null;
-  const params = new URLSearchParams({ page: '7' });
+  const params = new URLSearchParams({ page: String(PIVOT_TENANT_PAGES.locationMigration) });
   if (batchWeek) params.set('batchWeek', batchWeek);
   return `/platform-admin/pivot/${encodeURIComponent(tenantKey)}?${params.toString()}`;
 }
