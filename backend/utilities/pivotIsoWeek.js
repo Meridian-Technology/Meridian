@@ -277,6 +277,7 @@ function outOfRangeCatalogEventsQuery(batchWeek, dropDayOfWeek = 4) {
 module.exports = {
   toIsoWeek,
   toIsoWeekInTimeZone,
+  toIsoWeekUtc,
   isValidIsoWeek,
   isoWeekToMondayUtc,
   isoWeekToUtcRange,

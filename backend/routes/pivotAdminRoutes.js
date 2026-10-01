@@ -116,6 +116,14 @@ const {
   wipeUserWeekIntents,
 } = require('../services/pivotTenantJourneyService');
 const { getAcquisitionFunnel } = require('../services/pivotAcquisitionFunnelService');
+const {
+  getTenantGrowthOverview,
+  getFleetGrowthOverview,
+} = require('../services/pivotGrowthOverviewService');
+const {
+  resolveRequesterEmail,
+  sendWeeklyReport,
+} = require('../services/pivotWeeklyReportService');
 const { getUserDeckReplay } = require('../services/pivotDeckReplayService');
 const { getTenantOpsBundle } = require('../services/pivotTenantOpsService');
 const { getFleetOpsBundle } = require('../services/pivotFleetOpsService');
@@ -1319,6 +1327,79 @@ router.get('/launch', verifyToken, requirePlatformAdmin, async (req, res) => {
     return res.status(500).json({
       success: false,
       message: 'Unable to load fleet launch stats.',
+    });
+  }
+});
+
+const WEEKLY_REPORT_AUDIENCES = new Set(['me', 'admins']);
+
+/** `me` → the signed-in admin only; `admins` → every platform admin. */
+async function weeklyReportRecipients(req, audience) {
+  if (audience !== 'me') return { to: null };
+  const email = await resolveRequesterEmail(req);
+  if (!email) {
+    return { error: 'Your account has no email address.', status: 400, code: 'NO_REQUESTER_EMAIL' };
+  }
+  return { to: [email] };
+}
+
+function sendWeeklyReportResult(res, result) {
+  if (result.error) {
+    return res.status(result.status || 400).json({
+      success: false,
+      message: result.error,
+      code: result.code,
+    });
+  }
+  return res.status(200).json({ success: true, data: result.data });
+}
+
+router.get('/reports/weekly/preview', verifyToken, requirePlatformAdmin, async (req, res) => {
+  try {
+    const audience = WEEKLY_REPORT_AUDIENCES.has(req.query?.audience) ? req.query.audience : 'admins';
+    const recipients = await weeklyReportRecipients(req, audience);
+    if (recipients.error) return sendWeeklyReportResult(res, recipients);
+    const result = await sendWeeklyReport(req, { to: recipients.to, dryRun: true });
+    if (result.data) delete result.data.report;
+    return sendWeeklyReportResult(res, result);
+  } catch (err) {
+    logPivotRouteError('GET /admin/pivot/reports/weekly/preview', err, req);
+    return res.status(500).json({ success: false, message: 'Unable to build the weekly report.' });
+  }
+});
+
+router.post('/reports/weekly/send', verifyToken, requirePlatformAdmin, async (req, res) => {
+  try {
+    const audience = req.body?.audience;
+    if (!WEEKLY_REPORT_AUDIENCES.has(audience)) {
+      return res.status(400).json({
+        success: false,
+        message: 'audience must be "me" or "admins".',
+        code: 'INVALID_AUDIENCE',
+      });
+    }
+    const recipients = await weeklyReportRecipients(req, audience);
+    if (recipients.error) return sendWeeklyReportResult(res, recipients);
+    const result = await sendWeeklyReport(req, { to: recipients.to });
+    return sendWeeklyReportResult(res, result);
+  } catch (err) {
+    logPivotRouteError('POST /admin/pivot/reports/weekly/send', err, req);
+    return res.status(500).json({ success: false, message: 'Unable to send the weekly report.' });
+  }
+});
+
+router.get('/analytics/overview', verifyToken, requirePlatformAdmin, async (req, res) => {
+  try {
+    const result = await getFleetGrowthOverview(req, { weeks: req.query?.weeks });
+    return res.status(200).json({
+      success: true,
+      data: result.data,
+    });
+  } catch (err) {
+    logPivotRouteError('GET /admin/pivot/analytics/overview', err, req);
+    return res.status(500).json({
+      success: false,
+      message: 'Unable to load growth overview.',
     });
   }
 });
@@ -2913,6 +2994,38 @@ router.get(
       return res.status(500).json({
         success: false,
         message: 'Unable to load acquisition funnel.',
+      });
+    }
+  },
+);
+
+router.get(
+  '/tenants/:tenantKey/analytics/overview',
+  verifyToken,
+  requirePlatformAdmin,
+  async (req, res) => {
+    try {
+      const result = await getTenantGrowthOverview(req, {
+        tenantKey: req.params.tenantKey,
+        weeks: req.query?.weeks,
+      });
+      if (result.error) {
+        return res.status(result.status || 400).json({
+          success: false,
+          message: result.error,
+          code: result.code,
+        });
+      }
+
+      return res.status(200).json({
+        success: true,
+        data: result.data,
+      });
+    } catch (err) {
+      logPivotRouteError('GET /admin/pivot/tenants/:tenantKey/analytics/overview', err, req);
+      return res.status(500).json({
+        success: false,
+        message: 'Unable to load growth overview.',
       });
     }
   },
