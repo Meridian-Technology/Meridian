@@ -1,35 +1,49 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { useFetch, authenticatedRequest } from '../../../hooks/useFetch';
-import { useNotification } from '../../../NotificationContext';
+import { useFetch } from '../../../hooks/useFetch';
 import {
   PivotOpsAreaFunnel,
   PivotOpsCard,
   PivotOpsMetric,
   PivotOpsMetricGrid,
   PivotOpsSection,
-  PivotOpsStatus,
 } from '../../../components/PivotOps';
 import {
   toIsoWeek,
   isValidIsoWeek,
   shiftIsoWeek,
-  formatEventWhen,
 } from '../../../utils/pivotIsoWeek';
 import PivotTenantPage from './PivotTenantPage';
 import PivotBatchWeekPicker from './PivotBatchWeekPicker';
-import PivotDeckReplay from './PivotDeckReplay';
+import PivotAudienceUserInspector, { AUDIENCE_USER_PANES } from './PivotAudienceUserInspector';
+import PivotDeckRulesPanel from './PivotDeckRulesPanel';
+import PivotTenantViewTabs from './PivotTenantViewTabs';
 import usePivotBatchWeekState from './usePivotBatchWeekState';
 import usePivotTenantWeekKeybinds from './usePivotTenantWeekKeybinds';
+import { PIVOT_TENANT_PAGES } from './pivotTenantPageRoutes';
 import KeybindTooltip from '../../../components/Interface/KeybindTooltip/KeybindTooltip';
 import '../PivotLab/PivotLabPage.scss';
 import './PivotTenantDashboard.scss';
-import './PivotTenantJourneysPage.scss';
+import './PivotTenantAudiencePage.scss';
 import './PivotTenantPage.scss';
 
 const NO_FETCH_CACHE = { enabled: false };
-const WIPE_CONFIRM_TOKEN = 'WIPE';
-const SEARCH_DEBOUNCE_MS = 280;
+const AUDIENCE_PAGE = String(PIVOT_TENANT_PAGES.audience);
+
+/*
+ * Audience URL state. Names are page-specific because the dashboard shell
+ * carries every query param across nav clicks.
+ *   audience = week | users | rules
+ *   userId, userPane = replay | ranking | activity
+ *   deckWeek = page  (ranking pinned to the page week; absent follows the app week)
+ */
+export const AUDIENCE_VIEWS = Object.freeze([
+  { id: 'week', label: 'Week' },
+  { id: 'users', label: 'Users' },
+  { id: 'rules', label: 'Deck rules' },
+]);
+const VIEW_IDS = new Set(AUDIENCE_VIEWS.map((view) => view.id));
+const PANE_IDS = new Set(AUDIENCE_USER_PANES.map((pane) => pane.id));
 
 function formatRate(rate) {
   if (rate == null || Number.isNaN(rate)) return '—';
@@ -75,38 +89,29 @@ function AnalyticsFunnelSteps({ steps }) {
   );
 }
 
-function IntentStatusPill({ status }) {
-  if (status === 'registered') {
-    return <PivotOpsStatus tone="ok">Going</PivotOpsStatus>;
-  }
-  if (status === 'interested') {
-    return <PivotOpsStatus tone="info">Interested</PivotOpsStatus>;
-  }
-  if (status === 'passed') {
-    return <PivotOpsStatus tone="muted">Passed</PivotOpsStatus>;
-  }
-  return <PivotOpsStatus>{status || '—'}</PivotOpsStatus>;
-}
-
-function useDebouncedValue(value, delayMs) {
-  const [debounced, setDebounced] = useState(value);
-  useEffect(() => {
-    const id = setTimeout(() => setDebounced(value), delayMs);
-    return () => clearTimeout(id);
-  }, [value, delayMs]);
-  return debounced;
-}
-
 /**
- * Per-tenant User journeys — compact funnel + user inspector + wipe-week.
+ * Per-tenant Audience: the week's journey funnel, a user inspector (swipe
+ * replay, scored deck, activity log, wipe-week), and the city drop-deck rules.
+ * Replaces the former User journeys (page 2) and Drop deck (page 3) panels.
  */
-function PivotTenantJourneysPage({ tenantKey, cityDisplayName }) {
-  const { addNotification } = useNotification();
+function PivotTenantAudiencePage({
+  tenantKey,
+  cityDisplayName,
+  storedDeckOverrides,
+  onDeckSaved,
+}) {
   const [searchParams, setSearchParams] = useSearchParams();
   const initializedWeekRef = useRef(false);
+  const [refreshKey, setRefreshKey] = useState(0);
 
   const urlBatchWeek = searchParams.get('batchWeek');
-  const urlUserId = searchParams.get('userId');
+  const selectedUserId = searchParams.get('userId')?.trim() || null;
+  const rawView = searchParams.get('audience');
+  // Old User journeys links carry only userId; open them on the inspector.
+  const view = VIEW_IDS.has(rawView) ? rawView : selectedUserId ? 'users' : 'week';
+  const rawPane = searchParams.get('userPane');
+  const pane = PANE_IDS.has(rawPane) ? rawPane : 'replay';
+  const followAppWeek = searchParams.get('deckWeek') !== 'page';
 
   const {
     batchWeek,
@@ -117,33 +122,34 @@ function PivotTenantJourneysPage({ tenantKey, cityDisplayName }) {
   } = usePivotBatchWeekState(
     isValidIsoWeek(urlBatchWeek) ? urlBatchWeek.trim() : toIsoWeek(),
   );
-  const [searchQuery, setSearchQuery] = useState('');
-  const [selectedUserId, setSelectedUserId] = useState(() => urlUserId?.trim() || null);
-  const [wipeBusy, setWipeBusy] = useState(false);
 
-  const debouncedQuery = useDebouncedValue(searchQuery.trim(), SEARCH_DEBOUNCE_MS);
+  const updateParams = useCallback(
+    (patch) => {
+      setSearchParams(
+        (prev) => {
+          const next = new URLSearchParams(prev);
+          Object.entries(patch).forEach(([key, value]) => {
+            if (value == null) next.delete(key);
+            else next.set(key, value);
+          });
+          return next;
+        },
+        { replace: true },
+      );
+    },
+    [setSearchParams],
+  );
 
-  // Bookmark committed week + selected user (preserve page=2).
+  // Bookmark the committed week (preserve page=2).
   useEffect(() => {
-    const currentWeek = searchParams.get('batchWeek');
-    const currentUser = searchParams.get('userId');
-    const pageOk = searchParams.get('page') === '2';
-    const weekOk = !committedWeekValid || currentWeek === committedWeek;
-    const userOk = selectedUserId ? currentUser === selectedUserId : !currentUser;
-    if (pageOk && weekOk && userOk) return;
-
-    setSearchParams(
-      (prev) => {
-        const next = new URLSearchParams(prev);
-        next.set('page', '2');
-        if (committedWeekValid) next.set('batchWeek', committedWeek);
-        if (selectedUserId) next.set('userId', selectedUserId);
-        else next.delete('userId');
-        return next;
-      },
-      { replace: true },
-    );
-  }, [committedWeek, committedWeekValid, selectedUserId, searchParams, setSearchParams]);
+    const pageOk = searchParams.get('page') === AUDIENCE_PAGE;
+    const weekOk = !committedWeekValid || searchParams.get('batchWeek') === committedWeek;
+    if (pageOk && weekOk) return;
+    updateParams({
+      page: AUDIENCE_PAGE,
+      ...(committedWeekValid ? { batchWeek: committedWeek } : {}),
+    });
+  }, [committedWeek, committedWeekValid, searchParams, updateParams]);
 
   // Sync from deep links / tenant switch.
   useEffect(() => {
@@ -155,11 +161,7 @@ function PivotTenantJourneysPage({ tenantKey, cityDisplayName }) {
     }
   }, [urlBatchWeek, setBatchWeek]);
 
-  useEffect(() => {
-    const next = urlUserId?.trim() || null;
-    setSelectedUserId((current) => (current === next ? current : next));
-  }, [urlUserId]);
-
+  const weekScoped = view !== 'rules';
   const opsParams = useMemo(
     () => ({
       batchWeek: committedWeek,
@@ -168,7 +170,7 @@ function PivotTenantJourneysPage({ tenantKey, cityDisplayName }) {
     [committedWeek],
   );
   const opsUrl =
-    tenantKey && committedWeekValid
+    tenantKey && committedWeekValid && weekScoped
       ? `/admin/pivot/tenants/${encodeURIComponent(tenantKey)}/ops`
       : null;
   const {
@@ -177,56 +179,6 @@ function PivotTenantJourneysPage({ tenantKey, cityDisplayName }) {
     error: opsError,
     refetch: refetchOps,
   } = useFetch(opsUrl, { params: opsParams, cache: NO_FETCH_CACHE });
-
-  const isUserSearch = debouncedQuery.length >= 2;
-  const usersParams = useMemo(
-    () => ({
-      ...(isUserSearch ? { query: debouncedQuery } : {}),
-      ...(committedWeekValid ? { batchWeek: committedWeek } : {}),
-    }),
-    [isUserSearch, debouncedQuery, committedWeek, committedWeekValid],
-  );
-  // Search when query is long enough; otherwise load most-active for the week.
-  const usersUrl =
-    tenantKey && (isUserSearch || committedWeekValid)
-      ? `/admin/pivot/tenants/${encodeURIComponent(tenantKey)}/journeys/users`
-      : null;
-  const {
-    data: usersResponse,
-    loading: usersLoading,
-    error: usersError,
-  } = useFetch(usersUrl, { params: usersParams, cache: NO_FETCH_CACHE });
-
-  const historyParams = useMemo(
-    () => (committedWeekValid ? { batchWeek: committedWeek } : {}),
-    [committedWeek, committedWeekValid],
-  );
-  const historyUrl =
-    tenantKey && selectedUserId
-      ? `/admin/pivot/tenants/${encodeURIComponent(tenantKey)}/journeys/users/${encodeURIComponent(selectedUserId)}/history`
-      : null;
-  const {
-    data: historyResponse,
-    loading: historyLoading,
-    error: historyError,
-    refetch: refetchHistory,
-  } = useFetch(historyUrl, {
-    params: historyParams,
-    cache: NO_FETCH_CACHE,
-  });
-
-  const replayUrl =
-    tenantKey && selectedUserId && committedWeekValid
-      ? `/admin/pivot/tenants/${encodeURIComponent(tenantKey)}/journeys/users/${encodeURIComponent(selectedUserId)}/deck-replay`
-      : null;
-  const {
-    data: replayResponse,
-    loading: replayLoading,
-    error: replayError,
-  } = useFetch(replayUrl, {
-    params: historyParams,
-    cache: NO_FETCH_CACHE,
-  });
 
   const ops = opsResponse?.success ? opsResponse.data : null;
   const dropDayOfWeek = ops?.weekRange?.dropDayOfWeek ?? ops?.dropSchedule?.dayOfWeek ?? 4;
@@ -242,17 +194,9 @@ function PivotTenantJourneysPage({ tenantKey, cityDisplayName }) {
     initializedWeekRef.current = true;
     setBatchWeek(ops.anchors.liveWeek, { immediate: true });
   }, [ops?.anchors?.liveWeek, urlBatchWeek, setBatchWeek]);
+
   const overview = ops?.journey && !ops.journey.error ? ops.journey : null;
   const funnel = ops?.funnel && !ops.funnel.error ? ops.funnel : null;
-  const users = usersResponse?.success ? usersResponse.data?.users ?? [] : [];
-  const usersMode =
-    usersResponse?.success && usersResponse.data?.mode
-      ? usersResponse.data.mode
-      : isUserSearch
-        ? 'search'
-        : 'active';
-  const history = historyResponse?.success ? historyResponse.data : null;
-  const replay = replayResponse?.success ? replayResponse.data : null;
 
   const overviewLoading = opsLoading;
   const funnelLoading = opsLoading && !funnel;
@@ -266,21 +210,6 @@ function PivotTenantJourneysPage({ tenantKey, cityDisplayName }) {
     ops?.funnel?.error ||
     (opsResponse && !opsResponse.success && !overviewMessage
       ? opsResponse.message || 'Unable to load funnel.'
-      : null);
-  const usersMessage =
-    usersError ||
-    (usersResponse && !usersResponse.success
-      ? usersResponse.message || 'Unable to search users.'
-      : null);
-  const historyMessage =
-    historyError ||
-    (historyResponse && !historyResponse.success
-      ? historyResponse.message || 'Unable to load history.'
-      : null);
-  const replayMessage =
-    replayError ||
-    (replayResponse && !replayResponse.success
-      ? replayResponse.message || 'Unable to load deck replay.'
       : null);
 
   const displayCity = overview?.cityDisplayName || cityDisplayName || tenantKey;
@@ -300,471 +229,209 @@ function PivotTenantJourneysPage({ tenantKey, cityDisplayName }) {
   );
 
   const refreshAll = useCallback(() => {
-    refetchOps();
-    if (selectedUserId) refetchHistory();
-  }, [refetchOps, refetchHistory, selectedUserId]);
+    if (opsUrl) refetchOps();
+    setRefreshKey((key) => key + 1);
+  }, [opsUrl, refetchOps]);
 
   const { keyboardNavActive } = usePivotTenantWeekKeybinds({
-    enabled: batchWeekValid,
+    enabled: batchWeekValid && weekScoped,
     onStepWeek: stepBatchWeek,
     onRefresh: refreshAll,
   });
 
-  const selectUser = useCallback((userId) => {
-    setSelectedUserId(userId);
-  }, []);
-
-  const clearSelectedUser = useCallback(() => {
-    setSelectedUserId(null);
-  }, []);
-
-  const handleWipeWeek = useCallback(async () => {
-    if (!tenantKey || !selectedUserId || !committedWeekValid) return;
-
-    const intentCount = history?.intents?.length ?? 0;
-    if (
-      !window.confirm(
-        `Wipe ${intentCount || 'all'} interaction(s) for this user in ${committedWeek}? This cannot be undone.`,
-      )
-    ) {
-      return;
-    }
-
-    const typed = window.prompt(
-      `Type ${WIPE_CONFIRM_TOKEN} to confirm wiping intents for ${committedWeek}.`,
-      '',
-    );
-    if (typed !== WIPE_CONFIRM_TOKEN) {
-      if (typed != null) {
-        addNotification({
-          title: 'Wipe cancelled',
-          message: `Confirmation must be exactly “${WIPE_CONFIRM_TOKEN}”.`,
-          type: 'warning',
-        });
-      }
-      return;
-    }
-
-    setWipeBusy(true);
-    const { data, error } = await authenticatedRequest(
-      `/admin/pivot/tenants/${encodeURIComponent(tenantKey)}/users/${encodeURIComponent(selectedUserId)}/wipe-week`,
-      {
-        method: 'POST',
-        data: { batchWeek: committedWeek, confirm: WIPE_CONFIRM_TOKEN },
-      },
-    );
-    setWipeBusy(false);
-
-    if (error || !data?.success) {
-      const code = data?.code;
-      addNotification({
-        title: 'Wipe failed',
-        message:
-          error ||
-          data?.message ||
-          (code === 'CONFIRM_REQUIRED'
-            ? 'Confirmation token required.'
-            : 'Could not wipe week intents.'),
-        type: 'error',
-      });
-      return;
-    }
-
-    addNotification({
-      title: 'Week wiped',
-      message: `Removed ${data.data?.deletedCount ?? 0} intent(s) for ${committedWeek}.`,
-      type: 'success',
-    });
-    refetchHistory();
-    refetchOps();
-  }, [
-    addNotification,
-    committedWeek,
-    committedWeekValid,
-    history?.intents?.length,
-    refetchHistory,
-    refetchOps,
-    selectedUserId,
-    tenantKey,
-  ]);
-
   const curationHref = batchWeekValid
-    ? `/platform-admin/pivot/${encodeURIComponent(tenantKey)}?page=1&batchWeek=${encodeURIComponent(batchWeek)}`
-    : `/platform-admin/pivot/${encodeURIComponent(tenantKey)}?page=1`;
+    ? `/platform-admin/pivot/${encodeURIComponent(tenantKey)}?page=${PIVOT_TENANT_PAGES.curation}&batchWeek=${encodeURIComponent(batchWeek)}`
+    : `/platform-admin/pivot/${encodeURIComponent(tenantKey)}?page=${PIVOT_TENANT_PAGES.curation}`;
 
   return (
     <PivotTenantPage
-      title="User journeys"
+      title="Audience"
       tenantKey={tenantKey}
       cityDisplayName={displayCity}
       className="pivot-tenant-journeys"
       actions={
-        <>
-          <PivotBatchWeekPicker
-            batchWeek={batchWeek}
-            onChange={setBatchWeek}
-            keyboardNavActive={keyboardNavActive}
-            anchors={ops?.anchors}
-            dropDayOfWeek={dropDayOfWeek}
-            timeZone={dropTimeZone}
-            pending={batchWeek !== committedWeek}
-          />
-          <button
-            type="button"
-            className="linear-btn linear-btn--secondary pivot-tenant-kbd-btn"
-            onClick={refreshAll}
-            disabled={!opsUrl || overviewLoading || funnelLoading}
-          >
-            Refresh
-            <KeybindTooltip label="Refresh" keybind="R" />
-          </button>
-        </>
+        weekScoped ? (
+          <>
+            <PivotBatchWeekPicker
+              batchWeek={batchWeek}
+              onChange={setBatchWeek}
+              keyboardNavActive={keyboardNavActive}
+              anchors={ops?.anchors}
+              dropDayOfWeek={dropDayOfWeek}
+              timeZone={dropTimeZone}
+              pending={batchWeek !== committedWeek}
+            />
+            <button
+              type="button"
+              className="linear-btn linear-btn--secondary pivot-tenant-kbd-btn"
+              onClick={refreshAll}
+              disabled={!opsUrl || overviewLoading || funnelLoading}
+            >
+              Refresh
+              <KeybindTooltip label="Refresh" keybind="R" />
+            </button>
+          </>
+        ) : null
       }
     >
-      {!batchWeekValid ? (
+      <PivotTenantViewTabs
+        views={AUDIENCE_VIEWS}
+        value={view}
+        onChange={(nextView) => updateParams({ audience: nextView })}
+        ariaLabel="Audience view"
+      />
+
+      {weekScoped && !batchWeekValid ? (
         <p className="pivot-lab__error" role="alert">
           Batch week must be ISO format YYYY-Www (e.g. {toIsoWeek()}).
         </p>
       ) : null}
 
-      {overviewMessage && !overview ? (
-        <p className="pivot-lab__error" role="alert">
-          {typeof overviewMessage === 'string'
-            ? overviewMessage
-            : 'Unable to load journey overview.'}
-        </p>
+      {view === 'week' ? (
+        <>
+          {overviewMessage && !overview ? (
+            <p className="pivot-lab__error" role="alert">
+              {typeof overviewMessage === 'string'
+                ? overviewMessage
+                : 'Unable to load journey overview.'}
+            </p>
+          ) : null}
+
+          <PivotOpsSection
+            title="Week snapshot"
+            titleId="pivot-journeys-kpis"
+            actions={
+              overviewLoading ? (
+                <span className="pivot-tenant-journeys__muted">Loading…</span>
+              ) : null
+            }
+          >
+            <PivotOpsMetricGrid>
+              <PivotOpsMetric
+                label="Active users"
+                value={kpis?.activeUsers ?? '—'}
+                hint="with intents this week"
+              />
+              <PivotOpsMetric
+                label="Median cards seen"
+                value={kpis?.medianCardsSeen ?? '—'}
+                hint="pivot_card_view"
+              />
+              <PivotOpsMetric
+                label="Swipes"
+                value={kpis?.swipeCount ?? '—'}
+                hint="pass + interested + going"
+              />
+              <PivotOpsMetric
+                label="Interest rate"
+                value={formatRate(conversionRates?.interestRate)}
+                hint="right-swipe / swipes"
+              />
+              <PivotOpsMetric
+                label="Ticket open rate"
+                value={formatRate(conversionRates?.ticketOpenRate)}
+                hint="openers / interested"
+              />
+              <PivotOpsMetric
+                label="Register rate"
+                value={formatRate(conversionRates?.registerRate)}
+                hint="going / openers"
+              />
+            </PivotOpsMetricGrid>
+          </PivotOpsSection>
+
+          <PivotOpsSection
+            title="Funnel"
+            titleId="pivot-journeys-funnel"
+            actions={
+              funnelLoading ? (
+                <span className="pivot-tenant-journeys__muted">Loading…</span>
+              ) : funnel?.overallConversionRate != null ? (
+                <span className="pivot-tenant-journeys__muted">
+                  Analytics overall {formatConversionPct(funnel.overallConversionRate)}
+                </span>
+              ) : null
+            }
+          >
+            {funnelMessage ? (
+              <p className="pivot-lab__error" role="alert">
+                {funnelMessage}
+              </p>
+            ) : null}
+            {!funnelLoading && !intentFunnel.length && !analyticsSteps.length ? (
+              <p className="pivot-lab__empty">No funnel data for this week yet.</p>
+            ) : (
+              <div className="pivot-tenant-journeys__funnel-grid">
+                <PivotOpsCard className="pivot-tenant-journeys__panel pivot-tenant-journeys__panel--funnel">
+                  <h3 className="pivot-ops-section__title">Intent stages</h3>
+                  <div className="pivot-tenant-journeys__funnel-wrap">
+                    <PivotOpsAreaFunnel
+                      stages={(intentFunnel || []).map((stage) => ({
+                        ...stage,
+                        label:
+                          stage.key === 'openers' ? 'Openers' : stage.label,
+                      }))}
+                      ariaLabel="Intent conversion funnel"
+                      height={120}
+                    />
+                  </div>
+                </PivotOpsCard>
+                <PivotOpsCard className="pivot-tenant-journeys__panel">
+                  <h3 className="pivot-ops-section__title">Analytics steps</h3>
+                  {analyticsSteps.length ? (
+                    <AnalyticsFunnelSteps steps={analyticsSteps} />
+                  ) : (
+                    <p className="pivot-lab__empty">
+                      No pivot analytics events for this week.
+                    </p>
+                  )}
+                </PivotOpsCard>
+              </div>
+            )}
+          </PivotOpsSection>
+        </>
       ) : null}
 
-      <PivotOpsSection
-        title="Week snapshot"
-        titleId="pivot-journeys-kpis"
-        actions={
-          overviewLoading ? (
-            <span className="pivot-tenant-journeys__muted">Loading…</span>
-          ) : null
-        }
-      >
-        <PivotOpsMetricGrid>
-          <PivotOpsMetric
-            label="Active users"
-            value={kpis?.activeUsers ?? '—'}
-            hint="with intents this week"
+      {view === 'users' ? (
+        <PivotOpsSection
+          title="User inspector"
+          titleId="pivot-journeys-inspector"
+          actions={
+            <Link className="pivot-tenant-journeys__link" to={curationHref}>
+              Open curation
+            </Link>
+          }
+        >
+          <PivotAudienceUserInspector
+            tenantKey={tenantKey}
+            batchWeek={batchWeek}
+            batchWeekValid={batchWeekValid}
+            committedWeek={committedWeek}
+            committedWeekValid={committedWeekValid}
+            selectedUserId={selectedUserId}
+            onSelectUser={(userId) => updateParams({ userId })}
+            pane={pane}
+            onPaneChange={(nextPane) => updateParams({
+              userPane: nextPane === 'replay' ? null : nextPane,
+            })}
+            followAppWeek={followAppWeek}
+            onFollowAppWeekChange={(follow) => updateParams({ deckWeek: follow ? null : 'page' })}
+            refreshKey={refreshKey}
+            onWiped={refetchOps}
+            curationHref={curationHref}
           />
-          <PivotOpsMetric
-            label="Median cards seen"
-            value={kpis?.medianCardsSeen ?? '—'}
-            hint="pivot_card_view"
-          />
-          <PivotOpsMetric
-            label="Swipes"
-            value={kpis?.swipeCount ?? '—'}
-            hint="pass + interested + going"
-          />
-          <PivotOpsMetric
-            label="Interest rate"
-            value={formatRate(conversionRates?.interestRate)}
-            hint="right-swipe / swipes"
-          />
-          <PivotOpsMetric
-            label="Ticket open rate"
-            value={formatRate(conversionRates?.ticketOpenRate)}
-            hint="openers / interested"
-          />
-          <PivotOpsMetric
-            label="Register rate"
-            value={formatRate(conversionRates?.registerRate)}
-            hint="going / openers"
-          />
-        </PivotOpsMetricGrid>
-      </PivotOpsSection>
+        </PivotOpsSection>
+      ) : null}
 
-      <PivotOpsSection
-        title="Funnel"
-        titleId="pivot-journeys-funnel"
-        actions={
-          funnelLoading ? (
-            <span className="pivot-tenant-journeys__muted">Loading…</span>
-          ) : funnel?.overallConversionRate != null ? (
-            <span className="pivot-tenant-journeys__muted">
-              Analytics overall {formatConversionPct(funnel.overallConversionRate)}
-            </span>
-          ) : null
-        }
-      >
-        {funnelMessage ? (
-          <p className="pivot-lab__error" role="alert">
-            {funnelMessage}
-          </p>
-        ) : null}
-        {!funnelLoading && !intentFunnel.length && !analyticsSteps.length ? (
-          <p className="pivot-lab__empty">No funnel data for this week yet.</p>
-        ) : (
-          <div className="pivot-tenant-journeys__funnel-grid">
-            <PivotOpsCard className="pivot-tenant-journeys__panel pivot-tenant-journeys__panel--funnel">
-              <h3 className="pivot-ops-section__title">Intent stages</h3>
-              <div className="pivot-tenant-journeys__funnel-wrap">
-                <PivotOpsAreaFunnel
-                  stages={(intentFunnel || []).map((stage) => ({
-                    ...stage,
-                    label:
-                      stage.key === 'openers' ? 'Openers' : stage.label,
-                  }))}
-                  ariaLabel="Intent conversion funnel"
-                  height={120}
-                />
-              </div>
-            </PivotOpsCard>
-            <PivotOpsCard className="pivot-tenant-journeys__panel">
-              <h3 className="pivot-ops-section__title">Analytics steps</h3>
-              {analyticsSteps.length ? (
-                <AnalyticsFunnelSteps steps={analyticsSteps} />
-              ) : (
-                <p className="pivot-lab__empty">
-                  No pivot analytics events for this week.
-                </p>
-              )}
-            </PivotOpsCard>
-          </div>
-        )}
-      </PivotOpsSection>
-
-      <PivotOpsSection
-        title="User inspector"
-        titleId="pivot-journeys-inspector"
-        actions={
-          <Link className="pivot-tenant-journeys__link" to={curationHref}>
-            Open curation
-          </Link>
-        }
-      >
-        <div className="pivot-tenant-journeys__inspector">
-          <div className="pivot-tenant-journeys__search">
-            <label className="linear-field">
-              <span className="linear-field__label">Find user</span>
-              <input
-                className="linear-input"
-                type="search"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Name, username, or user id"
-                autoComplete="off"
-                spellCheck={false}
-              />
-            </label>
-            {usersMessage ? (
-              <p className="pivot-lab__error" role="alert">
-                {usersMessage}
-              </p>
-            ) : null}
-            {searchQuery.length > 0 && searchQuery.length < 2 ? (
-              <p className="pivot-tenant-journeys__muted">
-                Type at least 2 characters to search.
-              </p>
-            ) : null}
-            {!isUserSearch && committedWeekValid ? (
-              <p className="pivot-tenant-journeys__list-label">
-                Most active · {committedWeek}
-              </p>
-            ) : null}
-            {isUserSearch && users.length > 0 ? (
-              <p className="pivot-tenant-journeys__list-label">Search results</p>
-            ) : null}
-            {usersLoading ? (
-              <p className="pivot-tenant-journeys__muted">
-                {isUserSearch ? 'Searching…' : 'Loading active users…'}
-              </p>
-            ) : null}
-            {!usersLoading && isUserSearch && !users.length ? (
-              <p className="pivot-lab__empty">No users match “{debouncedQuery}”.</p>
-            ) : null}
-            {!usersLoading &&
-            !isUserSearch &&
-            committedWeekValid &&
-            usersMode === 'active' &&
-            !users.length ? (
-              <p className="pivot-lab__empty">
-                No users with intents in {committedWeek}.
-              </p>
-            ) : null}
-            {users.length > 0 ? (
-              <ul className="pivot-tenant-journeys__user-list" role="listbox">
-                {users.map((user) => {
-                  const selected = user.userId === selectedUserId;
-                  return (
-                    <li key={user.userId}>
-                      <button
-                        type="button"
-                        className={`pivot-tenant-journeys__user-row${
-                          selected ? ' pivot-tenant-journeys__user-row--selected' : ''
-                        }`}
-                        onClick={() => selectUser(user.userId)}
-                        aria-selected={selected}
-                      >
-                        <span className="pivot-tenant-journeys__user-name">
-                          {user.name || 'Unnamed'}
-                          {user.username ? (
-                            <span className="pivot-tenant-journeys__user-handle">
-                              @{user.username}
-                            </span>
-                          ) : null}
-                        </span>
-                        {typeof user.intentCount === 'number' ? (
-                          <span className="pivot-tenant-journeys__muted">
-                            {user.intentCount} intent
-                            {user.intentCount === 1 ? '' : 's'}
-                          </span>
-                        ) : null}
-                      </button>
-                    </li>
-                  );
-                })}
-              </ul>
-            ) : null}
-          </div>
-
-          <PivotOpsCard className="pivot-tenant-journeys__history">
-            {!selectedUserId ? (
-              <p className="pivot-lab__empty">
-                Select a user to inspect week history and wipe interactions.
-              </p>
-            ) : (
-              <>
-                <div className="pivot-tenant-journeys__history-head">
-                  <div>
-                    <p className="pivot-tenant-journeys__history-name">
-                      {history?.user?.name || 'User'}
-                      {history?.user?.username ? (
-                        <span className="pivot-tenant-journeys__user-handle">
-                          @{history.user.username}
-                        </span>
-                      ) : null}
-                    </p>
-                    <code className="linear-code linear-code--inline">
-                      {selectedUserId}
-                    </code>
-                  </div>
-                  <div className="pivot-tenant-journeys__history-actions">
-                    <button
-                      type="button"
-                      className="linear-btn linear-btn--ghost"
-                      onClick={clearSelectedUser}
-                    >
-                      Clear
-                    </button>
-                    <button
-                      type="button"
-                      className="linear-btn pivot-lab__purge-btn"
-                      onClick={handleWipeWeek}
-                      disabled={wipeBusy || !batchWeekValid || historyLoading}
-                    >
-                      {wipeBusy ? 'Wiping…' : 'Wipe interactions for week'}
-                    </button>
-                  </div>
-                </div>
-
-                {historyMessage ? (
-                  <p className="pivot-lab__error" role="alert">
-                    {historyMessage}
-                  </p>
-                ) : null}
-
-                {historyLoading ? (
-                  <p className="pivot-tenant-journeys__muted">Loading history…</p>
-                ) : null}
-
-                {!historyLoading && history ? (
-                  <>
-                    <PivotDeckReplay
-                      data={replay}
-                      loading={replayLoading}
-                      error={replayMessage}
-                    />
-
-                    <h3 className="pivot-ops-section__title">
-                      Intents
-                      {batchWeekValid ? ` · ${batchWeek}` : ''}
-                      {history.intents?.length
-                        ? ` (${history.intents.length})`
-                        : ''}
-                    </h3>
-                    {!history.intents?.length ? (
-                      <p className="pivot-lab__empty">
-                        No intents for this user
-                        {batchWeekValid ? ` in ${batchWeek}` : ''}.
-                      </p>
-                    ) : (
-                      <ul className="pivot-tenant-journeys__timeline">
-                        {history.intents.map((intent) => (
-                          <li
-                            key={`${intent.eventId}-${intent.updatedAt || intent.status}`}
-                            className="pivot-tenant-journeys__timeline-item"
-                          >
-                            <div className="pivot-tenant-journeys__timeline-main">
-                              <IntentStatusPill status={intent.status} />
-                              <div>
-                                <p className="pivot-tenant-journeys__event-name">
-                                  {intent.eventName || 'Untitled event'}
-                                </p>
-                                <p className="pivot-tenant-journeys__event-meta">
-                                  {formatEventWhen(intent.eventStartTime) || '—'}
-                                  {intent.externalOpenCount > 0
-                                    ? ` · ${intent.externalOpenCount} ticket open${
-                                        intent.externalOpenCount === 1 ? '' : 's'
-                                      }`
-                                    : ''}
-                                  {intent.timeSlotId
-                                    ? ` · slot ${intent.timeSlotId}`
-                                    : ''}
-                                </p>
-                              </div>
-                            </div>
-                            <div className="pivot-tenant-journeys__timeline-side">
-                              <code className="linear-code linear-code--inline">
-                                {intent.eventId.slice(-6)}
-                              </code>
-                              <Link
-                                className="pivot-tenant-journeys__link"
-                                to={curationHref}
-                                title="Open curation for this week"
-                              >
-                                Catalog
-                              </Link>
-                            </div>
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-
-                    {history.analytics?.length ? (
-                      <>
-                        <h3 className="pivot-ops-section__title">
-                          Recent analytics ({history.analytics.length})
-                        </h3>
-                        <ul className="pivot-tenant-journeys__analytics-list">
-                          {history.analytics.slice(0, 20).map((row, idx) => (
-                            <li key={`${row.event}-${row.ts}-${idx}`}>
-                              <code className="linear-code linear-code--inline">
-                                {row.event}
-                              </code>
-                              <span className="pivot-tenant-journeys__muted">
-                                {row.ts
-                                  ? new Date(row.ts).toLocaleString()
-                                  : '—'}
-                              </span>
-                            </li>
-                          ))}
-                        </ul>
-                      </>
-                    ) : null}
-                  </>
-                ) : null}
-              </>
-            )}
-          </PivotOpsCard>
-        </div>
-      </PivotOpsSection>
+      {view === 'rules' ? (
+        <PivotDeckRulesPanel
+          tenantKey={tenantKey}
+          storedOverrides={storedDeckOverrides}
+          onSaved={onDeckSaved}
+        />
+      ) : null}
     </PivotTenantPage>
   );
 }
 
-export default PivotTenantJourneysPage;
+export default PivotTenantAudiencePage;

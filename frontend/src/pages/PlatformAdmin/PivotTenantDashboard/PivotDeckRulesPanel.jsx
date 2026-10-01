@@ -4,7 +4,6 @@ import { authenticatedRequest } from '../../../hooks/useFetch';
 import { useNotification } from '../../../NotificationContext';
 import Popup from '../../../components/Popup/Popup';
 import { PivotOpsSection } from '../../../components/PivotOps';
-import PivotTenantPage from './PivotTenantPage';
 import {
   DROP_DECK_SCORE_FORMULA,
   buildDeckConfigSavePreview,
@@ -13,9 +12,7 @@ import {
   mergePivotDeckConfig,
   validateEffectiveDeckConfig,
 } from './pivotDeckConfigUtils';
-import PivotTenantDropDeckInspector from './PivotTenantDropDeckInspector';
-import './PivotTenantDropDeckPage.scss';
-import './PivotTenantPage.scss';
+import './PivotDeckRulesPanel.scss';
 
 function cloneConfig(config) {
   return JSON.parse(JSON.stringify(config));
@@ -39,9 +36,12 @@ function NumberField({ label, hint, value, onChange, min, max, step = 'any' }) {
   );
 }
 
-function PivotTenantDropDeckPage({
+/**
+ * City drop-deck scoring rules (length and weights). Saves the sparse
+ * `pivotDeckConfig` override patch on the tenant after a diff review.
+ */
+function PivotDeckRulesPanel({
   tenantKey,
-  cityDisplayName,
   storedOverrides,
   onSaved,
 }) {
@@ -184,14 +184,7 @@ function PivotTenantDropDeckPage({
   }, [addNotification, onSaved, preview, tenantKey]);
 
   return (
-    <PivotTenantPage
-      title="Drop deck"
-      tenantKey={tenantKey}
-      cityDisplayName={cityDisplayName}
-      className="pivot-drop-deck"
-    >
-      <PivotTenantDropDeckInspector tenantKey={tenantKey} />
-
+    <div className="pivot-drop-deck">
       <form onSubmit={handleReviewSave}>
         <PivotOpsSection
           titleId="pivot-drop-deck-length"
@@ -406,8 +399,8 @@ function PivotTenantDropDeckPage({
           </div>
         ) : null}
       </Popup>
-    </PivotTenantPage>
+    </div>
   );
 }
 
-export default PivotTenantDropDeckPage;
+export default PivotDeckRulesPanel;
