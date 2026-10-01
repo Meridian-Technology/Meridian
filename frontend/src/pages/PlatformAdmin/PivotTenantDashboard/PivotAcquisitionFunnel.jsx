@@ -8,19 +8,15 @@ import {
   PivotOpsMetric,
   PivotOpsMetricGrid,
 } from '../../../components/PivotOps';
-import PivotTenantPage from './PivotTenantPage';
 import PivotAnalyticsMonthPicker, {
   isValidUtcMonth,
   shiftUtcMonth,
-  toUtcMonth,
 } from './PivotAnalyticsMonthPicker';
 import usePivotTenantWeekKeybinds from './usePivotTenantWeekKeybinds';
 import KeybindTooltip from '../../../components/Interface/KeybindTooltip/KeybindTooltip';
 import { formatRate } from './pivotOverviewFormat';
 import '../PivotLab/PivotLabPage.scss';
-import './PivotTenantDashboard.scss';
-import './PivotTenantAnalyticsPage.scss';
-import './PivotTenantPage.scss';
+import './PivotAcquisitionFunnel.scss';
 
 const NO_FETCH_CACHE = { enabled: false };
 
@@ -29,8 +25,6 @@ export const FUNNEL_COUNTING_NOTES = `UTC month [start, end).
 Uniques per stage. Not a closed identity funnel: landing visitors are not joined to app users, so a later step can be larger than the one before it.
 deck = first-ever swipe per actor (min ts of pivot_card_view | pass | interested), attributed to that month.
 app open = unique actors with a Just Go app event in-window. session_start is not written.`;
-
-export { shiftUtcMonth, toUtcMonth };
 
 function FunnelNotesButton() {
   const [open, setOpen] = useState(false);
@@ -82,43 +76,74 @@ function payload(response) {
   return response.data;
 }
 
-function PivotTenantAnalyticsPage({
-  tenantKey,
-  cityDisplayName,
-  scope = 'city',
-}) {
-  const isFleet = scope === 'fleet' || !tenantKey;
-  const [month, setMonth] = useState(() => toUtcMonth());
+/**
+ * Monthly acquisition funnel data for one city, or every city when
+ * `tenantKey` is empty. ← / → step the month and R refreshes while `enabled`.
+ */
+export function usePivotAcquisition({ tenantKey, month, setMonth, enabled = true }) {
   const monthValid = isValidUtcMonth(month);
   const params = useMemo(() => ({ month }), [month]);
-  const funnelUrl = !monthValid
+  const url = !enabled || !monthValid
     ? null
-    : isFleet
-      ? '/admin/pivot/analytics/acquisition'
-      : `/admin/pivot/tenants/${encodeURIComponent(tenantKey)}/analytics/acquisition`;
+    : tenantKey
+      ? `/admin/pivot/tenants/${encodeURIComponent(tenantKey)}/analytics/acquisition`
+      : '/admin/pivot/analytics/acquisition';
 
-  const {
-    data: funnelResponse,
-    loading,
-    error,
-    refetch,
-  } = useFetch(funnelUrl, {
+  const { data: response, loading, error, refetch } = useFetch(url, {
     params,
     cache: NO_FETCH_CACHE,
   });
 
   const stepMonth = useCallback((delta) => {
     setMonth((current) => shiftUtcMonth(current, delta));
-  }, []);
+  }, [setMonth]);
 
   const { keyboardNavActive } = usePivotTenantWeekKeybinds({
-    enabled: monthValid,
+    enabled: enabled && monthValid,
     onStepWeek: stepMonth,
     onRefresh: refetch,
   });
 
-  const data = payload(funnelResponse);
-  const stages = data?.stages || [];
+  return {
+    url,
+    month,
+    monthValid,
+    data: payload(response),
+    loading,
+    error,
+    refetch,
+    keyboardNavActive,
+  };
+}
+
+/** Month picker and Refresh for a page header. */
+export function PivotAcquisitionControls({ acquisition, onMonthChange }) {
+  const { url, month, data, loading, refetch, keyboardNavActive } = acquisition;
+  return (
+    <>
+      <PivotAnalyticsMonthPicker
+        month={month}
+        onChange={onMonthChange}
+        keyboardNavActive={keyboardNavActive}
+        pending={loading && Boolean(data)}
+      />
+      <button
+        type="button"
+        className="linear-btn linear-btn--secondary pivot-tenant-kbd-btn"
+        onClick={() => refetch()}
+        disabled={!url || loading}
+      >
+        Refresh
+        <KeybindTooltip label="Refresh" keybind="R" />
+      </button>
+    </>
+  );
+}
+
+/** Stage metrics, acquisition area funnel, and step drop-off for one month. */
+function PivotAcquisitionFunnel({ acquisition }) {
+  const { month, monthValid, data, loading, error } = acquisition;
+  const stages = useMemo(() => data?.stages || [], [data?.stages]);
   const funnelStages = useMemo(
     () =>
       stages.map((stage) => ({
@@ -131,31 +156,7 @@ function PivotTenantAnalyticsPage({
   );
 
   return (
-    <PivotTenantPage
-      title="Analytics"
-      tenantKey={isFleet ? '' : tenantKey}
-      cityDisplayName={isFleet ? 'All cities' : cityDisplayName}
-      className="pivot-tenant-analytics"
-      actions={
-        <>
-          <PivotAnalyticsMonthPicker
-            month={month}
-            onChange={setMonth}
-            keyboardNavActive={keyboardNavActive}
-            pending={loading && Boolean(data)}
-          />
-          <button
-            type="button"
-            className="linear-btn linear-btn--secondary pivot-tenant-kbd-btn"
-            onClick={() => refetch()}
-            disabled={!funnelUrl || loading}
-          >
-            Refresh
-            <KeybindTooltip label="Refresh" keybind="R" />
-          </button>
-        </>
-      }
-    >
+    <>
       {!monthValid ? (
         <p className="pivot-lab__error" role="alert">
           Month must be YYYY-MM.
@@ -227,8 +228,8 @@ function PivotTenantAnalyticsPage({
           </div>
         </>
       ) : null}
-    </PivotTenantPage>
+    </>
   );
 }
 
-export default PivotTenantAnalyticsPage;
+export default PivotAcquisitionFunnel;

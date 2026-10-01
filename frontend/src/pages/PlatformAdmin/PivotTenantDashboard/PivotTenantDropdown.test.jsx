@@ -60,7 +60,7 @@ describe('remapPivotOpsSearch', () => {
     ).toBe('?page=1');
   });
 
-  it('maps fleet Launch to city Launch and back', () => {
+  it('maps fleet Growth to city Growth and back', () => {
     expect(
       remapPivotOpsSearch(new URLSearchParams('page=2'), {
         from: 'fleet',
@@ -105,6 +105,24 @@ describe('remapPivotOpsSearch', () => {
       }),
     ).toBe('?page=4&organizerId=org-1');
   });
+
+  it('keeps the Creative studio view when switching cities', () => {
+    expect(
+      remapPivotOpsSearch(new URLSearchParams('page=8&creative=design'), {
+        from: 'city',
+        to: 'city',
+      }),
+    ).toBe('?page=8&creative=design');
+  });
+
+  it('maps Creative studio Copy to fleet Voice and removes city-only view state', () => {
+    expect(
+      remapPivotOpsSearch(new URLSearchParams('page=8&creative=copy'), {
+        from: 'city',
+        to: 'fleet',
+      }),
+    ).toBe('?page=1');
+  });
 });
 
 describe('PivotTenantDropdown switcher remap', () => {
@@ -136,7 +154,7 @@ describe('PivotTenantDropdown switcher remap', () => {
     expect(screen.getByTestId('path').textContent).toBe('/platform-admin/pivot');
   });
 
-  it('lands All cities Launch on city Launch (page=6)', () => {
+  it('lands All cities Growth on city Growth (page=6)', () => {
     renderSwitcher('/platform-admin/pivot?page=2');
     switchTo(/New York/i);
     expect(screen.getByTestId('path').textContent).toBe(
@@ -144,7 +162,7 @@ describe('PivotTenantDropdown switcher remap', () => {
     );
   });
 
-  it('lands NYC Launch on All cities Launch (page=2)', () => {
+  it('lands NYC Growth on All cities Growth (page=2)', () => {
     renderSwitcher('/platform-admin/pivot/nyc?page=6');
     switchTo(/All cities/i);
     expect(screen.getByTestId('path').textContent).toBe(
@@ -174,13 +192,52 @@ describe('PivotTenantDropdown switcher remap', () => {
         from: 'fleet',
         to: 'city',
       }),
-    ).toBe('?page=11');
+    ).toBe('?page=6&growth=acquisition');
+    expect(
+      remapPivotOpsSearch(new URLSearchParams('page=6&growth=acquisition'), {
+        from: 'city',
+        to: 'fleet',
+      }),
+    ).toBe('?page=2&growth=acquisition');
+    // Legacy city Analytics bookmark.
     expect(
       remapPivotOpsSearch(new URLSearchParams('page=11'), {
         from: 'city',
         to: 'fleet',
       }),
-    ).toBe('?page=4');
+    ).toBe('?page=2&growth=acquisition');
+  });
+
+  it('keeps Growth views both shells have, and drops city-only ones', () => {
+    expect(
+      remapPivotOpsSearch(new URLSearchParams('page=6&growth=landing'), {
+        from: 'city',
+        to: 'fleet',
+      }),
+    ).toBe('?page=2&growth=landing');
+    expect(
+      remapPivotOpsSearch(new URLSearchParams('page=2&growth=landing'), {
+        from: 'fleet',
+        to: 'city',
+      }),
+    ).toBe('?page=6&growth=landing');
+    ['waitlist', 'qr'].forEach((view) => {
+      expect(
+        remapPivotOpsSearch(new URLSearchParams(`page=6&growth=${view}`), {
+          from: 'city',
+          to: 'fleet',
+        }),
+      ).toBe('?page=2');
+    });
+  });
+
+  it('keeps the Growth view when switching cities', () => {
+    expect(
+      remapPivotOpsSearch(new URLSearchParams('page=6&growth=waitlist'), {
+        from: 'city',
+        to: 'city',
+      }),
+    ).toBe('?page=6&growth=waitlist');
   });
 
   it('maps Notifications between the fleet and city shells', () => {

@@ -65,6 +65,14 @@ jest.mock('../../services/pivotTenantJourneyService', () => ({
   wipeUserWeekIntents: jest.fn(),
 }));
 
+jest.mock('../../services/pivotWeeklyReportService', () => ({
+  resolveRequesterEmail: jest.fn(),
+  sendWeeklyReport: jest.fn(),
+}));
+jest.mock('../../services/pivotGrowthOverviewService', () => ({
+  getTenantGrowthOverview: jest.fn(),
+  getFleetGrowthOverview: jest.fn(),
+}));
 jest.mock('../../services/pivotAcquisitionFunnelService', () => ({
   getAcquisitionFunnel: jest.fn(),
 }));
@@ -219,6 +227,14 @@ const {
   wipeUserWeekIntents,
 } = require('../../services/pivotTenantJourneyService');
 const { getAcquisitionFunnel } = require('../../services/pivotAcquisitionFunnelService');
+const {
+  getTenantGrowthOverview,
+  getFleetGrowthOverview,
+} = require('../../services/pivotGrowthOverviewService');
+const {
+  resolveRequesterEmail,
+  sendWeeklyReport,
+} = require('../../services/pivotWeeklyReportService');
 const { getUserDeckReplay } = require('../../services/pivotDeckReplayService');
 const { getTenantOpsBundle } = require('../../services/pivotTenantOpsService');
 const { getFleetOpsBundle } = require('../../services/pivotFleetOpsService');
@@ -1700,6 +1716,139 @@ describe('pivotAdminRoutes journeys', () => {
 
     expect(response.status).toBe(403);
     expect(getJourneyFunnel).not.toHaveBeenCalled();
+  });
+});
+
+describe('pivotAdminRoutes weekly report', () => {
+  beforeEach(() => {
+    sendWeeklyReport.mockReset();
+    resolveRequesterEmail.mockReset();
+    requirePlatformAdmin.mockImplementation((req, res, next) => next());
+  });
+
+  it('GET /reports/weekly/preview builds the email without sending', async () => {
+    sendWeeklyReport.mockResolvedValue({
+      data: { subject: 'Weekly', recipients: ['a@x.co'], sent: false, html: '<p/>', report: {} },
+    });
+
+    const response = await request(buildApp()).get('/admin/pivot/reports/weekly/preview');
+
+    expect(response.status).toBe(200);
+    expect(response.body.data).toEqual({ subject: 'Weekly', recipients: ['a@x.co'], sent: false, html: '<p/>' });
+    expect(sendWeeklyReport).toHaveBeenCalledWith(expect.any(Object), { to: null, dryRun: true });
+  });
+
+  it('POST /reports/weekly/send sends a test to the signed-in admin only', async () => {
+    resolveRequesterEmail.mockResolvedValue('me@x.co');
+    sendWeeklyReport.mockResolvedValue({ data: { sent: true, recipients: ['me@x.co'] } });
+
+    const response = await request(buildApp())
+      .post('/admin/pivot/reports/weekly/send')
+      .send({ audience: 'me' });
+
+    expect(response.status).toBe(200);
+    expect(sendWeeklyReport).toHaveBeenCalledWith(expect.any(Object), { to: ['me@x.co'] });
+  });
+
+  it('POST /reports/weekly/send sends to all admins only when asked explicitly', async () => {
+    sendWeeklyReport.mockResolvedValue({ data: { sent: true, recipients: ['a@x.co', 'b@x.co'] } });
+
+    const missing = await request(buildApp()).post('/admin/pivot/reports/weekly/send').send({});
+    expect(missing.status).toBe(400);
+    expect(missing.body.code).toBe('INVALID_AUDIENCE');
+    expect(sendWeeklyReport).not.toHaveBeenCalled();
+
+    const response = await request(buildApp())
+      .post('/admin/pivot/reports/weekly/send')
+      .send({ audience: 'admins' });
+    expect(response.status).toBe(200);
+    expect(sendWeeklyReport).toHaveBeenCalledWith(expect.any(Object), { to: null });
+  });
+
+  it('maps send errors to their status', async () => {
+    sendWeeklyReport.mockResolvedValue({ error: 'Email is not configured', status: 503, code: 'EMAIL_UNAVAILABLE' });
+
+    const response = await request(buildApp())
+      .post('/admin/pivot/reports/weekly/send')
+      .send({ audience: 'admins' });
+
+    expect(response.status).toBe(503);
+    expect(response.body.code).toBe('EMAIL_UNAVAILABLE');
+  });
+
+  it('returns 403 for non-admins', async () => {
+    requirePlatformAdmin.mockImplementation((_req, res) => res.status(403).json({ message: 'Forbidden' }));
+
+    const response = await request(buildApp())
+      .post('/admin/pivot/reports/weekly/send')
+      .send({ audience: 'admins' });
+
+    expect(response.status).toBe(403);
+    expect(sendWeeklyReport).not.toHaveBeenCalled();
+  });
+});
+
+describe('pivotAdminRoutes growth overview', () => {
+  beforeEach(() => {
+    getTenantGrowthOverview.mockReset();
+    requirePlatformAdmin.mockImplementation((req, res, next) => next());
+  });
+
+  it('GET /tenants/:tenantKey/analytics/overview returns the city overview', async () => {
+    getTenantGrowthOverview.mockResolvedValue({
+      data: { tenantKey: 'nyc', currentWeek: '2026-W40', retention: {} },
+    });
+
+    const response = await request(buildApp()).get(
+      '/admin/pivot/tenants/nyc/analytics/overview?weeks=8',
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.body.data.currentWeek).toBe('2026-W40');
+    expect(getTenantGrowthOverview).toHaveBeenCalledWith(
+      expect.objectContaining({ globalDb: {} }),
+      expect.objectContaining({ tenantKey: 'nyc', weeks: '8' }),
+    );
+  });
+
+  it('GET /tenants/:tenantKey/analytics/overview maps service errors to status', async () => {
+    getTenantGrowthOverview.mockResolvedValue({
+      error: 'Pivot tenant not found.',
+      status: 404,
+      code: 'TENANT_NOT_FOUND',
+    });
+
+    const response = await request(buildApp()).get('/admin/pivot/tenants/nope/analytics/overview');
+
+    expect(response.status).toBe(404);
+    expect(response.body).toMatchObject({ success: false, code: 'TENANT_NOT_FOUND' });
+  });
+
+  it('GET /analytics/overview returns the all-cities overview', async () => {
+    getFleetGrowthOverview.mockReset();
+    getFleetGrowthOverview.mockResolvedValue({
+      data: { scope: 'fleet', cities: [{ tenantKey: 'nyc' }], failedCities: [] },
+    });
+
+    const response = await request(buildApp()).get('/admin/pivot/analytics/overview?weeks=8');
+
+    expect(response.status).toBe(200);
+    expect(response.body.data.scope).toBe('fleet');
+    expect(getFleetGrowthOverview).toHaveBeenCalledWith(
+      expect.objectContaining({ globalDb: {} }),
+      expect.objectContaining({ weeks: '8' }),
+    );
+  });
+
+  it('GET /tenants/:tenantKey/analytics/overview returns 403 for non-admin', async () => {
+    requirePlatformAdmin.mockImplementation((_req, res) =>
+      res.status(403).json({ message: 'Forbidden' }),
+    );
+
+    const response = await request(buildApp()).get('/admin/pivot/tenants/nyc/analytics/overview');
+
+    expect(response.status).toBe(403);
+    expect(getTenantGrowthOverview).not.toHaveBeenCalled();
   });
 });
 

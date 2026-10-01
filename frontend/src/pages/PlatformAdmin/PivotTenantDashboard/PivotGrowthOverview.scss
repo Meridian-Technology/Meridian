@@ -1,0 +1,650 @@
+// Fixed week-column width and gap; PivotGrowthOverview.jsx places curve points
+// with the same numbers (COHORT_COL_WIDTH, COHORT_COL_GAP).
+$cohort-col: 60px;
+$cohort-gap: 3px;
+
+.pivot-growth-overview {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+
+  &__launch {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 10px;
+    margin: 0;
+    font-size: 12px;
+    color: var(--pivot-ops-ink-muted);
+
+    strong {
+      color: var(--pivot-ops-ink);
+      font-weight: 600;
+    }
+
+    .pivot-lab__error {
+      flex-basis: 100%;
+      margin: 0;
+    }
+  }
+
+  &__launch-field {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-weight: 600;
+    color: var(--pivot-ops-ink);
+
+    .linear-input {
+      width: auto;
+    }
+  }
+
+  &__link-btn {
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--pivot-ops-accent);
+    font: inherit;
+    font-weight: 600;
+    cursor: pointer;
+
+    &:hover,
+    &:focus-visible {
+      text-decoration: underline;
+    }
+  }
+
+  &__period {
+    margin: 0;
+    font-size: 13px;
+    color: var(--pivot-ops-ink-muted);
+
+    strong {
+      color: var(--pivot-ops-ink);
+      font-weight: 600;
+    }
+  }
+
+  /* Stat tiles */
+
+  &__tiles {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 12px;
+
+    &--compact {
+      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    }
+  }
+
+  &__tile {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+    padding: 12px 14px;
+    background: var(--pivot-ops-surface);
+    border: 1px solid var(--pivot-ops-border);
+    border-radius: var(--pivot-ops-radius-card);
+  }
+
+  &__tile-label {
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--pivot-ops-ink-soft);
+  }
+
+  &__tile-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+
+  &__tile-value {
+    font-size: 24px;
+    font-weight: 600;
+    line-height: 1.2;
+    color: var(--pivot-ops-ink);
+    font-variant-numeric: tabular-nums;
+  }
+
+  &__tile-hint,
+  &__delta {
+    font-size: 11px;
+    line-height: 1.35;
+    color: var(--pivot-ops-ink-soft);
+  }
+
+  &__delta {
+    color: var(--pivot-ops-ink-muted);
+    font-variant-numeric: tabular-nums;
+
+    span {
+      font-size: 9px;
+    }
+  }
+
+  &__sparkline {
+    flex: 0 0 auto;
+    width: 88px;
+    height: 24px;
+    overflow: visible;
+
+    polyline {
+      fill: none;
+      stroke: var(--pivot-ops-accent);
+      stroke-width: 2;
+      stroke-linejoin: round;
+      stroke-linecap: round;
+    }
+
+    circle {
+      fill: var(--pivot-ops-accent);
+      stroke: var(--pivot-ops-surface);
+      stroke-width: 2;
+    }
+  }
+
+  /* Cohort retention */
+
+  &__segmented {
+    display: inline-grid;
+    grid-auto-flow: column;
+    gap: 3px;
+    padding: 3px;
+    border-radius: 8px;
+    background: var(--pivot-ops-canvas);
+
+    button {
+      padding: 6px 10px;
+      border: 0;
+      border-radius: 6px;
+      background: transparent;
+      color: var(--pivot-ops-ink-muted);
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+
+    button.is-active {
+      background: var(--pivot-ops-surface);
+      color: var(--pivot-ops-ink);
+      box-shadow: 0 1px 3px rgba(26, 23, 20, 0.12);
+    }
+  }
+
+  &__table-wrap {
+    overflow-x: auto;
+  }
+
+  &__cohorts {
+    border-collapse: separate;
+    border-spacing: $cohort-gap;
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+
+    th {
+      padding: 4px 6px;
+      font-weight: 500;
+      color: var(--pivot-ops-ink-soft);
+      text-align: left;
+      white-space: nowrap;
+    }
+
+    thead th {
+      text-align: center;
+
+      &:first-child {
+        text-align: left;
+      }
+    }
+
+    .pivot-growth-overview__week-col,
+    .pivot-growth-overview__cell,
+    .pivot-growth-overview__cell--empty {
+      box-sizing: border-box;
+      width: $cohort-col;
+      min-width: $cohort-col;
+      max-width: $cohort-col;
+    }
+
+    .pivot-growth-overview__week-col {
+      padding: 4px 2px;
+    }
+
+    tr.is-empty th,
+    tr.is-empty td {
+      color: var(--pivot-ops-ink-soft);
+    }
+  }
+
+  &__average-row th {
+    color: var(--pivot-ops-ink);
+    font-weight: 600;
+  }
+
+  &__num {
+    padding: 4px 8px;
+    text-align: right;
+    color: var(--pivot-ops-ink-muted);
+  }
+
+  &__cell {
+    position: relative;
+    padding: 7px 4px;
+    border-radius: 6px;
+    text-align: center;
+    font-weight: 600;
+    outline: none;
+
+    &--partial {
+      background: var(--pivot-ops-surface);
+      border: 1px dashed var(--pivot-ops-border-strong);
+      color: var(--pivot-ops-ink-muted);
+      font-weight: 500;
+    }
+
+    &:focus-visible {
+      box-shadow: 0 0 0 2px var(--pivot-ops-surface), 0 0 0 4px var(--pivot-ops-ink);
+    }
+
+    &:hover::after,
+    &:focus-visible::after {
+      content: attr(data-tip);
+      position: absolute;
+      z-index: 3;
+      bottom: calc(100% + 6px);
+      left: 50%;
+      transform: translateX(-50%);
+      width: max-content;
+      max-width: 240px;
+      padding: 6px 8px;
+      border-radius: 8px;
+      background: var(--pivot-ops-ink);
+      color: var(--pivot-ops-surface);
+      font-size: 11px;
+      font-weight: 500;
+      line-height: 1.35;
+      text-align: left;
+      white-space: normal;
+      pointer-events: none;
+    }
+  }
+
+  &__curve-row {
+    th,
+    td {
+      padding: 10px 0 0;
+      vertical-align: top;
+    }
+
+    svg {
+      display: block;
+      overflow: visible;
+    }
+  }
+
+  &__curve-cell {
+    position: relative;
+  }
+
+  &__guide {
+    stroke: var(--pivot-ops-ink-soft);
+    stroke-width: 1;
+    stroke-dasharray: 3 3;
+  }
+
+  &__context-point {
+    fill: rgba(255, 79, 31, 0.45);
+    stroke: var(--pivot-ops-surface);
+    stroke-width: 2;
+  }
+
+  &__curve-tip {
+    position: absolute;
+    z-index: 3;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    width: max-content;
+    max-width: 240px;
+    padding: 8px 10px;
+    border-radius: 8px;
+    background: var(--pivot-ops-ink);
+    color: var(--pivot-ops-surface);
+    font-size: 11px;
+    line-height: 1.35;
+    transform: translate(12px, -50%);
+    pointer-events: none;
+
+    &.is-left {
+      transform: translate(calc(-100% - 12px), -50%);
+    }
+
+    strong {
+      font-weight: 600;
+    }
+
+    em {
+      font-style: normal;
+      opacity: 0.7;
+    }
+
+    .pivot-growth-overview__key {
+      margin: 0 6px 0 0;
+    }
+
+    .pivot-growth-overview__key--context {
+      background: rgba(255, 79, 31, 0.55);
+    }
+  }
+
+  &__curve-tip-row {
+    display: flex;
+    align-items: center;
+    white-space: nowrap;
+  }
+
+  &__curve-legend {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px 8px;
+    margin: 6px 0 0;
+    font-size: 11px;
+    color: var(--pivot-ops-ink-soft);
+  }
+
+  &__sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+
+  &__grid {
+    stroke: var(--pivot-ops-border);
+    stroke-width: 1;
+  }
+
+  &__axis {
+    fill: var(--pivot-ops-ink-soft);
+    font-size: 10px;
+    font-variant-numeric: tabular-nums;
+
+    &.is-active {
+      fill: var(--pivot-ops-ink);
+      font-weight: 600;
+    }
+  }
+
+  &__curve-context {
+    fill: none;
+    stroke: rgba(255, 79, 31, 0.3);
+    stroke-width: 1.5;
+  }
+
+  &__curve-line {
+    fill: none;
+    stroke: var(--pivot-ops-accent);
+    stroke-width: 2;
+    stroke-linejoin: round;
+  }
+
+  &__curve-point {
+    fill: var(--pivot-ops-accent);
+    stroke: var(--pivot-ops-surface);
+    stroke-width: 2;
+
+    &.is-active {
+      stroke: var(--pivot-ops-ink);
+    }
+  }
+
+  &__hit {
+    fill: transparent;
+    cursor: crosshair;
+    outline: none;
+
+    &:focus-visible {
+      stroke: var(--pivot-ops-ink);
+      stroke-width: 1;
+    }
+  }
+
+  &__key {
+    display: inline-block;
+    width: 14px;
+    height: 2px;
+    margin-left: 6px;
+    border-radius: 1px;
+
+    &--line {
+      background: var(--pivot-ops-accent);
+    }
+
+    &--context {
+      background: rgba(255, 79, 31, 0.3);
+    }
+  }
+
+  /* Growth accounting */
+
+  &__legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 14px;
+    margin: 0 0 12px;
+    padding: 0;
+    list-style: none;
+    font-size: 12px;
+    color: var(--pivot-ops-ink-muted);
+
+    li {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+  }
+
+  &__swatch {
+    width: 10px;
+    height: 10px;
+    border-radius: 3px;
+  }
+
+  &__columns {
+    display: grid;
+    grid-auto-columns: minmax(28px, 1fr);
+    grid-auto-flow: column;
+    gap: 6px;
+    overflow-x: auto;
+    padding-top: 4px;
+  }
+
+  &__column {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    min-width: 28px;
+    border-radius: 6px;
+    outline: none;
+
+    &:hover,
+    &:focus-visible {
+      background: var(--pivot-ops-hover);
+    }
+
+    &:focus-visible {
+      box-shadow: 0 0 0 2px var(--pivot-ops-ink);
+    }
+
+    &.is-partial .pivot-growth-overview__segment {
+      background-image: repeating-linear-gradient(
+        45deg,
+        rgba(255, 255, 255, 0.7) 0 2px,
+        transparent 2px 6px
+      );
+    }
+  }
+
+  &__column-up,
+  &__column-down {
+    display: flex;
+    gap: 2px;
+    padding: 0 20%;
+  }
+
+  &__column-up {
+    flex-direction: column-reverse;
+    justify-content: flex-start;
+  }
+
+  &__column-down {
+    flex-direction: column;
+  }
+
+  &__segment {
+    display: block;
+    flex: 0 0 auto;
+    min-height: 0;
+  }
+
+  &__column-up &__segment.is-end {
+    border-radius: 4px 4px 0 0;
+  }
+
+  &__column-down &__segment.is-end {
+    border-radius: 0 0 4px 4px;
+  }
+
+  &__baseline {
+    height: 1px;
+    margin: 1px 0;
+    background: var(--pivot-ops-border-strong);
+  }
+
+  &__column-label,
+  &__column-ratio {
+    font-size: 10px;
+    text-align: center;
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+  }
+
+  &__column-label {
+    margin-top: 6px;
+    color: var(--pivot-ops-ink-soft);
+  }
+
+  &__column-ratio {
+    margin-top: 2px;
+    color: var(--pivot-ops-ink-muted);
+    font-weight: 600;
+  }
+
+  &__tip {
+    position: absolute;
+    z-index: 3;
+    bottom: calc(100% - 20px);
+    left: 50%;
+    display: none;
+    width: max-content;
+    max-width: 260px;
+    padding: 6px 8px;
+    border-radius: 8px;
+    background: var(--pivot-ops-ink);
+    color: var(--pivot-ops-surface);
+    font-size: 11px;
+    line-height: 1.4;
+    white-space: pre-line;
+    transform: translateX(-50%);
+    pointer-events: none;
+  }
+
+  &__column:hover &__tip,
+  &__column:focus-visible &__tip {
+    display: block;
+  }
+
+  &__footnote {
+    margin: 10px 0 0;
+    font-size: 11px;
+    color: var(--pivot-ops-ink-soft);
+  }
+
+  &__table-toggle,
+  &__definitions {
+    font-size: 12px;
+    color: var(--pivot-ops-ink-muted);
+
+    summary {
+      cursor: pointer;
+      font-weight: 600;
+      color: var(--pivot-ops-ink);
+    }
+  }
+
+  &__table-toggle {
+    margin-top: 10px;
+  }
+
+  &__plain-table {
+    width: 100%;
+    margin-top: 8px;
+    border-collapse: collapse;
+    font-variant-numeric: tabular-nums;
+
+    th,
+    td {
+      padding: 5px 8px;
+      border-bottom: 1px solid var(--pivot-ops-border);
+      text-align: right;
+    }
+
+    th:first-child {
+      text-align: left;
+      font-weight: 500;
+    }
+  }
+
+  &__pair {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 12px;
+
+    @media (min-width: 900px) {
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    }
+  }
+
+  &__definitions {
+    padding: 14px 16px;
+    background: var(--pivot-ops-surface);
+    border: 1px solid var(--pivot-ops-border);
+    border-radius: var(--pivot-ops-radius-card);
+
+    dl {
+      display: grid;
+      grid-template-columns: minmax(120px, 170px) minmax(0, 1fr);
+      gap: 8px 16px;
+      margin: 12px 0 0;
+    }
+
+    dt {
+      font-weight: 600;
+      color: var(--pivot-ops-ink);
+    }
+
+    dd {
+      margin: 0;
+      line-height: 1.45;
+    }
+  }
+}

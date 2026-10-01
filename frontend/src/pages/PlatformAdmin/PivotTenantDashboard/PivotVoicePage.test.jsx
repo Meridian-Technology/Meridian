@@ -311,7 +311,7 @@ describe('PivotVoicePage', () => {
     });
 
     renderVoice({ scope: 'tenant', tenantKey: 'nyc' });
-    expect(screen.getByText(/city overlay/i)).toBeInTheDocument();
+    expect(screen.getByText(/city overrides take priority/i)).toBeInTheDocument();
 
     selectVoiceKey('ticker.week');
     expect(screen.getByText('Platform').closest('div')).toHaveTextContent(

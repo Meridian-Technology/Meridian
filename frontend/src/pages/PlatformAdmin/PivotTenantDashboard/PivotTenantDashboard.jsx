@@ -1,32 +1,38 @@
-import React, { useMemo } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import React, { Suspense, useMemo } from 'react';
+import { Navigate, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import Dashboard from '../../../components/Dashboard/Dashboard';
 import { useFetch } from '../../../hooks/useFetch';
 import useAdminDashboardTheme from '../../../hooks/useAdminDashboardTheme';
 import { isPivotTenant } from '../TenantManagement/tenantPivotUtils';
 import PivotTenantOverviewPage from './PivotTenantOverviewPage';
 import PivotTenantCurationPage from './PivotTenantCurationPage';
-import PivotTenantJourneysPage from './PivotTenantJourneysPage';
-import PivotTenantDropDeckPage from './PivotTenantDropDeckPage';
+import PivotTenantAudiencePage from './PivotTenantAudiencePage';
 import PivotTenantCatalogPage from './PivotTenantCatalogPage';
 import PivotVoicePage from './PivotVoicePage';
 import PivotCarouselPage from './carousel/PivotCarouselPage';
-import PivotCoverLab from './carousel/PivotCoverLab';
-import PivotTenantLaunchPage from './PivotTenantLaunchPage';
+import { DESIGN_REVIEW_ENABLED } from './creativeStudioAccess';
+import PivotTenantGrowthPage from './PivotTenantGrowthPage';
 import PivotNotificationsPage from '../PivotNotifications/PivotNotificationsPage';
 import PivotComputeJobs from './PivotComputeJobs';
-import PivotTenantAnalyticsPage from './PivotTenantAnalyticsPage';
 import PivotTenantLocationMigrationPage, {
   RICH_LOCATION_MIGRATION_UI_ENABLED,
 } from './PivotTenantLocationMigrationPage';
 import PivotTenantDropdown from './PivotTenantDropdown';
 import PivotJustGoLogo from './PivotJustGoLogo';
+import {
+  PIVOT_TENANT_PAGES,
+  PIVOT_TENANT_PAGE_IDS,
+  pivotTenantPageIndex,
+} from './pivotTenantPageRoutes';
 import '../../Admin/Admin.scss';
 import '../TenantManagement/TenantManagementPage.scss';
 import '../PlatformAdmin.scss';
 import './PivotTenantDashboard.scss';
 
 const NO_FETCH_CACHE = { enabled: false };
+const DesignReview = process.env.NODE_ENV === 'production'
+  ? null
+  : React.lazy(() => import('./carousel/PivotCoverLab'));
 
 function normalizeTenantKey(value) {
   return String(value || '')
@@ -48,12 +54,77 @@ function PivotTenantGate({ title, body, onBack }) {
   );
 }
 
+function DisabledLocationMigrationRedirect() {
+  const [searchParams] = useSearchParams();
+  const next = new URLSearchParams(searchParams);
+  next.set('page', String(PIVOT_TENANT_PAGES.curation));
+  return <Navigate to={`?${next.toString()}`} replace />;
+}
+
+function DisabledDesignReviewRedirect() {
+  const [searchParams] = useSearchParams();
+  const next = new URLSearchParams(searchParams);
+  next.set('page', String(PIVOT_TENANT_PAGES.carousel));
+  next.delete('creative');
+  return <Navigate to={`?${next.toString()}`} replace />;
+}
+
+/*
+ * Drop deck (3) merged into Audience (2). A bookmark with a user opens that
+ * user's scored deck; a pinned batchWeek keeps the ranking on that week.
+ * Without a user, the page was mostly visited for the scoring rules.
+ */
+function LegacyDropDeckRedirect() {
+  const [searchParams] = useSearchParams();
+  const next = new URLSearchParams(searchParams);
+  next.set('page', String(PIVOT_TENANT_PAGES.audience));
+  if (next.get('userId')) {
+    next.set('audience', 'users');
+    next.set('userPane', 'ranking');
+    if (next.get('batchWeek')) next.set('deckWeek', 'page');
+  } else {
+    next.set('audience', 'rules');
+  }
+  return <Navigate to={`?${next.toString()}`} replace />;
+}
+
+/* Analytics (11) merged into Growth (6) as its Acquisition view. */
+function LegacyAnalyticsRedirect() {
+  const [searchParams] = useSearchParams();
+  const next = new URLSearchParams(searchParams);
+  next.set('page', String(PIVOT_TENANT_PAGES.growth));
+  next.set('growth', 'acquisition');
+  return <Navigate to={`?${next.toString()}`} replace />;
+}
+
+function LegacyCreativeLink({ tenantKey, cityDisplayName }) {
+  const [searchParams] = useSearchParams();
+  const creative = searchParams.get('creative');
+  if (creative === 'copy' || creative === 'design') {
+    const next = new URLSearchParams(searchParams);
+    next.set('page', String(creative === 'copy' ? PIVOT_TENANT_PAGES.voice :
+      DESIGN_REVIEW_ENABLED ? PIVOT_TENANT_PAGES.coverLab : PIVOT_TENANT_PAGES.carousel));
+    next.delete('creative');
+    if (creative === 'copy') {
+      next.delete('deckId');
+      next.delete('curation');
+      next.delete('account');
+    }
+    return <Navigate to={`?${next.toString()}`} replace />;
+  }
+  return <PivotCarouselPage tenantKey={tenantKey} cityDisplayName={cityDisplayName} />;
+}
+
 /**
  * Per-tenant Just Go ops shell.
- * Route: /platform-admin/pivot/:tenantKey?page=0|1|2|3|4|5|6|7
- * Catalog is page=4; Voice is page=5; Launch is page=6; migration is page=7.
- * Notifications is page=9 (renamed from Weekly drop). New pages are appended
- * so existing bookmarks remain stable.
+ * Route: /platform-admin/pivot/:tenantKey?page=0..12.
+ * Index 7 is reserved for Location migration even when its UI is disabled.
+ * Audience (2) holds journeys, the user/deck inspector, and deck rules; the
+ * old Drop deck index (3) redirects into it. Growth (6) holds landing,
+ * waitlist, QR codes, and acquisition; the old Analytics index (11) redirects
+ * into it. Voice (5) and Carousels (8) are
+ * separate entries. Cover Lab (12) is dev-only.
+ * Named identities are in pivotTenantPageRoutes.js; numeric URLs remain valid.
  */
 function PivotTenantDashboard() {
   const navigate = useNavigate();
@@ -79,6 +150,7 @@ function PivotTenantDashboard() {
   const menuItems = useMemo(() => {
     const items = [
       {
+        key: 'overview',
         label: 'Overview',
         icon: 'ic:round-dashboard',
         element: (
@@ -90,6 +162,7 @@ function PivotTenantDashboard() {
         ),
       },
       {
+        key: 'curation',
         label: 'Curation',
         icon: 'mdi:clipboard-edit-outline',
         element: (
@@ -101,30 +174,29 @@ function PivotTenantDashboard() {
         ),
       },
       {
-        label: 'User journeys',
-        icon: 'mdi:graph',
+        key: 'audience',
+        label: 'Audience',
+        icon: 'mdi:account-eye-outline',
         element: (
-          <PivotTenantJourneysPage
+          <PivotTenantAudiencePage
             key={tenantKey}
             tenantKey={tenantKey}
             cityDisplayName={cityDisplayName}
+            storedDeckOverrides={tenant?.pivotDeckConfig}
+            onDeckSaved={refetch}
           />
         ),
       },
       {
+        key: 'dropDeck',
+        hideFromNav: true,
+        navParentIndex: PIVOT_TENANT_PAGES.audience,
         label: 'Drop deck',
         icon: 'mdi:cards-playing-outline',
-        element: (
-          <PivotTenantDropDeckPage
-            key={tenantKey}
-            tenantKey={tenantKey}
-            cityDisplayName={cityDisplayName}
-            storedOverrides={tenant?.pivotDeckConfig}
-            onSaved={refetch}
-          />
-        ),
+        element: <LegacyDropDeckRedirect />,
       },
       {
+        key: 'catalog',
         label: 'Catalog',
         icon: 'mdi:account-group-outline',
         element: (
@@ -136,6 +208,7 @@ function PivotTenantDashboard() {
         ),
       },
       {
+        key: 'voice',
         label: 'Voice',
         icon: 'mdi:format-quote-close-outline',
         element: (
@@ -148,10 +221,13 @@ function PivotTenantDashboard() {
         ),
       },
       {
-        label: 'Launch',
+        key: 'growth',
+        // Second in the sidebar; its ?page= index stays 6.
+        navOrder: 0.5,
+        label: 'Growth',
         icon: 'mdi:rocket-launch-outline',
         element: (
-          <PivotTenantLaunchPage
+          <PivotTenantGrowthPage
             key={tenantKey}
             tenantKey={tenantKey}
             cityDisplayName={cityDisplayName}
@@ -160,20 +236,20 @@ function PivotTenantDashboard() {
       },
     ];
 
-    if (RICH_LOCATION_MIGRATION_UI_ENABLED) {
-      items.push({
-        label: 'Location migration',
-        icon: 'mdi:map-marker-path',
-        element: (
-          <PivotTenantLocationMigrationPage
-            key={tenantKey}
-            tenantKey={tenantKey}
-            cityDisplayName={cityDisplayName}
-            onTenantUpdated={refetch}
-          />
-        ),
-      });
-    }
+    items.push({
+      key: 'locationMigration',
+      hideFromNav: !RICH_LOCATION_MIGRATION_UI_ENABLED,
+      label: 'Location migration',
+      icon: 'mdi:map-marker-path',
+      element: RICH_LOCATION_MIGRATION_UI_ENABLED ? (
+        <PivotTenantLocationMigrationPage
+          key={tenantKey}
+          tenantKey={tenantKey}
+          cityDisplayName={cityDisplayName}
+          onTenantUpdated={refetch}
+        />
+      ) : <DisabledLocationMigrationRedirect />,
+    });
 
     /*
      * Appended, not slotted in beside Curation where it belongs by subject.
@@ -181,10 +257,11 @@ function PivotTenantDashboard() {
      * renumbers every tab after it and breaks bookmarks people already hold.
      */
     items.push({
-      label: 'Carousel',
+      key: 'carousel',
+      label: 'Carousels',
       icon: 'mdi:image-multiple-outline',
       element: (
-        <PivotCarouselPage
+        <LegacyCreativeLink
           key={tenantKey}
           tenantKey={tenantKey}
           cityDisplayName={cityDisplayName}
@@ -193,6 +270,7 @@ function PivotTenantDashboard() {
     });
 
     items.push({
+      key: 'notifications',
       label: 'Notifications',
       icon: 'mdi:bell-ring-outline',
       element: (
@@ -206,6 +284,7 @@ function PivotTenantDashboard() {
     });
 
     items.push({
+      key: 'computeJobs',
       label: 'Compute jobs',
       icon: 'mdi:server-network-outline',
       element: (
@@ -217,26 +296,36 @@ function PivotTenantDashboard() {
       ),
     });
 
-    /* Appended after Compute jobs so existing ?page= bookmarks stay put. */
+    /* Reserved: the old Analytics bookmark opens Growth → Acquisition. */
     items.push({
+      key: 'analytics',
+      hideFromNav: true,
+      navParentIndex: PIVOT_TENANT_PAGES.growth,
       label: 'Analytics',
       icon: 'mdi:chart-funnel',
-      element: (
-        <PivotTenantAnalyticsPage
-          key={tenantKey}
-          tenantKey={tenantKey}
-          cityDisplayName={cityDisplayName}
-        />
-      ),
+      element: <LegacyAnalyticsRedirect />,
     });
 
-    // Temporary design review surface. Append to preserve existing page bookmarks.
+    // In production, the old design-review bookmark returns to Carousels.
     items.push({
+      key: 'coverLab',
+      hideFromNav: true,
+      navParentIndex: PIVOT_TENANT_PAGES.carousel,
       label: 'Cover lab (temp)',
       icon: 'mdi:palette-outline',
-      element: <PivotCoverLab key={tenantKey} tenantKey={tenantKey} />,
+      element: DESIGN_REVIEW_ENABLED ? (
+        <Suspense fallback={<p role="status">Loading design review…</p>}>
+          <DesignReview key={tenantKey} tenantKey={tenantKey} />
+        </Suspense>
+      ) : <DisabledDesignReviewRedirect />,
     });
 
+    // The array index is the legacy URL contract. Fail loudly if a future
+    // addition accidentally changes a page's bookmark destination.
+    if (items.length !== PIVOT_TENANT_PAGE_IDS.length
+      || items.some((item, index) => pivotTenantPageIndex(item.key) !== index)) {
+      throw new Error('Pivot tenant dashboard page registry is out of sync.');
+    }
     return items;
   }, [tenantKey, cityDisplayName, tenant, tenants, refetch]);
 

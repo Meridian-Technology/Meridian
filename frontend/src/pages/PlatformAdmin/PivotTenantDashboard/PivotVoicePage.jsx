@@ -781,7 +781,7 @@ function PivotVoicePage({
       subtitle={
         isPlatform
           ? 'Platform pack — one key at a time. Open a group or search.'
-          : 'City overlay — tenant keys win over platform, then shipped. Open a group or search.'
+          : 'Edit the words shown in this city’s Just Go app. City overrides take priority over platform and shipped copy.'
       }
     >
       {explorer}

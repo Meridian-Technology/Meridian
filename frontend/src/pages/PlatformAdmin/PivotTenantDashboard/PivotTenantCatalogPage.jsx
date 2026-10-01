@@ -9,6 +9,7 @@ import {
   PivotOpsSection,
 } from '../../../components/PivotOps';
 import PivotTenantPage from './PivotTenantPage';
+import { PIVOT_TENANT_PAGES } from './pivotTenantPageRoutes';
 import PivotRollupReviewModal from './PivotRollupReviewModal';
 import {
   CatalogBackfillBar,
@@ -23,7 +24,7 @@ import './PivotTenantPage.scss';
  * Locked Task 0.3: city Catalog on the tenant shell.
  * `/platform-admin/pivot/:tenantKey?page=4`
  */
-export const PIVOT_TENANT_CATALOG_PAGE = 4;
+export const PIVOT_TENANT_CATALOG_PAGE = PIVOT_TENANT_PAGES.catalog;
 
 const NO_FETCH_CACHE = { enabled: false };
 const SEARCH_DEBOUNCE_MS = 280;

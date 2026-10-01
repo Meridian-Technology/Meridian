@@ -5,6 +5,39 @@
     max-width: 1100px;
   }
 
+  &__panes {
+    display: inline-grid;
+    grid-auto-flow: column;
+    gap: 3px;
+    align-self: flex-start;
+    padding: 3px;
+    border-radius: 8px;
+    margin-bottom: 14px;
+    background: var(--pivot-ops-canvas, #f5f4f2);
+
+    button {
+      padding: 6px 12px;
+      border: 0;
+      border-radius: 6px;
+      background: transparent;
+      color: var(--pivot-ops-ink-muted, rgba(26, 23, 20, 0.72));
+      font-size: 12px;
+      font-weight: 600;
+      font-variant-numeric: tabular-nums;
+      cursor: pointer;
+
+      &:hover {
+        color: var(--pivot-ops-ink, #1a1714);
+      }
+    }
+
+    button.is-active {
+      background: var(--pivot-ops-surface, #fff);
+      color: var(--pivot-ops-ink, #1a1714);
+      box-shadow: 0 1px 3px rgba(26, 23, 20, 0.12);
+    }
+  }
+
   &__muted {
     font-size: 12px;
     color: var(--pivot-ops-ink-soft, rgba(26, 23, 20, 0.5));

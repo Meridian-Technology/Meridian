@@ -175,7 +175,7 @@ export default function PivotCoverLab(props) {
   return <div className="jg-cover-lab-workspace">
     <nav className="jg-cover-lab-rounds" aria-label="Design round">
       <div><button type="button" aria-pressed={round === 'events'} onClick={() => setRound('events')}>06 / Event slides</button><button type="button" aria-pressed={round === 'centered'} onClick={() => setRound('centered')}>05 / Gathered inward</button><button type="button" aria-pressed={round === 'cutouts'} onClick={() => setRound('cutouts')}>04 / From the moodboard</button><button type="button" aria-pressed={round === 'justgo'} onClick={() => setRound('justgo')}>03 / More Just Go</button><button type="button" aria-pressed={round === 'editorial'} onClick={() => setRound('editorial')}>02 / Editorial experiments</button><button type="button" aria-pressed={round === 'original'} onClick={() => setRound('original')}>01 / Original studies</button></div>
-      <span>JUST GO · COVER LAB</span>
+      <div className="jg-cover-lab-rounds__context">JUST GO · COVER LAB</div>
     </nav>
     {round === 'events' ? <PivotEventSlideLab /> : round === 'original' ? <OriginalCoverLab {...props} /> : <PivotEditorialCoverLab key={round} round={round} {...props} />}
   </div>;

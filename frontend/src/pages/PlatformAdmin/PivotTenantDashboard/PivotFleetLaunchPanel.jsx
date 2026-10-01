@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { useFetch } from '../../../hooks/useFetch';
 import {
@@ -8,9 +8,9 @@ import {
   PivotOpsSection,
   PivotOpsStatus,
 } from '../../../components/PivotOps';
-import PivotTenantPage from './PivotTenantPage';
+import { PIVOT_TENANT_PAGES } from './pivotTenantPageRoutes';
 import { formatRate } from './pivotOverviewFormat';
-import './PivotTenantLaunchPage.scss';
+import './PivotTenantGrowthPage.scss';
 import './PivotFleetLaunchPage.scss';
 
 const NO_FETCH_CACHE = { enabled: false };
@@ -35,7 +35,7 @@ function formatTimestamp(value) {
 }
 
 function cityLaunchHref(tenantKey) {
-  return `/platform-admin/pivot/${encodeURIComponent(tenantKey)}?page=6`;
+  return `/platform-admin/pivot/${encodeURIComponent(tenantKey)}?page=${PIVOT_TENANT_PAGES.growth}&growth=landing`;
 }
 
 function isLaunchedMode(landingMode) {
@@ -43,15 +43,25 @@ function isLaunchedMode(landingMode) {
 }
 
 /**
- * Fleet Launch — totals + per-city funnel. Phones stay on the city Launch tab.
+ * All-cities landing funnel: fleet totals and one row per city. Shown on the
+ * fleet Growth → Landing view; waitlist contacts stay on each city's Growth →
+ * Waitlist tab. The page header's Refresh calls `refetchRef.current`.
  */
-function PivotFleetLaunchPage() {
+function PivotFleetLaunchPanel({ refetchRef }) {
   const {
     data: launchResponse,
     loading,
     error,
     refetch,
   } = useFetch('/admin/pivot/launch', { cache: NO_FETCH_CACHE });
+
+  useEffect(() => {
+    if (!refetchRef) return undefined;
+    refetchRef.current = refetch;
+    return () => {
+      if (refetchRef.current === refetch) refetchRef.current = null;
+    };
+  }, [refetch, refetchRef]);
 
   const launch = payload(launchResponse);
   const totals = launch?.totals || {};
@@ -63,22 +73,7 @@ function PivotFleetLaunchPage() {
       : null);
 
   return (
-    <PivotTenantPage
-      title="Launch"
-      tenantKey=""
-      cityDisplayName="All cities"
-      className="pivot-tenant-launch pivot-fleet-launch"
-      actions={
-        <button
-          type="button"
-          className="linear-btn linear-btn--secondary"
-          onClick={() => refetch()}
-          disabled={loading}
-        >
-          Refresh
-        </button>
-      }
-    >
+    <>
       {message ? (
         <p className="pivot-lab__error" role="alert">
           {message}
@@ -176,9 +171,9 @@ function PivotFleetLaunchPage() {
           </div>
         )}
       </PivotOpsSection>
-    </PivotTenantPage>
+    </>
   );
 }
 
-export default PivotFleetLaunchPage;
+export default PivotFleetLaunchPanel;
 export { cityLaunchHref };

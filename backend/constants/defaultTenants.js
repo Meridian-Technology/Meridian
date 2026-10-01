@@ -17,6 +17,7 @@ const {
   mergePivotDeckConfigOverrides,
   validatePivotDeckConfigPatch,
 } = require('../utilities/pivotDeckConfig');
+const { normalizePivotLaunchDate } = require('../utilities/pivotLaunchDate');
 const {
   mergeCreatorPublishConfigOverrides,
   validateCreatorPublishConfigPatch,
@@ -83,6 +84,20 @@ function normalizePivotDropOverrides(rows = []) {
     .filter(Boolean);
 
   return normalized.length > 0 ? normalized : undefined;
+}
+
+/**
+ * Copy a valid `pivotLaunchDate` (YYYY-MM-DD) onto `target`. An explicit null is
+ * kept so a sparse default-tenant override can clear an earlier date.
+ */
+function normalizePivotLaunchDateField(row = {}, target = {}) {
+  if (row.pivotLaunchDate === null) {
+    target.pivotLaunchDate = null;
+    return target;
+  }
+  const normalized = normalizePivotLaunchDate(row.pivotLaunchDate);
+  if (normalized.value) target.pivotLaunchDate = normalized.value;
+  return target;
 }
 
 function normalizePivotDropFields(row = {}, target = {}) {
@@ -202,6 +217,7 @@ function normalizeTenantRow(row = {}) {
     }
   }
 
+  normalizePivotLaunchDateField(row, normalized);
   return normalizePivotDropFields(row, normalized);
 }
 
@@ -277,6 +293,7 @@ function normalizeTenantOverride(row = {}) {
   }
 
   normalizePivotDropFields(row, out);
+  normalizePivotLaunchDateField(row, out);
 
   if (row.pivotCrewConfig !== undefined && row.pivotCrewConfig !== null) {
     const crewValidation = validatePivotCrewConfigPatch(row.pivotCrewConfig);

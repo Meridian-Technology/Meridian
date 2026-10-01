@@ -222,6 +222,8 @@ const tenantEntrySchema = new mongoose.Schema(
     pivotDropPushTitle: { type: String, default: null, trim: true, maxlength: 100 },
     pivotDropPushBody: { type: String, default: null, trim: true, maxlength: 240 },
     pivotDropOverrides: { type: [pivotDropOverrideSchema], default: undefined },
+    // YYYY-MM-DD; growth metrics count from the drop week containing it. null clears.
+    pivotLaunchDate: { type: String, default: undefined, trim: true },
     meridianNotificationOverrides: {
       type: [meridianNotificationOverrideSchema],
       default: undefined,
