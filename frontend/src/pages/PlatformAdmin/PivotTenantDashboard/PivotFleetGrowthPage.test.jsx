@@ -1,12 +1,36 @@
 import React from 'react';
 import { fireEvent, render, screen } from '@testing-library/react';
-import PivotTenantAnalyticsPage, {
-  FUNNEL_COUNTING_NOTES,
-  shiftUtcMonth,
-  toUtcMonth,
-} from './PivotTenantAnalyticsPage';
+import { MemoryRouter, useLocation } from 'react-router-dom';
+import PivotFleetGrowthPage from './PivotFleetGrowthPage';
+import { FUNNEL_COUNTING_NOTES } from './PivotAcquisitionFunnel';
+import { shiftUtcMonth, toUtcMonth } from './PivotAnalyticsMonthPicker';
 
 const mockUseFetch = jest.fn();
+const mockRefetchOverview = jest.fn();
+const mockRefetchLanding = jest.fn();
+
+/* eslint-disable no-param-reassign */
+jest.mock('./PivotGrowthOverview', () => ({
+  __esModule: true,
+  default: ({ tenantKey, refetchRef }) => {
+    if (refetchRef) refetchRef.current = mockRefetchOverview;
+    return <div>growth-overview:{tenantKey || 'all-cities'}</div>;
+  },
+}));
+
+jest.mock('./PivotFleetLaunchPanel', () => ({
+  __esModule: true,
+  default: ({ refetchRef }) => {
+    if (refetchRef) refetchRef.current = mockRefetchLanding;
+    return <div>fleet-landing-panel</div>;
+  },
+}));
+/* eslint-enable no-param-reassign */
+
+jest.mock('./PivotWeeklyReportButton', () => ({
+  __esModule: true,
+  default: () => <button type="button">Weekly report</button>,
+}));
 
 jest.mock('../../../hooks/useFetch', () => ({
   useFetch: (...args) => mockUseFetch(...args),
@@ -68,45 +92,75 @@ describe('shiftUtcMonth', () => {
   });
 });
 
-describe('PivotTenantAnalyticsPage', () => {
+function LocationProbe() {
+  const { search } = useLocation();
+  return <output data-testid="search">{search}</output>;
+}
+
+function renderFleetGrowth(view) {
+  const query = view ? `?page=2&growth=${view}` : '?page=2';
+  return render(
+    <MemoryRouter initialEntries={[`/platform-admin/pivot${query}`]}>
+      <PivotFleetGrowthPage />
+      <LocationProbe />
+    </MemoryRouter>,
+  );
+}
+
+describe('PivotFleetGrowthPage', () => {
   beforeEach(() => {
     mockUseFetch.mockReset();
-    mockUseFetch.mockReturnValue({
-      data: funnelPayload(),
+    mockRefetchOverview.mockReset();
+    mockRefetchLanding.mockReset();
+    mockUseFetch.mockImplementation((url) => ({
+      data: url ? funnelPayload({ tenantKey: null, scope: 'fleet' }) : null,
       loading: false,
       error: null,
       refetch: jest.fn(),
-    });
+    }));
   });
 
-  it('loads the monthly city acquisition funnel', () => {
-    render(<PivotTenantAnalyticsPage tenantKey="nyc" cityDisplayName="New York" />);
+  it('opens on the all-cities overview and refreshes it from the header', () => {
+    renderFleetGrowth();
 
-    expect(screen.getByRole('heading', { name: 'Analytics' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Growth' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Overview' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByText('growth-overview:all-cities')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Weekly report' })).toBeInTheDocument();
+    // Fleet Growth has no per-city waitlist or QR views.
+    expect(screen.queryByRole('tab', { name: 'Waitlist' })).toBeNull();
+    expect(screen.queryByRole('tab', { name: 'QR codes' })).toBeNull();
+    expect(mockUseFetch.mock.calls.filter(([url]) => url)).toEqual([]);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
+    expect(mockRefetchOverview).toHaveBeenCalled();
+  });
+
+  it('switches to the fleet landing funnel and refreshes it', () => {
+    renderFleetGrowth();
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Landing' }));
+
+    expect(screen.getByTestId('search')).toHaveTextContent('growth=landing');
+    expect(screen.getByText('fleet-landing-panel')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
+    expect(mockRefetchLanding).toHaveBeenCalled();
+    expect(mockRefetchOverview).not.toHaveBeenCalled();
+  });
+
+  it('shows the monthly acquisition funnel with counting notes', () => {
+    renderFleetGrowth('acquisition');
+
     expect(screen.getByLabelText(new RegExp(`Month ${toUtcMonth()}`))).toBeInTheDocument();
     expect(screen.getByText(/September 2026/)).toBeInTheDocument();
-    expect(screen.queryByText(/volume funnel/i)).not.toBeInTheDocument();
     expect(screen.queryByText(FUNNEL_COUNTING_NOTES)).not.toBeInTheDocument();
     fireEvent.click(screen.getByLabelText('How counts are defined'));
     expect(screen.getByRole('note')).toHaveTextContent(/session_start is not written/i);
     expect(screen.getByText(/first swipe only/i)).toBeInTheDocument();
-    expect(mockUseFetch).toHaveBeenCalledWith(
-      '/admin/pivot/tenants/nyc/analytics/acquisition',
-      expect.objectContaining({
-        params: { month: toUtcMonth() },
-      }),
-    );
   });
 
-  it('steps the month and loads the fleet route', () => {
-    mockUseFetch.mockReturnValue({
-      data: funnelPayload({ tenantKey: null, scope: 'fleet' }),
-      loading: false,
-      error: null,
-      refetch: jest.fn(),
-    });
-
-    render(<PivotTenantAnalyticsPage scope="fleet" cityDisplayName="All cities" />);
+  it('steps the month and loads the fleet acquisition route', () => {
+    renderFleetGrowth('acquisition');
     fireEvent.click(screen.getByLabelText('Previous month'));
 
     expect(mockUseFetch).toHaveBeenCalledWith(

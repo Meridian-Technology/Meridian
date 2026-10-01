@@ -1,4 +1,5 @@
 import React, { useCallback, useMemo, useRef, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useFetch, authenticatedRequest } from '../../../hooks/useFetch';
 import { useNotification } from '../../../NotificationContext';
 import { justGoPublicLandingUrl } from '../../JustGoLanding/justGoLandingCopy';
@@ -14,12 +15,31 @@ import {
 import AdminPlatformMetricChart from '../../Admin/General/AdminPlatformAnalytics/AdminPlatformMetricChart';
 import PivotTenantPage from './PivotTenantPage';
 import PivotLandingQrManager from './PivotLandingQrManager';
+import PivotGrowthOverview from './PivotGrowthOverview';
+import PivotTenantViewTabs from './PivotTenantViewTabs';
+import { toUtcMonth } from './PivotAnalyticsMonthPicker';
+import PivotAcquisitionFunnel, {
+  PivotAcquisitionControls,
+  usePivotAcquisition,
+} from './PivotAcquisitionFunnel';
 import { formatRate } from './pivotOverviewFormat';
-import './PivotTenantLaunchPage.scss';
+import './PivotTenantGrowthPage.scss';
 
 const NO_FETCH_CACHE = { enabled: false };
 const WAITLIST_PAGE_SIZE = 50;
 const CHART_COLOR = '#ff4f1f';
+/*
+ * `growth` URL param. Page-specific because the dashboard shell carries every
+ * query param across nav clicks. Waitlist contact data loads only on its tab.
+ */
+export const GROWTH_VIEWS = Object.freeze([
+  { id: 'overview', label: 'Overview' },
+  { id: 'landing', label: 'Landing' },
+  { id: 'waitlist', label: 'Waitlist' },
+  { id: 'qr', label: 'QR codes' },
+  { id: 'acquisition', label: 'Acquisition' },
+]);
+const VIEW_IDS = new Set(GROWTH_VIEWS.map((view) => view.id));
 const SOURCE_LABELS = {
   direct: 'Direct',
   share: 'Share',
@@ -69,8 +89,38 @@ export function maskWaitlistEmail(email) {
   return `${local.slice(0, 1)}***${domain}`;
 }
 
-function PivotTenantLaunchPage({ tenantKey, cityDisplayName }) {
+/**
+ * Per-tenant Growth: an investor-style overview (weekly actives, cohort
+ * retention, growth accounting), landing mode and funnel, waitlist, QR
+ * attribution and tracking QRs, and the monthly acquisition funnel. Replaces
+ * the former Launch (page 6) and Analytics (page 11) panels.
+ */
+function PivotTenantGrowthPage({ tenantKey, cityDisplayName }) {
   const { addNotification } = useNotification();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const rawView = searchParams.get('growth');
+  const view = VIEW_IDS.has(rawView) ? rawView : 'overview';
+  const setView = useCallback(
+    (nextView) => {
+      setSearchParams(
+        (prev) => {
+          const next = new URLSearchParams(prev);
+          if (nextView === 'overview') next.delete('growth');
+          else next.set('growth', nextView);
+          return next;
+        },
+        { replace: true },
+      );
+    },
+    [setSearchParams],
+  );
+  const [month, setMonth] = useState(() => toUtcMonth());
+  const acquisition = usePivotAcquisition({
+    tenantKey,
+    month,
+    setMonth,
+    enabled: Boolean(tenantKey) && view === 'acquisition',
+  });
   const [waitlistPage, setWaitlistPage] = useState(1);
   const [savingMode, setSavingMode] = useState(false);
   const [exportingCsv, setExportingCsv] = useState(false);
@@ -78,11 +128,12 @@ function PivotTenantLaunchPage({ tenantKey, cityDisplayName }) {
   const savingModeRef = useRef(false);
   const exportingCsvRef = useRef(false);
   const refetchQrsRef = useRef(null);
+  const refetchOverviewRef = useRef(null);
 
-  const launchUrl = tenantKey
+  const launchUrl = tenantKey && (view === 'landing' || view === 'qr')
     ? `/admin/pivot/tenants/${encodeURIComponent(tenantKey)}/launch`
     : null;
-  const waitlistUrl = tenantKey
+  const waitlistUrl = tenantKey && view === 'waitlist'
     ? `/admin/pivot/tenants/${encodeURIComponent(tenantKey)}/waitlist`
     : null;
   const waitlistParams = useMemo(
@@ -300,284 +351,346 @@ function PivotTenantLaunchPage({ tenantKey, cityDisplayName }) {
         setWaitlistPage((page) => Math.max(1, page - 1));
       }
       refetchWaitlist();
-      refetchLaunch();
     },
     [
       addNotification,
       deletingId,
       items.length,
-      refetchLaunch,
       refetchWaitlist,
       tenantKey,
       waitlistPage,
     ],
   );
 
+  const refreshView = () => {
+    if (view === 'overview') {
+      refetchOverviewRef.current?.();
+      return;
+    }
+    if (view === 'waitlist') {
+      refetchWaitlist();
+      return;
+    }
+    refetchLaunch();
+    if (view === 'qr') refetchQrsRef.current?.();
+  };
+
+  const rangeLabel = formatRangeLabel(launch?.range);
+  const launchPending = launchLoading && !launch;
+
   return (
     <PivotTenantPage
-      title="Launch"
+      title="Growth"
       tenantKey={tenantKey}
       cityDisplayName={displayCity}
       className="pivot-tenant-launch"
       actions={
-        <button
-          type="button"
-          className="linear-btn linear-btn--secondary"
-          onClick={() => {
-            refetchLaunch();
-            refetchWaitlist();
-            refetchQrsRef.current?.();
-          }}
-          disabled={!launchUrl || launchLoading}
-        >
-          Refresh
-        </button>
+        view === 'acquisition' ? (
+          <PivotAcquisitionControls acquisition={acquisition} onMonthChange={setMonth} />
+        ) : (
+          <button
+            type="button"
+            className="linear-btn linear-btn--secondary"
+            onClick={refreshView}
+            disabled={
+              view === 'overview'
+                ? !tenantKey
+                : view === 'waitlist'
+                  ? !waitlistUrl || waitlistLoading
+                  : !launchUrl || launchLoading
+            }
+          >
+            Refresh
+          </button>
+        )
       }
     >
-      {launchMessage ? (
+      <PivotTenantViewTabs
+        views={GROWTH_VIEWS}
+        value={view}
+        onChange={setView}
+        ariaLabel="Growth view"
+      />
+
+      {view === 'overview' ? (
+        <PivotGrowthOverview tenantKey={tenantKey} refetchRef={refetchOverviewRef} />
+      ) : null}
+
+      {(view === 'landing' || view === 'qr') && launchMessage ? (
         <p className="pivot-lab__error" role="alert">
           {launchMessage}
         </p>
       ) : null}
 
-      <PivotOpsSection
-        title="Landing mode"
-        titleId="pivot-launch-mode"
-        description="Waitlist shows an email form. Launched shows App Store install. Independent of tenant status."
-        actions={
-          <PivotOpsStatus tone={launched ? 'success' : 'warn'}>
-            {launched ? 'Launched' : 'Waitlist'}
-          </PivotOpsStatus>
-        }
-      >
-        {launchLoading && !launch ? (
-          <p className="pivot-lab__empty">Loading landing mode…</p>
-        ) : (
-          <div className="pivot-tenant-launch__mode-row">
-            <p className="pivot-tenant-launch__mode-copy">
-              {launched
-                ? 'This city is live on the landing. Store clicks count as conversion.'
-                : 'This city is on the waitlist. Signups count as conversion.'}
-            </p>
-            <button
-              type="button"
-              className="linear-btn linear-btn--primary"
-              onClick={handleToggleMode}
-              disabled={savingMode || !launch}
-            >
-              {savingMode
-                ? 'Saving…'
-                : launched
-                  ? 'Switch to waitlist'
-                  : 'Switch to launched'}
-            </button>
-          </div>
-        )}
-      </PivotOpsSection>
+      {view === 'landing' ? (
+        <>
+          <PivotOpsSection
+            title="Landing mode"
+            titleId="pivot-launch-mode"
+            description="Waitlist shows an email form. Launched shows App Store install. Independent of tenant status."
+            actions={
+              <PivotOpsStatus tone={launched ? 'success' : 'warn'}>
+                {launched ? 'Launched' : 'Waitlist'}
+              </PivotOpsStatus>
+            }
+          >
+            {launchPending ? (
+              <p className="pivot-lab__empty">Loading landing mode…</p>
+            ) : (
+              <div className="pivot-tenant-launch__mode-row">
+                <p className="pivot-tenant-launch__mode-copy">
+                  {launched
+                    ? 'This city is live on the landing. Store clicks count as conversion.'
+                    : 'This city is on the waitlist. Signups count as conversion.'}
+                </p>
+                <button
+                  type="button"
+                  className="linear-btn linear-btn--primary"
+                  onClick={handleToggleMode}
+                  disabled={savingMode || !launch}
+                >
+                  {savingMode
+                    ? 'Saving…'
+                    : launched
+                      ? 'Switch to waitlist'
+                      : 'Switch to launched'}
+                </button>
+              </div>
+            )}
+          </PivotOpsSection>
 
-      <PivotOpsSection
-        title="Landing funnel"
-        titleId="pivot-launch-kpis"
-        description={`${formatRangeLabel(launch?.range)}. ${
-          launch?.conversionNote ||
-          'Conversion uses the current landing mode for the whole range.'
-        }`}
-      >
-        {launchLoading && !launch ? (
-          <p className="pivot-lab__empty">Loading launch stats…</p>
-        ) : (
-          <>
-            <PivotOpsMetricGrid>
-              <PivotOpsMetric
-                label="Views"
-                value={<PivotOpsAnimateNumber value={totals.views ?? 0} />}
-              />
-              <PivotOpsMetric
-                label="Unique visitors"
-                value={<PivotOpsAnimateNumber value={totals.uniqueVisitors ?? 0} />}
-              />
-              <PivotOpsMetric
-                label="Waitlist signups"
-                value={<PivotOpsAnimateNumber value={totals.waitlistSignups ?? 0} />}
-              />
-              <PivotOpsMetric
-                label="Store clicks"
-                value={<PivotOpsAnimateNumber value={totals.storeClicks ?? 0} />}
-              />
-              <PivotOpsMetric
-                label="Conversion"
-                value={formatRate(totals.conversionRate)}
-                hint={launched ? 'store clicks / views' : 'signups / views'}
-              />
-              <PivotOpsMetric
-                label="Legacy QR hops"
-                value={<PivotOpsAnimateNumber value={qr.scans ?? 0} />}
-                hint="hops at /qr/{name}"
-              />
-              <PivotOpsMetric
-                label="QR views"
-                value={<PivotOpsAnimateNumber value={qr.views ?? 0} />}
-                hint="landing views with src=qr"
-              />
-            </PivotOpsMetricGrid>
-            <div className="pivot-tenant-launch__chart">
-              <AdminPlatformMetricChart
-                title=""
-                series={viewsSeries}
-                granularity="day"
-                height={160}
-                emptyMessage="No landing views in this range"
-                margin={{ top: 8, right: 0, bottom: 22, left: 0 }}
-                edgeToEdge
-                hideYAxis
-              />
-            </div>
-            <PivotOpsBarList
-              items={sourceBars}
-              ariaLabel="Landing views by source"
-              valueFormat={(value) => `${value} views`}
-            />
-            {qrBars.length ? (
-              <div className="pivot-tenant-launch__qr-kpis">
-                <p className="pivot-tenant-launch__bars-label">QR-attributed landing views</p>
+          <PivotOpsSection
+            title="Public link"
+            titleId="pivot-launch-link"
+            description="Canonical city landing. New tracking QRs open this page directly with src=qr."
+          >
+            {launchPending ? (
+              <p className="pivot-lab__empty">Loading public URL…</p>
+            ) : (
+              <>
+                <PivotOpsBanner tone="muted" title={publicUrl}>
+                  Share this URL directly. Poster QRs under QR codes add campaign attribution; legacy /qr/name posters still land here.
+                </PivotOpsBanner>
+                <div className="pivot-tenant-launch__link-row">
+                  <button
+                    type="button"
+                    className="linear-btn linear-btn--primary"
+                    onClick={handleCopyPublicUrl}
+                  >
+                    Copy link
+                  </button>
+                  <a
+                    className="linear-btn linear-btn--secondary"
+                    href={publicUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    Open landing
+                  </a>
+                </div>
+              </>
+            )}
+          </PivotOpsSection>
+
+          <PivotOpsSection
+            title="Landing funnel"
+            titleId="pivot-launch-kpis"
+            description={`${rangeLabel}. ${
+              launch?.conversionNote ||
+              'Conversion uses the current landing mode for the whole range.'
+            }`}
+          >
+            {launchPending ? (
+              <p className="pivot-lab__empty">Loading launch stats…</p>
+            ) : (
+              <>
+                <PivotOpsMetricGrid>
+                  <PivotOpsMetric
+                    label="Views"
+                    value={<PivotOpsAnimateNumber value={totals.views ?? 0} />}
+                  />
+                  <PivotOpsMetric
+                    label="Unique visitors"
+                    value={<PivotOpsAnimateNumber value={totals.uniqueVisitors ?? 0} />}
+                  />
+                  <PivotOpsMetric
+                    label="Waitlist signups"
+                    value={<PivotOpsAnimateNumber value={totals.waitlistSignups ?? 0} />}
+                  />
+                  <PivotOpsMetric
+                    label="Store clicks"
+                    value={<PivotOpsAnimateNumber value={totals.storeClicks ?? 0} />}
+                  />
+                  <PivotOpsMetric
+                    label="Conversion"
+                    value={formatRate(totals.conversionRate)}
+                    hint={launched ? 'store clicks / views' : 'signups / views'}
+                  />
+                </PivotOpsMetricGrid>
+                <div className="pivot-tenant-launch__chart">
+                  <AdminPlatformMetricChart
+                    title=""
+                    series={viewsSeries}
+                    granularity="day"
+                    height={160}
+                    emptyMessage="No landing views in this range"
+                    margin={{ top: 8, right: 0, bottom: 22, left: 0 }}
+                    edgeToEdge
+                    hideYAxis
+                  />
+                </div>
                 <PivotOpsBarList
-                  items={qrBars}
-                  ariaLabel="QR-attributed landing views by code"
+                  items={sourceBars}
+                  ariaLabel="Landing views by source"
                   valueFormat={(value) => `${value} views`}
                 />
-              </div>
-            ) : null}
-          </>
-        )}
-      </PivotOpsSection>
+              </>
+            )}
+          </PivotOpsSection>
+        </>
+      ) : null}
 
-      <PivotOpsSection
-        title="Waitlist"
-        titleId="pivot-launch-waitlist"
-        description="Phone numbers are PII. Visible on Launch and CSV only — not Overview. Rows stay until an admin removes them."
-        actions={
-          <button
-            type="button"
-            className="linear-btn linear-btn--secondary"
-            onClick={handleExportCsv}
-            disabled={!tenantKey || exportingCsv}
-          >
-            {exportingCsv ? 'Exporting…' : 'Download CSV'}
-          </button>
-        }
-      >
-        {waitlistMessage ? (
-          <p className="pivot-lab__error" role="alert">
-            {waitlistMessage}
-          </p>
-        ) : null}
-        {waitlistLoading && !waitlist ? (
-          <p className="pivot-lab__empty">Loading waitlist…</p>
-        ) : !items.length ? (
-          <p className="pivot-lab__empty">No waitlist signups yet.</p>
-        ) : (
-          <>
-            <div className="pivot-tenant-launch__table-wrap">
-              <table className="pivot-tenant-launch__table">
-                <thead>
-                  <tr>
-                    <th>Signed up</th>
-                    <th>Email</th>
-                    <th>Source</th>
-                    <th>QR</th>
-                    <th>Ref</th>
-                    <th>Friends</th>
-                    <th>Remove</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {items.map((row) => (
-                    <tr key={row.id || `${row.email}-${row.createdAt}`}>
-                      <td>{formatTimestamp(row.createdAt)}</td>
-                      <td className="pivot-tenant-launch__email">{row.email || '—'}</td>
-                      <td>{row.source || 'direct'}</td>
-                      <td>{row.qrName || '—'}</td>
-                      <td>{row.refCode || '—'}</td>
-                      <td>{row.friendsJoined ?? 0}</td>
-                      <td>
-                        <button
-                          type="button"
-                          className="linear-btn linear-btn--secondary"
-                          onClick={() => handleDeleteWaitlistRow(row)}
-                          disabled={!row.id || deletingId === row.id}
-                        >
-                          {deletingId === row.id ? 'Removing…' : 'Remove'}
-                        </button>
-                      </td>
+      {view === 'waitlist' ? (
+        <PivotOpsSection
+          title="Waitlist"
+          titleId="pivot-launch-waitlist"
+          description="Phone numbers are PII. Visible on this tab and CSV only — not Overview. Rows stay until an admin removes them."
+          actions={
+            <button
+              type="button"
+              className="linear-btn linear-btn--secondary"
+              onClick={handleExportCsv}
+              disabled={!tenantKey || exportingCsv}
+            >
+              {exportingCsv ? 'Exporting…' : 'Download CSV'}
+            </button>
+          }
+        >
+          {waitlistMessage ? (
+            <p className="pivot-lab__error" role="alert">
+              {waitlistMessage}
+            </p>
+          ) : null}
+          {waitlistLoading && !waitlist ? (
+            <p className="pivot-lab__empty">Loading waitlist…</p>
+          ) : !items.length ? (
+            <p className="pivot-lab__empty">No waitlist signups yet.</p>
+          ) : (
+            <>
+              <div className="pivot-tenant-launch__table-wrap">
+                <table className="pivot-tenant-launch__table">
+                  <thead>
+                    <tr>
+                      <th>Signed up</th>
+                      <th>Email</th>
+                      <th>Source</th>
+                      <th>QR</th>
+                      <th>Ref</th>
+                      <th>Friends</th>
+                      <th>Remove</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            <div className="pivot-tenant-launch__pager">
-              <span>
-                {pagination.total} signup{pagination.total === 1 ? '' : 's'}
-              </span>
-              <button
-                type="button"
-                className="linear-btn linear-btn--secondary"
-                onClick={() => setWaitlistPage((page) => Math.max(1, page - 1))}
-                disabled={waitlistPage <= 1 || waitlistLoading}
-              >
-                Previous
-              </button>
-              <span>
-                Page {pagination.page || waitlistPage} of {pageCount}
-              </span>
-              <button
-                type="button"
-                className="linear-btn linear-btn--secondary"
-                onClick={() => setWaitlistPage((page) => page + 1)}
-                disabled={waitlistPage >= pageCount || waitlistLoading}
-              >
-                Next
-              </button>
-            </div>
-          </>
-        )}
-      </PivotOpsSection>
+                  </thead>
+                  <tbody>
+                    {items.map((row) => (
+                      <tr key={row.id || `${row.email}-${row.createdAt}`}>
+                        <td>{formatTimestamp(row.createdAt)}</td>
+                        <td className="pivot-tenant-launch__email">{row.email || '—'}</td>
+                        <td>{row.source || 'direct'}</td>
+                        <td>{row.qrName || '—'}</td>
+                        <td>{row.refCode || '—'}</td>
+                        <td>{row.friendsJoined ?? 0}</td>
+                        <td>
+                          <button
+                            type="button"
+                            className="linear-btn linear-btn--secondary"
+                            onClick={() => handleDeleteWaitlistRow(row)}
+                            disabled={!row.id || deletingId === row.id}
+                          >
+                            {deletingId === row.id ? 'Removing…' : 'Remove'}
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div className="pivot-tenant-launch__pager">
+                <span>
+                  {pagination.total} signup{pagination.total === 1 ? '' : 's'}
+                </span>
+                <button
+                  type="button"
+                  className="linear-btn linear-btn--secondary"
+                  onClick={() => setWaitlistPage((page) => Math.max(1, page - 1))}
+                  disabled={waitlistPage <= 1 || waitlistLoading}
+                >
+                  Previous
+                </button>
+                <span>
+                  Page {pagination.page || waitlistPage} of {pageCount}
+                </span>
+                <button
+                  type="button"
+                  className="linear-btn linear-btn--secondary"
+                  onClick={() => setWaitlistPage((page) => page + 1)}
+                  disabled={waitlistPage >= pageCount || waitlistLoading}
+                >
+                  Next
+                </button>
+              </div>
+            </>
+          )}
+        </PivotOpsSection>
+      ) : null}
 
-      <PivotOpsSection
-        title="Public link"
-        titleId="pivot-launch-link"
-        description="Canonical city landing. New tracking QRs open this page directly with src=qr."
-      >
-        {launchLoading && !launch ? (
-          <p className="pivot-lab__empty">Loading public URL…</p>
-        ) : (
-          <>
-            <PivotOpsBanner tone="muted" title={publicUrl}>
-              Share this URL directly. New poster QRs below add campaign attribution; legacy /qr/name posters still land here.
-            </PivotOpsBanner>
-            <div className="pivot-tenant-launch__link-row">
-              <button
-                type="button"
-                className="linear-btn linear-btn--primary"
-                onClick={handleCopyPublicUrl}
-              >
-                Copy link
-              </button>
-              <a
-                className="linear-btn linear-btn--secondary"
-                href={publicUrl}
-                target="_blank"
-                rel="noreferrer"
-              >
-                Open landing
-              </a>
-            </div>
-          </>
-        )}
-      </PivotOpsSection>
+      {view === 'qr' ? (
+        <>
+          <PivotOpsSection
+            title="QR attribution"
+            titleId="pivot-launch-qr-attribution"
+            description={`${rangeLabel}. Landing views that arrived with src=qr, by code.`}
+          >
+            {launchPending ? (
+              <p className="pivot-lab__empty">Loading QR attribution…</p>
+            ) : (
+              <>
+                <PivotOpsMetricGrid>
+                  <PivotOpsMetric
+                    label="QR views"
+                    value={<PivotOpsAnimateNumber value={qr.views ?? 0} />}
+                    hint="landing views with src=qr"
+                  />
+                  <PivotOpsMetric
+                    label="Legacy QR hops"
+                    value={<PivotOpsAnimateNumber value={qr.scans ?? 0} />}
+                    hint="hops at /qr/{name}"
+                  />
+                </PivotOpsMetricGrid>
+                {qrBars.length ? (
+                  <div className="pivot-tenant-launch__qr-kpis">
+                    <p className="pivot-tenant-launch__bars-label">QR-attributed landing views</p>
+                    <PivotOpsBarList
+                      items={qrBars}
+                      ariaLabel="QR-attributed landing views by code"
+                      valueFormat={(value) => `${value} views`}
+                    />
+                  </div>
+                ) : (
+                  <p className="pivot-lab__empty">No QR-attributed landing views in this range.</p>
+                )}
+              </>
+            )}
+          </PivotOpsSection>
 
-      <PivotLandingQrManager tenantKey={tenantKey} refetchRef={refetchQrsRef} />
+          <PivotLandingQrManager tenantKey={tenantKey} refetchRef={refetchQrsRef} />
+        </>
+      ) : null}
+
+      {view === 'acquisition' ? (
+        <PivotAcquisitionFunnel acquisition={acquisition} />
+      ) : null}
     </PivotTenantPage>
   );
 }
 
-export default PivotTenantLaunchPage;
+export default PivotTenantGrowthPage;

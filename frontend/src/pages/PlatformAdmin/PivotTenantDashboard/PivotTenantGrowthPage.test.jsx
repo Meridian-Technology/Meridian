@@ -1,10 +1,13 @@
 import React from 'react';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
-import PivotTenantLaunchPage, { maskWaitlistEmail } from './PivotTenantLaunchPage';
+import { MemoryRouter, useLocation } from 'react-router-dom';
+import PivotTenantGrowthPage, { maskWaitlistEmail } from './PivotTenantGrowthPage';
+import { toUtcMonth } from './PivotAnalyticsMonthPicker';
 
 const mockUseFetch = jest.fn();
 const mockAuthenticatedRequest = jest.fn();
 const mockAddNotification = jest.fn();
+const mockRefetchOverview = jest.fn();
 
 jest.mock('../../../hooks/useFetch', () => ({
   useFetch: (...args) => mockUseFetch(...args),
@@ -43,6 +46,25 @@ jest.mock('../../../components/JustGoQr/StyledJustGoQr', () => ({
 
 jest.mock('@iconify-icon/react', () => ({
   Icon: () => null,
+}));
+
+jest.mock('../../../components/Interface/KeybindTooltip/KeybindTooltip', () => ({
+  __esModule: true,
+  default: () => null,
+}));
+
+jest.mock('./PivotGrowthOverview', () => ({
+  __esModule: true,
+  default: ({ tenantKey, refetchRef }) => {
+    // eslint-disable-next-line no-param-reassign
+    if (refetchRef) refetchRef.current = mockRefetchOverview;
+    return <div>growth-overview:{tenantKey}</div>;
+  },
+}));
+
+jest.mock('../../../components/PivotOps/PivotOpsAreaFunnel', () => ({
+  __esModule: true,
+  default: ({ ariaLabel }) => <div aria-label={ariaLabel} />,
 }));
 
 function launchPayload(overrides = {}) {
@@ -136,6 +158,23 @@ function stubFetch({
 } = {}) {
   mockUseFetch.mockImplementation((url) => {
     const href = String(url || '');
+    if (!href) {
+      return { data: null, loading: false, error: null, refetch: jest.fn() };
+    }
+    if (href.includes('/analytics/acquisition')) {
+      return {
+        data: {
+          success: true,
+          data: {
+            range: { label: 'September 2026' },
+            stages: [{ key: 'landing', label: 'Landing page', unique: 100, events: 140 }],
+          },
+        },
+        loading: false,
+        error: null,
+        refetch: jest.fn(),
+      };
+    }
     if (href.includes('/waitlist')) {
       return {
         data: waitlist,
@@ -162,13 +201,26 @@ function stubFetch({
   return { refetchLaunch, refetchWaitlist, refetchQrs };
 }
 
-function renderLaunch() {
+function LocationProbe() {
+  const { search } = useLocation();
+  return <output data-testid="search">{search}</output>;
+}
+
+function renderGrowth(view) {
+  const query = view ? `?page=6&growth=${view}` : '?page=6';
   return render(
-    <PivotTenantLaunchPage tenantKey="nyc" cityDisplayName="New York City" />,
+    <MemoryRouter initialEntries={[`/platform-admin/pivot/nyc${query}`]}>
+      <PivotTenantGrowthPage tenantKey="nyc" cityDisplayName="New York City" />
+      <LocationProbe />
+    </MemoryRouter>,
   );
 }
 
-describe('PivotTenantLaunchPage', () => {
+function requestedUrls() {
+  return mockUseFetch.mock.calls.map(([url]) => url).filter(Boolean);
+}
+
+describe('PivotTenantGrowthPage', () => {
   const originalConfirm = window.confirm;
   const originalClipboard = navigator.clipboard;
   const originalCreateObjectURL = URL.createObjectURL;
@@ -188,29 +240,83 @@ describe('PivotTenantLaunchPage', () => {
     URL.revokeObjectURL = originalRevokeObjectURL;
   });
 
-  it('renders waitlist mode KPIs, public URL, and waitlist emails', () => {
+  it('opens on Overview without loading landing or waitlist data', () => {
     stubFetch();
-    renderLaunch();
+    renderGrowth();
 
-    expect(screen.getByRole('heading', { name: 'Launch' })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'Waitlist' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Growth' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Overview' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByText('growth-overview:nyc')).toBeInTheDocument();
+    expect(requestedUrls()).toEqual([]);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
+    expect(mockRefetchOverview).toHaveBeenCalled();
+  });
+
+  it('shows Landing: mode, public link, and funnel without loading waitlist contacts', () => {
+    stubFetch();
+    renderGrowth('landing');
+
+    expect(screen.getByRole('tab', { name: 'Landing' })).toHaveAttribute('aria-selected', 'true');
     expect(screen.getByRole('button', { name: 'Switch to launched' })).toBeInTheDocument();
     expect(screen.getByText('20%')).toBeInTheDocument();
     expect(screen.getByText('signups / views')).toBeInTheDocument();
-    expect(screen.getByText('alex@example.com')).toBeInTheDocument();
-    expect(screen.getAllByText('poster-night').length).toBeGreaterThanOrEqual(2);
     expect(screen.getByText('https://justgo.lol/nyc')).toBeInTheDocument();
     expect(screen.getByRole('img', { name: 'Landing views by source' })).toBeInTheDocument();
-    expect(screen.getByRole('img', { name: 'QR-attributed landing views by code' })).toBeInTheDocument();
-    expect(screen.getByText('Legacy QR hops')).toBeInTheDocument();
-    expect(screen.getByText('QR views')).toBeInTheDocument();
-    expect(screen.getAllByText('4 views').length).toBeGreaterThanOrEqual(1);
     expect(screen.getByRole('link', { name: 'Open landing' })).toHaveAttribute(
       'href',
       'https://justgo.lol/nyc',
     );
+    expect(screen.queryByText('alex@example.com')).toBeNull();
+    expect(screen.queryByRole('heading', { name: 'Tracking QRs' })).toBeNull();
+    expect(requestedUrls().some((url) => url.includes('/waitlist'))).toBe(false);
+  });
+
+  it('lists waitlist signups on the Waitlist tab', () => {
+    stubFetch();
+    renderGrowth('waitlist');
+
+    expect(screen.getByRole('heading', { name: 'Waitlist' })).toBeInTheDocument();
+    expect(screen.getByText('alex@example.com')).toBeInTheDocument();
+    expect(screen.getByText('poster-night')).toBeInTheDocument();
+    expect(requestedUrls().some((url) => url.endsWith('/launch'))).toBe(false);
+  });
+
+  it('shows QR attribution beside the tracking QR manager', () => {
+    stubFetch();
+    renderGrowth('qr');
+
+    expect(screen.getByRole('img', { name: 'QR-attributed landing views by code' })).toBeInTheDocument();
+    expect(screen.getByText('Legacy QR hops')).toBeInTheDocument();
+    expect(screen.getByText('QR views')).toBeInTheDocument();
+    expect(screen.getAllByText('4 views').length).toBeGreaterThanOrEqual(1);
     expect(screen.getByRole('heading', { name: 'Tracking QRs' })).toBeInTheDocument();
     expect(screen.getByText('No tracking QRs yet.')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Switch to launched' })).toBeNull();
+  });
+
+  it('shows the monthly acquisition funnel on Acquisition', () => {
+    stubFetch();
+    renderGrowth('acquisition');
+
+    expect(screen.getByLabelText(new RegExp(`Month ${toUtcMonth()}`))).toBeInTheDocument();
+    expect(screen.getByText(/September 2026/)).toBeInTheDocument();
+    expect(mockUseFetch).toHaveBeenCalledWith(
+      '/admin/pivot/tenants/nyc/analytics/acquisition',
+      expect.objectContaining({ params: { month: toUtcMonth() } }),
+    );
+    expect(requestedUrls().some((url) => url.endsWith('/launch'))).toBe(false);
+  });
+
+  it('keeps the selected view in the URL', () => {
+    stubFetch();
+    renderGrowth('landing');
+
+    fireEvent.click(screen.getByRole('tab', { name: 'QR codes' }));
+    expect(screen.getByTestId('search')).toHaveTextContent('growth=qr');
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Overview' }));
+    expect(screen.getByTestId('search')).not.toHaveTextContent('growth=');
   });
 
   it('shows launched conversion hint when the city is launched', () => {
@@ -223,7 +329,7 @@ describe('PivotTenantLaunchPage', () => {
         conversionRate: 0.5,
       } }),
     });
-    renderLaunch();
+    renderGrowth('landing');
 
     expect(screen.getByText('Launched')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Switch to waitlist' })).toBeInTheDocument();
@@ -240,20 +346,30 @@ describe('PivotTenantLaunchPage', () => {
       qrs: null,
       qrsLoading: true,
     });
-    const { unmount } = renderLaunch();
+    let view = renderGrowth('landing');
     expect(screen.getByText('Loading landing mode…')).toBeInTheDocument();
     expect(screen.getByText('Loading launch stats…')).toBeInTheDocument();
+    view.unmount();
+
+    view = renderGrowth('waitlist');
     expect(screen.getByText('Loading waitlist…')).toBeInTheDocument();
+    view.unmount();
+
+    view = renderGrowth('qr');
+    expect(screen.getByText('Loading QR attribution…')).toBeInTheDocument();
     expect(screen.getByText('Loading tracking QRs…')).toBeInTheDocument();
-    unmount();
+    view.unmount();
 
     stubFetch({
       launch: null,
       launchError: 'boom',
       waitlist: waitlistPayload({ items: [], pagination: { page: 1, limit: 50, total: 0 } }),
     });
-    renderLaunch();
+    view = renderGrowth('landing');
     expect(screen.getByRole('alert')).toHaveTextContent('boom');
+    view.unmount();
+
+    renderGrowth('waitlist');
     expect(screen.getByText('No waitlist signups yet.')).toBeInTheDocument();
   });
 
@@ -264,7 +380,7 @@ describe('PivotTenantLaunchPage', () => {
       data: { success: true, data: { landingMode: 'launched' } },
     });
 
-    renderLaunch();
+    renderGrowth('landing');
     fireEvent.click(screen.getByRole('button', { name: 'Switch to launched' }));
 
     expect(window.confirm).toHaveBeenCalled();
@@ -287,7 +403,7 @@ describe('PivotTenantLaunchPage', () => {
     stubFetch();
     window.confirm = jest.fn(() => false);
 
-    renderLaunch();
+    renderGrowth('landing');
     fireEvent.click(screen.getByRole('button', { name: 'Switch to launched' }));
 
     expect(mockAuthenticatedRequest).not.toHaveBeenCalled();
@@ -311,7 +427,7 @@ describe('PivotTenantLaunchPage', () => {
       return el;
     });
 
-    renderLaunch();
+    renderGrowth('waitlist');
     fireEvent.click(screen.getByRole('button', { name: 'Download CSV' }));
 
     await waitFor(() => {
@@ -332,13 +448,13 @@ describe('PivotTenantLaunchPage', () => {
 
   it('removes a waitlist row without logging or toasting the full email', async () => {
     const logSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
-    const { refetchWaitlist, refetchLaunch } = stubFetch();
+    const { refetchWaitlist } = stubFetch();
     window.confirm = jest.fn(() => true);
     mockAuthenticatedRequest.mockResolvedValue({
       data: { success: true, data: { tenantKey: 'nyc', id: '507f1f77bcf86cd799439011', deleted: true } },
     });
 
-    renderLaunch();
+    renderGrowth('waitlist');
     fireEvent.click(screen.getByRole('button', { name: 'Remove' }));
 
     expect(window.confirm).toHaveBeenCalledWith(expect.stringContaining('a***@example.com'));
@@ -347,7 +463,6 @@ describe('PivotTenantLaunchPage', () => {
     await waitFor(() => {
       expect(refetchWaitlist).toHaveBeenCalled();
     });
-    expect(refetchLaunch).toHaveBeenCalled();
     expect(mockAuthenticatedRequest).toHaveBeenCalledWith(
       '/admin/pivot/tenants/nyc/waitlist/507f1f77bcf86cd799439011',
       { method: 'DELETE' },
@@ -361,18 +476,25 @@ describe('PivotTenantLaunchPage', () => {
     stubFetch();
     window.confirm = jest.fn(() => false);
 
-    renderLaunch();
+    renderGrowth('waitlist');
     fireEvent.click(screen.getByRole('button', { name: 'Remove' }));
 
     expect(mockAuthenticatedRequest).not.toHaveBeenCalled();
   });
 
-  it('refreshes launch, waitlist, and tracking QRs together', () => {
-    const { refetchLaunch, refetchWaitlist, refetchQrs } = stubFetch();
-    renderLaunch();
+  it('refreshes the data behind the open view', () => {
+    let fetches = stubFetch();
+    let view = renderGrowth('qr');
     fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
-    expect(refetchLaunch).toHaveBeenCalled();
-    expect(refetchWaitlist).toHaveBeenCalled();
-    expect(refetchQrs).toHaveBeenCalled();
+    expect(fetches.refetchLaunch).toHaveBeenCalled();
+    expect(fetches.refetchQrs).toHaveBeenCalled();
+    expect(fetches.refetchWaitlist).not.toHaveBeenCalled();
+    view.unmount();
+
+    fetches = stubFetch();
+    view = renderGrowth('waitlist');
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
+    expect(fetches.refetchWaitlist).toHaveBeenCalled();
+    expect(fetches.refetchLaunch).not.toHaveBeenCalled();
   });
 });
