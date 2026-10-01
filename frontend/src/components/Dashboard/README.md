@@ -217,6 +217,19 @@ The component manages navigation state in URL parameters:
 - `?page=1&sub=0` - Sub-menu of second main item, first sub-item selected
 - `?page=1&sub=1&sub=0` - Nested sub-menu (third level)
 
+An item with `hideFromNav: true` retains its array index and URL slot but is
+omitted from the sidebar. Use this for a feature-gated page when later
+`?page=` bookmarks must keep their existing meaning. The caller should give
+the hidden item an element that redirects or explains why it is unavailable.
+For a hidden legacy page that belongs to a visible workspace, set
+`navParentIndex` to the visible item's index so the sidebar selection remains
+clear while the old bookmark stays open.
+
+`navOrder` (number) changes where a top-level item appears in the sidebar
+without changing its array index, so `?page=` links keep their meaning. Items
+sort by `navOrder` when set, otherwise by index; use a fraction to slot an item
+between two others (e.g. `navOrder: 0.5` shows it right after index 0).
+
 ## Styling
 
 The component includes built-in styles for:
@@ -272,4 +285,4 @@ const menuItems = [
 
 ## Example
 
-See `SubSidebarExample.jsx` for a complete working example of the sub-sidebar functionality with the new element pattern. 
+See `SubSidebarExample.jsx` for a complete working example of the sub-sidebar functionality with the new element pattern.

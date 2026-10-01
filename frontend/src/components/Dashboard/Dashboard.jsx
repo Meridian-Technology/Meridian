@@ -483,11 +483,19 @@ function Dashboard({
     const renderNavItems = (items, isSubMenu = false) => {
         const extras = !isSubMenu && extraNavItems?.length ? extraNavItems : [];
         const allItems = extras.length ? [...items, ...extras] : items;
+        const selectedIndex = isSubMenu
+            ? currentDisplay
+            : menuItems?.[currentDisplay]?.navParentIndex ?? currentDisplay;
+        // `navOrder` reorders the sidebar only; the array index stays the
+        // item's ?page= value so existing links keep working.
+        const ordered = allItems
+            .map((item, index) => ({ item, index }))
+            .sort((a, b) => (isSubMenu ? 0 : (a.item.navOrder ?? a.index) - (b.item.navOrder ?? b.index)));
         return (
             <ul>
-                {allItems.map((item, index) => (
+                {ordered.map(({ item, index }) => item.hideFromNav ? null : (
                     <li key={item.href || item.label || index} 
-                        className={`${!item.href && currentDisplay === index ? "selected" : ""} ${item.comingSoon ? "coming-soon" : ""}`} 
+                        className={`${!item.href && selectedIndex === index ? "selected" : ""} ${item.comingSoon ? "coming-soon" : ""}`}
                         onClick={() => {
                             // Don't allow clicking on coming soon items
                             if (item.comingSoon) return;
