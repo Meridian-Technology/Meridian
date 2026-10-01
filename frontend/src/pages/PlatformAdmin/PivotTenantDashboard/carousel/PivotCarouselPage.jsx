@@ -503,9 +503,10 @@ export default function PivotCarouselPage({ tenantKey, cityDisplayName }) {
   return (
     <PivotTenantPage
       className={`pivot-carousel-page${focused || draft?.schemaVersion === 2 ? ' is-carousel-focused' : ''}`}
-      title="Carousel"
+      title="Carousels"
       tenantKey={tenantKey}
       cityDisplayName={cityDisplayName}
+      subtitle="Build, curate, and export social slide decks for this city."
       actions={draft && manifest && draft.schemaVersion !== 2 ? null : (
         <>
           {draft || requestedCurationId ? (

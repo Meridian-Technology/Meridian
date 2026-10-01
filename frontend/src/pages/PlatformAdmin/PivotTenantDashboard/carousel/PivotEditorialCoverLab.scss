@@ -7,6 +7,7 @@
 .jg-cover-lab-rounds button { background: transparent; color: #c4bfb5; border: 1px solid transparent; padding: 9px 13px; cursor: pointer; border-radius: 0; font: inherit; }
 .jg-cover-lab-rounds button[aria-pressed='true'] { color: #fff8e8; border-color: #777067; }
 .jg-cover-lab-rounds button:focus-visible { outline: 2px solid #4ab5ff; }
+.jg-cover-lab-rounds__context { align-items: center; margin-left: auto; white-space: nowrap; }
 .jg-cover-lab--editorial {
   .jg-cover-lab__intro h1 { font-size: clamp(46px, 5.1vw, 73px); }
   .jg-cover-lab__intro h1 em { font: italic 1.18em / .94 'Instrument Serif', Georgia, serif; letter-spacing: -.025em; color: #ae382c; }
@@ -190,7 +191,6 @@
 }
 @media (max-width: 640px) {
   .jg-cover-lab-rounds { padding: 8px 12px; }
-  .jg-cover-lab-rounds > span { display: none; }
   .jg-cover-lab--editorial .jg-cover-lab__intro h1 { font-size: 48px; }
   .jg-cover-lab--editorial .jg-cover-lab__gallery:not(.jg-cover-lab__gallery--grid) { grid-template-columns: 1fr; max-width: 440px; margin: auto; }
   .jge-column-labels { display: none; }
