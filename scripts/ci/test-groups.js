@@ -14,7 +14,7 @@ const groups = {
       /\/unit\/(?:clusterPivotHostNames|eventPivotIndexes|pivotBatch|pivotCatalog|pivotCuration|pivotDiscovery|pivotEnrichment|pivotEventSimilarity|pivotExtraction|pivotFieldParsing|pivotHost|pivotIngest|pivotLocation|pivotMovie|pivotOffloaded|pivotOrganizer|pivotRichData|pivotScrape|pivotSite|pivotSource|pivotStructured|pivotTag)/,
     ],
     'compute-admin': [
-      /\/unit\/(?:pivotAdmin|pivotCompute|pivotFleet|pivotLab|pivotTenantInsights|pivotTenantJourney|pivotTenantOps)/,
+      /\/unit\/(?:pivotAdmin|pivotCompute|pivotFleet|pivotGrowth|pivotLab|pivotTenantInsights|pivotTenantJourney|pivotTenantOps|pivotWeeklyReport)/,
       /\/route-outcomes\/(?:pivotAdmin|pivotComputeWorker)/,
     ],
     'consumer-experience': [
@@ -22,7 +22,7 @@ const groups = {
       /\/route-outcomes\/pivotRoutes/,
     ],
     'crews-weekly-drop': [
-      /\/unit\/(?:pivotCrew|pivotCrossCrew|pivotDropSchedule|pivotRitual|pivotWeek)/,
+      /\/unit\/(?:pivotCrew|pivotCrossCrew|pivotDropSchedule|pivotRitual|pivotWeek(?!lyReport))/,
       /\/route-outcomes\/pivotCrewRoutes/,
     ],
     'jobs-notifications': [
@@ -35,7 +35,7 @@ const groups = {
     ],
     'platform-core': [
       /\/integration\//,
-      /\/unit\/(?:adminTenant|appVersion|atlasPolicy|budgetService|cookieUtils|corsOrigins|googleLocation|mobileAssociation|orgPermission|pivotConfig|pivotIsoWeek|pivotLogger|pivotMobileConfig|platformAdmin|requireMinAppVersion|requirePivotCreator|reservationMetrics|resourceReservation|richLocationMigration|rootOperator|semesterHelpers|tenantKeyRename|tenantLandingMode|timeBlockHelper|workflowUtilities|wwwPathAllowlist)/,
+      /\/unit\/(?:adminTenant|appVersion|atlasPolicy|budgetService|cookieUtils|corsOrigins|googleLocation|mobileAssociation|orgPermission|pivotConfig|pivotIsoWeek|pivotLaunchDate|pivotLogger|pivotMobileConfig|platformAdmin|requireMinAppVersion|requirePivotCreator|reservationMetrics|resourceReservation|richLocationMigration|rootOperator|semesterHelpers|tenantKeyRename|tenantLandingMode|timeBlockHelper|workflowUtilities|wwwPathAllowlist)/,
       /\/route-outcomes\/(?:adminPlatformAdmins|analyticsDashboardRoutes|authRoutes|orgBudgetRoutes|orgRoleRoutes|userRoutes)/,
     ],
   },
