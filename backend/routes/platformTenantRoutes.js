@@ -28,6 +28,7 @@ const {
 const {
   validatePivotDeckConfigPatch,
 } = require('../utilities/pivotDeckConfig');
+const { normalizePivotLaunchDate } = require('../utilities/pivotLaunchDate');
 const {
   readEnvMobileOverrides,
   validatePivotMobileConfigPatch,
@@ -413,6 +414,13 @@ router.put('/admin/platform/tenants/:tenantKey', verifyToken, requirePlatformAdm
         normalizeMeridianNotificationOverrides(req.body.meridianNotificationOverrides) || [];
     }
     Object.assign(updated, dropPatch);
+
+    // Validated above. null or '' clears it (stored as null so a default-tenant
+    // override clears too) and metrics count all history.
+    const launchDate = normalizePivotLaunchDate(req.body.pivotLaunchDate);
+    if (launchDate.value !== undefined) {
+      updated.pivotLaunchDate = launchDate.value;
+    }
 
     if (req.body.pivotCrewConfig === null) {
       delete updated.pivotCrewConfig;

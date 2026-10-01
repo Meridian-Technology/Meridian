@@ -16,6 +16,7 @@ const {
 const { PIVOT_DROP_PILOT_DEFAULTS } = require('../utilities/pivotDropSchedule');
 const { validatePivotCrewConfigPatch } = require('../utilities/pivotCrewConfig');
 const { validatePivotDeckConfigPatch } = require('../utilities/pivotDeckConfig');
+const { normalizePivotLaunchDate } = require('../utilities/pivotLaunchDate');
 const { validatePivotMobileConfigPatch } = require('../utilities/pivotMobileConfig');
 const { validateCreatorPublishConfigPatch } = require('../utilities/pivotCreatorPublishConfig');
 const { validatePivotDiscoveryConfigPatch } = require('../utilities/pivotDiscoveryConfig');
@@ -113,6 +114,7 @@ function toStoredTenantRow(tenant) {
     pivotDropPushTitle: tenant.pivotDropPushTitle,
     pivotDropPushBody: tenant.pivotDropPushBody,
     pivotDropOverrides: tenant.pivotDropOverrides,
+    pivotLaunchDate: tenant.pivotLaunchDate,
     meridianNotificationOverrides: tenant.meridianNotificationOverrides,
     creatorPublish: tenant.creatorPublish,
     pivotDiscovery: tenant.pivotDiscovery,
@@ -389,6 +391,11 @@ function validateTenantMetadataUpdate(body = {}) {
 
   if (body.pivotDropTimezone !== undefined && !String(body.pivotDropTimezone).trim()) {
     return { error: 'pivotDropTimezone cannot be empty.' };
+  }
+
+  const launchDate = normalizePivotLaunchDate(body.pivotLaunchDate);
+  if (launchDate.error) {
+    return { error: launchDate.error, code: 'INVALID_LAUNCH_DATE' };
   }
 
   if (body.pivotCrewConfig !== undefined) {
