@@ -1,7 +1,7 @@
 import React from 'react';
 import { render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
-import PivotFleetLaunchPage from './PivotFleetLaunchPage';
+import PivotFleetLaunchPanel from './PivotFleetLaunchPanel';
 
 const mockUseFetch = jest.fn();
 
@@ -9,16 +9,6 @@ jest.mock('../../../hooks/useFetch', () => ({
   useFetch: (...args) => mockUseFetch(...args),
 }));
 
-jest.mock('./PivotTenantPage', () => ({
-  __esModule: true,
-  default: ({ title, cityDisplayName, children }) => (
-    <div>
-      <h1>{title}</h1>
-      <p>{cityDisplayName}</p>
-      {children}
-    </div>
-  ),
-}));
 
 function fleetPayload(overrides = {}) {
   return {
@@ -60,20 +50,20 @@ function fleetPayload(overrides = {}) {
   };
 }
 
-function renderFleetLaunch() {
+function renderFleetLaunch(refetchRef) {
   return render(
     <MemoryRouter>
-      <PivotFleetLaunchPage />
+      <PivotFleetLaunchPanel refetchRef={refetchRef} />
     </MemoryRouter>,
   );
 }
 
-describe('PivotFleetLaunchPage', () => {
+describe('PivotFleetLaunchPanel', () => {
   afterEach(() => {
     jest.clearAllMocks();
   });
 
-  it('renders totals and links each city to Launch ?page=6', () => {
+  it('renders totals and links each city to Growth → Landing', () => {
     mockUseFetch.mockReturnValue({
       data: fleetPayload(),
       loading: false,
@@ -84,18 +74,26 @@ describe('PivotFleetLaunchPage', () => {
     renderFleetLaunch();
 
     expect(mockUseFetch).toHaveBeenCalledWith('/admin/pivot/launch', expect.any(Object));
-    expect(screen.getByRole('heading', { name: 'Launch' })).toBeInTheDocument();
-    expect(screen.getByText('All cities')).toBeInTheDocument();
     expect(screen.getAllByText('40%').length).toBeGreaterThanOrEqual(1);
     expect(screen.getByRole('link', { name: 'New York City' })).toHaveAttribute(
       'href',
-      '/platform-admin/pivot/nyc?page=6',
+      '/platform-admin/pivot/nyc?page=6&growth=landing',
     );
     expect(screen.getByRole('link', { name: 'San Francisco' })).toHaveAttribute(
       'href',
-      '/platform-admin/pivot/sf?page=6',
+      '/platform-admin/pivot/sf?page=6&growth=landing',
     );
     expect(screen.queryByText(/\+1/)).toBeNull();
+  });
+
+  it('hands its refetch to the page header', () => {
+    const refetch = jest.fn();
+    mockUseFetch.mockReturnValue({ data: fleetPayload(), loading: false, error: null, refetch });
+    const refetchRef = { current: null };
+
+    renderFleetLaunch(refetchRef);
+
+    expect(refetchRef.current).toBe(refetch);
   });
 
   it('does not crash when the fleet is empty', () => {

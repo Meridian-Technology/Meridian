@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Icon } from '@iconify-icon/react';
 import { isPivotTenant } from '../TenantManagement/tenantPivotUtils';
+import { PIVOT_TENANT_PAGES } from './pivotTenantPageRoutes';
 import {
   PIVOT_FLEET_NOTIFICATIONS_PAGE,
   PIVOT_TENANT_NOTIFICATIONS_PAGE,
@@ -23,17 +24,25 @@ function cityLabel(tenant) {
 
 /** Menu indexes that share a label across fleet vs city shells. */
 export const PIVOT_OPS_PAGES = Object.freeze({
-  overview: 0,
+  overview: PIVOT_TENANT_PAGES.overview,
   fleetVoice: 1,
-  fleetLaunch: 2,
+  fleetGrowth: 2,
   fleetCompute: 3,
+  // Legacy fleet Analytics index; it redirects to Growth → Acquisition.
   fleetAnalytics: 4,
   fleetNotifications: PIVOT_FLEET_NOTIFICATIONS_PAGE,
-  cityVoice: 5,
-  cityLaunch: 6,
+  cityVoice: PIVOT_TENANT_PAGES.voice,
+  cityGrowth: PIVOT_TENANT_PAGES.growth,
   cityNotifications: PIVOT_TENANT_NOTIFICATIONS_PAGE,
-  cityCompute: 10,
-  cityAnalytics: 11,
+  cityCompute: PIVOT_TENANT_PAGES.computeJobs,
+  // Legacy city Analytics index; it redirects to Growth → Acquisition.
+  cityAnalytics: PIVOT_TENANT_PAGES.analytics,
+});
+
+/** Growth views (`?growth=`) each shell has; the rest fall back to Overview. */
+const GROWTH_VIEWS_BY_SHELL = Object.freeze({
+  fleet: new Set(['landing', 'acquisition']),
+  city: new Set(['landing', 'waitlist', 'qr', 'acquisition']),
 });
 
 function parsePageParam(searchParams) {
@@ -45,41 +54,41 @@ function parsePageParam(searchParams) {
 
 function pageLabelForShell(shell, page) {
   if (page === PIVOT_OPS_PAGES.overview) return 'overview';
-  if (shell === 'fleet' && page === PIVOT_OPS_PAGES.fleetVoice) return 'voice';
-  if (shell === 'city' && page === PIVOT_OPS_PAGES.cityVoice) return 'voice';
-  if (shell === 'fleet' && page === PIVOT_OPS_PAGES.fleetLaunch) return 'launch';
-  if (shell === 'city' && page === PIVOT_OPS_PAGES.cityLaunch) return 'launch';
-  if (shell === 'fleet' && page === PIVOT_OPS_PAGES.fleetCompute) return 'compute';
-  if (shell === 'city' && page === PIVOT_OPS_PAGES.cityCompute) return 'compute';
-  if (shell === 'fleet' && page === PIVOT_OPS_PAGES.fleetAnalytics) return 'analytics';
-  if (shell === 'city' && page === PIVOT_OPS_PAGES.cityAnalytics) return 'analytics';
-  if (shell === 'fleet' && page === PIVOT_OPS_PAGES.fleetNotifications) return 'notifications';
-  if (shell === 'city' && page === PIVOT_OPS_PAGES.cityNotifications) return 'notifications';
-  return null;
+  const pages = shell === 'fleet'
+    ? {
+        voice: PIVOT_OPS_PAGES.fleetVoice,
+        growth: PIVOT_OPS_PAGES.fleetGrowth,
+        compute: PIVOT_OPS_PAGES.fleetCompute,
+        analytics: PIVOT_OPS_PAGES.fleetAnalytics,
+        notifications: PIVOT_OPS_PAGES.fleetNotifications,
+      }
+    : {
+        voice: PIVOT_OPS_PAGES.cityVoice,
+        growth: PIVOT_OPS_PAGES.cityGrowth,
+        compute: PIVOT_OPS_PAGES.cityCompute,
+        analytics: PIVOT_OPS_PAGES.cityAnalytics,
+        notifications: PIVOT_OPS_PAGES.cityNotifications,
+      };
+  return Object.keys(pages).find((label) => pages[label] === page) || null;
 }
 
 function pageForLabel(shell, label) {
-  if (label === 'voice') {
-    return shell === 'fleet' ? PIVOT_OPS_PAGES.fleetVoice : PIVOT_OPS_PAGES.cityVoice;
-  }
-  if (label === 'launch') {
-    return shell === 'fleet' ? PIVOT_OPS_PAGES.fleetLaunch : PIVOT_OPS_PAGES.cityLaunch;
-  }
-  if (label === 'compute') {
-    return shell === 'fleet' ? PIVOT_OPS_PAGES.fleetCompute : PIVOT_OPS_PAGES.cityCompute;
-  }
-  if (label === 'analytics') {
-    return shell === 'fleet' ? PIVOT_OPS_PAGES.fleetAnalytics : PIVOT_OPS_PAGES.cityAnalytics;
-  }
+  const fleet = shell === 'fleet';
+  if (label === 'voice') return fleet ? PIVOT_OPS_PAGES.fleetVoice : PIVOT_OPS_PAGES.cityVoice;
+  if (label === 'growth') return fleet ? PIVOT_OPS_PAGES.fleetGrowth : PIVOT_OPS_PAGES.cityGrowth;
+  if (label === 'compute') return fleet ? PIVOT_OPS_PAGES.fleetCompute : PIVOT_OPS_PAGES.cityCompute;
   if (label === 'notifications') {
-    return shell === 'fleet' ? PIVOT_OPS_PAGES.fleetNotifications : PIVOT_OPS_PAGES.cityNotifications;
+    return fleet ? PIVOT_OPS_PAGES.fleetNotifications : PIVOT_OPS_PAGES.cityNotifications;
   }
   return PIVOT_OPS_PAGES.overview;
 }
 
 /**
  * Remap `?page=` by menu label when switching fleet ↔ city.
- * Shared labels (Voice, Launch, Compute jobs, Analytics, Notifications) keep their tab.
+ * Shared labels (Voice, Growth, Compute jobs, Notifications) keep their tab, and
+ * Growth keeps its `growth` view when the other shell has it (Waitlist and QR
+ * codes are city-only, so they land on fleet Growth → Overview). Legacy
+ * Analytics indexes land on Growth → Acquisition.
  * City-only pages (Curation, Catalog, …) have no fleet equivalent and drop to Overview.
  */
 export function remapPivotOpsSearch(searchParams, { from, to }) {
@@ -89,12 +98,28 @@ export function remapPivotOpsSearch(searchParams, { from, to }) {
     return query ? `?${query}` : '';
   }
 
-  const label = pageLabelForShell(from, parsePageParam(params));
+  const fromPage = parsePageParam(params);
+  let label = from === 'city'
+    && fromPage === PIVOT_TENANT_PAGES.carousel
+    && params.get('creative') === 'copy'
+    ? 'voice'
+    : pageLabelForShell(from, fromPage);
+  let growthView = params.get('growth');
+  if (label === 'analytics') {
+    label = 'growth';
+    growthView = 'acquisition';
+  }
+
   const nextPage = pageForLabel(to, label);
   if (!nextPage) {
     params.delete('page');
   } else {
     params.set('page', String(nextPage));
+  }
+  params.delete('creative');
+  params.delete('growth');
+  if (label === 'growth' && GROWTH_VIEWS_BY_SHELL[to].has(growthView)) {
+    params.set('growth', growthView);
   }
   const query = params.toString();
   return query ? `?${query}` : '';
@@ -104,8 +129,8 @@ export function remapPivotOpsSearch(searchParams, { from, to }) {
  * Pivot-only city switcher for Just Go ops dashboards.
  * Navigates between /platform-admin/pivot (all cities) and
  * /platform-admin/pivot/:tenantKey. City → city keeps ?page=;
- * fleet ↔ city remaps shared tabs by label (Voice 1↔5, Launch 2↔6, Compute 3↔10,
- * Analytics 4↔11, Notifications 5↔9).
+ * fleet ↔ city remaps shared tabs by label (Voice 1↔5, Growth 2↔6, Compute 3↔10,
+ * Notifications 5↔9); legacy Analytics 4 / 11 land on Growth → Acquisition.
  */
 function PivotTenantDropdown({
   tenants = [],

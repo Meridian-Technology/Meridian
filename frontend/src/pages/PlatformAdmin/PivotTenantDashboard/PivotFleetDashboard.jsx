@@ -1,14 +1,13 @@
 import React, { useMemo } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Navigate, useNavigate, useSearchParams } from 'react-router-dom';
 import Dashboard from '../../../components/Dashboard/Dashboard';
 import { useFetch } from '../../../hooks/useFetch';
 import useAdminDashboardTheme from '../../../hooks/useAdminDashboardTheme';
 import { isPivotTenant } from '../TenantManagement/tenantPivotUtils';
 import PivotFleetOverviewPage from './PivotFleetOverviewPage';
 import PivotVoicePage from './PivotVoicePage';
-import PivotFleetLaunchPage from './PivotFleetLaunchPage';
+import PivotFleetGrowthPage from './PivotFleetGrowthPage';
 import PivotComputeJobs, { PIVOT_FLEET_COMPUTE_JOBS_PAGE } from './PivotComputeJobs';
-import PivotTenantAnalyticsPage from './PivotTenantAnalyticsPage';
 import PivotNotificationsPage from '../PivotNotifications/PivotNotificationsPage';
 import PivotTenantDropdown from './PivotTenantDropdown';
 import PivotJustGoLogo from './PivotJustGoLogo';
@@ -18,11 +17,22 @@ import '../PlatformAdmin.scss';
 import './PivotTenantDashboard.scss';
 
 const NO_FETCH_CACHE = { enabled: false };
+const FLEET_GROWTH_PAGE = 2;
+
+/* Analytics (4) merged into Growth (2) as its Acquisition view. */
+function LegacyFleetAnalyticsRedirect() {
+  const [searchParams] = useSearchParams();
+  const next = new URLSearchParams(searchParams);
+  next.set('page', String(FLEET_GROWTH_PAGE));
+  next.set('growth', 'acquisition');
+  return <Navigate to={`?${next.toString()}`} replace />;
+}
 
 /**
  * Fleet Just Go ops shell.
  * Route: /platform-admin/pivot?page=0|1|2|3|4|5
- * Voice is page=1; Launch is page=2; Compute jobs is page=3; Analytics is page=4;
+ * Voice is page=1; Growth is page=2 (overview, landing, acquisition); Compute
+ * jobs is page=3; page=4 (former Analytics) redirects to Growth → Acquisition;
  * Notifications is page=5 (appended).
  */
 function PivotFleetDashboard() {
@@ -59,9 +69,11 @@ function PivotFleetDashboard() {
         element: <PivotVoicePage scope="platform" />,
       },
       {
-        label: 'Launch',
+        label: 'Growth',
+        // Second in the sidebar; its ?page= index stays 2.
+        navOrder: 0.5,
         icon: 'mdi:rocket-launch-outline',
-        element: <PivotFleetLaunchPage />,
+        element: <PivotFleetGrowthPage />,
       },
       {
         label: 'Compute jobs',
@@ -77,8 +89,10 @@ function PivotFleetDashboard() {
       },
       {
         label: 'Analytics',
+        hideFromNav: true,
+        navParentIndex: FLEET_GROWTH_PAGE,
         icon: 'mdi:chart-funnel',
-        element: <PivotTenantAnalyticsPage scope="fleet" cityDisplayName="All cities" />,
+        element: <LegacyFleetAnalyticsRedirect />,
       },
       {
         label: 'Notifications',

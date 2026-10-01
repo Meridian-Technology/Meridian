@@ -1,0 +1,31 @@
+.pivot-tenant-view-tabs {
+  display: inline-grid;
+  grid-auto-flow: column;
+  gap: 3px;
+  align-self: flex-start;
+  margin-bottom: 16px;
+  padding: 3px;
+  border-radius: 8px;
+  background: var(--pivot-ops-canvas, #f5f4f2);
+
+  button {
+    padding: 7px 14px;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--pivot-ops-ink-muted, rgba(26, 23, 20, 0.72));
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+
+    &:hover {
+      color: var(--pivot-ops-ink, #1a1714);
+    }
+  }
+
+  button.is-active {
+    background: var(--pivot-ops-surface, #fff);
+    color: var(--pivot-ops-ink, #1a1714);
+    box-shadow: 0 1px 3px rgba(26, 23, 20, 0.12);
+  }
+}

@@ -231,3 +231,22 @@
   object-fit: cover;
   object-position: left top;
 }
+
+/* Editors need a stable reading surface behind their titles and controls. */
+.pivot-tenant-page.pivot-voice-page,
+.pivot-tenant-page.pivot-carousel-page {
+  > .pivot-dash-burst {
+    display: none;
+  }
+
+  > .pivot-tenant-page__header {
+    background: var(--pivot-ops-surface, #fff);
+    border-bottom: 1px solid var(--pivot-ops-border-strong, rgba(26, 23, 20, 0.22));
+  }
+
+  .pivot-tenant-page__subtitle {
+    max-width: 68ch;
+    color: var(--pivot-ops-ink, #1a1714);
+    opacity: 1;
+  }
+}
