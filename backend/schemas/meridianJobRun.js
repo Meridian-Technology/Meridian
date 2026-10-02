@@ -9,6 +9,7 @@ const MERIDIAN_JOB_RUN_STATUSES = Object.freeze([
   'succeeded',
   'failed',
   'preview',
+  'cancelled',
 ]);
 
 const MERIDIAN_JOB_RUN_INDEX_NAMES = Object.freeze([

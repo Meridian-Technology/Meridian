@@ -57,6 +57,27 @@ describe('schedule copy', () => {
     expect(lastRunForSchedule({ ...fleet, tenantKey: 'sf' }, runs)?.status).toBe('failed');
   });
 
+  it('tells scheduled pushes apart by schedule', () => {
+    const lunch = {
+      definitionKey: 'friday_lunch',
+      handlerKey: 'scheduled_push',
+      tenantKey: null,
+      copyBodyFallback: 'Plans for tonight?',
+    };
+    const tickets = { ...lunch, definitionKey: 'friday_tickets', copyBodyFallback: null };
+    expect(scheduleName(lunch)).toBe('friday_lunch');
+    expect(schedulePurpose(lunch)).toBe('Sends “Plans for tonight?”');
+    expect(schedulePurpose(tickets)).toBe('Sends a push with its own message.');
+
+    const runs = [
+      { type: 'scheduled_push', tenantKey: 'nyc', status: 'pending', payload: { oneTime: true, definitionKey: null } },
+      { type: 'scheduled_push', tenantKey: 'nyc', status: 'failed', payload: { definitionKey: 'friday_tickets' } },
+      { type: 'scheduled_push', tenantKey: 'nyc', status: 'succeeded', payload: { definitionKey: 'friday_lunch' } },
+    ];
+    expect(lastRunForSchedule(lunch, runs)?.status).toBe('succeeded');
+    expect(lastRunForSchedule(tickets, runs)?.status).toBe('failed');
+  });
+
   it('puts a failed schedule ahead of a paused one', () => {
     const paused = { ...fleet, definitionKey: 'event_discovery', handlerKey: 'event_discovery', enabled: false };
     const failing = { ...fleet, definitionKey: 'solo_swipe_reminder', handlerKey: 'solo_swipe_reminder' };

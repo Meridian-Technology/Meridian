@@ -367,7 +367,7 @@ describe('PivotFleetNotificationsPage', () => {
           data: {
             handlerKey: 'ritual_crew_scan',
             tenantKey: 'nyc',
-            payload: { dryRun: false },
+            payload: { dryRun: false, definitionKey: 'ritual_crew_scan' },
           },
         }),
       );

@@ -10,8 +10,18 @@ jest.mock('../../services/pivotGrowthOverviewService', () => ({
 jest.mock('../../services/pivotLandingService', () => ({
   getFleetLaunchStats: jest.fn(),
 }));
+jest.mock('../../services/pivotWeeklyBatchQualityService', () => ({
+  getWeeklyBatchQuality: jest.fn(),
+}));
+jest.mock('../../services/tenantConfigService', () => ({
+  getMergedTenants: jest.fn(),
+}));
+jest.mock('../../services/pivotReferralCodeService', () => ({
+  isPivotTenant: (tenant) => tenant.tenantType === 'pivot',
+}));
 
 const getGlobalModels = require('../../services/getGlobalModelService');
+const { getMergedTenants } = require('../../services/tenantConfigService');
 const { getResend } = require('../../services/resendClient');
 const { resolveAdminEmails } = require('../../services/pivotComputeAdminNotifyService');
 const {
@@ -19,6 +29,7 @@ const {
   getTenantGrowthOverview,
 } = require('../../services/pivotGrowthOverviewService');
 const { getFleetLaunchStats } = require('../../services/pivotLandingService');
+const { getWeeklyBatchQuality } = require('../../services/pivotWeeklyBatchQualityService');
 const {
   buildWeeklyReport,
   buildWeeklyReportHtml,
@@ -41,25 +52,43 @@ function headline(overrides = {}) {
 }
 
 function stubData() {
+  getMergedTenants.mockResolvedValue([
+    { tenantKey: 'nyc', location: 'New York City', tenantType: 'pivot', landingMode: 'launched', pivotLaunchDate: '2026-09-10' },
+    { tenantKey: 'sf', location: 'San <Francisco>', tenantType: 'pivot', landingMode: 'launched' },
+    { tenantKey: 'chi', location: 'Chicago', tenantType: 'pivot', landingMode: 'launched' },
+    // Switched to launched, but the launch date is still ahead.
+    { tenantKey: 'la', location: 'Los Angeles', tenantType: 'pivot', landingMode: 'launched', pivotLaunchDate: '2026-11-01' },
+    { tenantKey: 'den', location: 'Denver', tenantType: 'pivot', landingMode: 'waitlist' },
+    { tenantKey: 'rpi', name: 'RPI', tenantType: 'campus', landingMode: 'waitlist' },
+  ]);
   getFleetGrowthOverview.mockResolvedValue({
     data: {
       lastCompleteWeek: '2026-W39',
       totalMembers: 34,
       preLaunchMembers: 2,
       headline: headline(),
-      series: [{ week: '2026-W39', startDate: '2026-09-24' }],
+      series: [
+        { week: '2026-W37', startDate: '2026-09-10', weeklyActive: 0, complete: true },
+        { week: '2026-W38', startDate: '2026-09-17', weeklyActive: 10, planners: 4, plansSaved: 9, ticketOpeners: 2, complete: true },
+        { week: '2026-W39', startDate: '2026-09-24', weeklyActive: 12, planners: 6, plansSaved: 14, ticketOpeners: 2, complete: true },
+        { week: '2026-W40', startDate: '2026-10-01', weeklyActive: 3, complete: false },
+      ],
       growthAccounting: [
         { week: '2026-W39', active: 12, new: 3, retained: 8, resurrected: 1, churned: 6 },
       ],
       retention: {
         opened: {
-          average: [0, 1, 2, 3, 4, 5].map((offset) => ({ offset, rate: 1 - offset * 0.1 })),
+          average: [0, 1, 2, 3, 4, 5].map((offset) => ({ offset, rate: 1 - offset * 0.1, users: 10 })),
+          cohorts: [
+            { week: '2026-W37', size: 5, cells: [{ active: 4, complete: true }, { active: 2, complete: true }] },
+            { week: '2026-W38', size: 6, cells: [{ active: 5, complete: true }, { active: 3, complete: true }] },
+            { week: '2026-W39', size: 4, cells: [{ active: 3, complete: true }, { active: 0, complete: false }] },
+          ],
         },
       },
       cities: [
         { tenantKey: 'nyc', cityDisplayName: 'New York City', launchDate: '2026-09-10' },
         { tenantKey: 'sf', cityDisplayName: 'San <Francisco>', launchDate: null },
-        { tenantKey: 'la', cityDisplayName: 'Los Angeles', launchDate: '2026-11-01' },
       ],
       failedCities: [{ tenantKey: 'chi', cityDisplayName: 'Chicago' }],
     },
@@ -77,6 +106,24 @@ function stubData() {
       cities: [{ tenantKey: 'nyc', views: 250, waitlistSignups: 18, storeClicks: 12 }],
     },
   });
+  getWeeklyBatchQuality.mockResolvedValue({
+    minReach: 5,
+    cityCount: 2,
+    events: 20,
+    dealt: 18,
+    landed: 12,
+    passedByAll: 1,
+    missingDetails: 0,
+    swipes: 100,
+    right: 30,
+    going: 4,
+    swipesPrevious: 80,
+    rightPrevious: 20,
+    rating: null,
+    top: [{ eventId: '64f1234567890abcdef12345', name: 'Rooftop Cinema', city: 'New York City', right: 9, reached: 12 }],
+    misses: [],
+    failedCities: [],
+  });
 }
 
 describe('pivotWeeklyReportService', () => {
@@ -88,25 +135,34 @@ describe('pivotWeeklyReportService', () => {
   it('reports the last complete drop week across cities', async () => {
     const report = await buildWeeklyReport({ globalDb: {} }, { now: NOW });
 
-    expect(getFleetGrowthOverview).toHaveBeenCalledWith(expect.any(Object), { now: NOW });
+    // Only launched cities feed the numbers; campus tenants never appear.
+    const launched = ['nyc', 'sf', 'chi'];
+    expect(getFleetGrowthOverview).toHaveBeenCalledWith(expect.any(Object), { now: NOW, tenantKeys: launched });
     expect(getFleetLaunchStats).toHaveBeenCalledWith(
       expect.any(Object),
-      expect.objectContaining({ from: '2026-09-24', to: '2026-09-30' }),
+      expect.objectContaining({ from: '2026-09-24', to: '2026-09-30', tenantKeys: launched }),
     );
-    expect(report.subject).toBe('Just Go weekly report · Sep 24 – Sep 30');
-    expect(report.tiles.map((tile) => [tile.label, tile.value, tile.delta])).toEqual([
-      ['Weekly actives', '12', '▲ 20%'],
-      ['New members', '4', '▼ 20%'],
-      ['Activation', '80%', '▲ 5 pts'],
-      ['Week-1 retention', '40%', '▼ 10 pts'],
-      ['Quick ratio', '1.50', '▲ 0.50'],
-      ['Plan rate', '50%', 'flat'],
-    ]);
+    expect(report.notLaunchedCities).toEqual(['Los Angeles', 'Denver']);
+    expect(report.subject).toBe('just go weekly · sep 24 – sep 30 · 12 actives');
+    expect(report.preheader).toBe('12 weekly actives, up 2. 3 new, 1 back, 6 lost. 30% of swipes went right.');
+    // The batch is read for the same ISO week, in every launched city that has started.
+    expect(getWeeklyBatchQuality).toHaveBeenCalledWith(
+      [{ tenantKey: 'nyc', name: 'New York City' }, { tenantKey: 'sf', name: 'San <Francisco>' }],
+      '2026-W39',
+    );
+    expect(report.batch).toMatchObject({ events: 20, right: 30 });
+    expect(report.batch.top[0].url).toMatch(/\/events\/64f1234567890abcdef12345$/);
+    // Pre-launch zero weeks and the in-progress week are left off the trend.
+    expect(report.trend.map((point) => point.value)).toEqual([10, 12]);
+    // Counts behind the cohort rates; week 1 skips the cohort still in progress.
+    expect(report.activation).toMatchObject({ active: 12, users: 15, cohorts: 3 });
+    expect(report.week1).toMatchObject({ active: 5, users: 11, cohorts: 2 });
+    expect(report.usage).toMatchObject({ planners: 6, plannersPrevious: 4, plansSaved: 14, ticketOpeners: 2 });
     expect(report.retentionAverage).toHaveLength(5);
+    // Live cities first by actives; failed and not-yet-launched cities last.
     expect(report.cities).toEqual([
-      expect.objectContaining({ tenantKey: 'nyc', weeklyActive: 12, landingViews: 250, waitlistSignups: 18 }),
+      expect.objectContaining({ tenantKey: 'nyc', weeklyActive: 12, weeklyActivePrevious: 10 }),
       expect.objectContaining({ tenantKey: 'sf', error: 'down' }),
-      expect.objectContaining({ tenantKey: 'la', notStarted: true }),
     ]);
   });
 
@@ -115,9 +171,11 @@ describe('pivotWeeklyReportService', () => {
 
     expect(html).toContain('San &lt;Francisco&gt;');
     expect(html).not.toContain('San <Francisco>');
-    expect(html).toContain('Missing from these numbers: Chicago');
-    expect(html).toContain('2 people who joined before their city');
-    expect(html).toContain('Counting starts at launch');
+    expect(html).toContain('Not in these numbers: Chicago');
+    expect(html).toContain('2 people who joined before their city launched');
+    expect(html).toContain('Launched cities only. Not counted yet: Los Angeles, Denver.');
+    expect(html).toContain('12 of 15');
+    expect(html).toContain('small sample');
     expect(html).toContain('/platform-admin/pivot?page=2');
   });
 
@@ -131,9 +189,9 @@ describe('pivotWeeklyReportService', () => {
     expect(send).toHaveBeenCalledWith(expect.objectContaining({
       from: 'Just Go <support@meridian.study>',
       to: ['a@meridian.study', 'b@meridian.study'],
-      subject: 'Just Go weekly report · Sep 24 – Sep 30',
-      html: expect.stringContaining('Drop week Sep 24 – Sep 30'),
-      text: expect.stringContaining('Weekly actives: 12 (▲ 20%)'),
+      subject: 'just go weekly · sep 24 – sep 30 · 12 actives',
+      html: expect.stringContaining('sep 24 – sep 30'),
+      text: expect.stringContaining('12 weekly actives, up 2.'),
     }));
     expect(result.data).toMatchObject({ sent: true, emailId: 'email_1', recipients: ['a@meridian.study', 'b@meridian.study'] });
   });

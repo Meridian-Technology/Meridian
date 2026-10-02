@@ -44,6 +44,8 @@ venv/
 
 backend/scripts/*
 !backend/scripts/backfillJustGoSemanticText.js
+!backend/scripts/buildJustGoCityDirectory.py
+!backend/scripts/sendWeeklyReport.js
 .env*
 .flaskenv*
 !.env.project

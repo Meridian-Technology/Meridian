@@ -60,6 +60,7 @@ const {
   applyCurationDraftToIssue,
 } = require('../services/pivotCarouselCurationDraftService');
 const { requirePlatformAdmin } = require('../middlewares/requirePlatformAdmin');
+const {cityInterestDemand} = require('../services/justGoCityInterestService');
 const {
   rebuildWeeklySnapshot,
   getWeeklySnapshot,
@@ -259,6 +260,16 @@ function parseCopyResetKeys(req) {
     tokens: asCopyKeyList(body.tokens ?? req.query?.token),
   };
 }
+
+router.get('/city-interest', verifyToken, requirePlatformAdmin, async (req, res) => {
+  try {
+    const cities = await cityInterestDemand(req);
+    return res.status(200).json({success: true, data: {cities}});
+  } catch (err) {
+    logPivotRouteError('GET /admin/pivot/city-interest', err, req);
+    return res.status(500).json({success: false, message: 'Unable to load city demand.'});
+  }
+});
 
 router.get('/tags', verifyToken, requirePlatformAdmin, async (req, res) => {
   try {

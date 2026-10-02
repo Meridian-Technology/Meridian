@@ -551,4 +551,14 @@
     grid-template-columns: 1fr 1fr;
     gap: 12px;
   }
+
+  &__message {
+    display: grid;
+    gap: 12px;
+
+    textarea {
+      resize: vertical;
+      font: inherit;
+    }
+  }
 }

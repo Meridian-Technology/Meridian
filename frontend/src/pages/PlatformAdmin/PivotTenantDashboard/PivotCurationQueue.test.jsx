@@ -200,7 +200,7 @@ describe('PivotCurationQueue catalog', () => {
     expect(screen.getByText(/outside the city boundary/i)).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Open location review' })).toHaveAttribute(
       'href',
-      '/platform-admin/pivot/sf?page=7&batchWeek=2026-W38',
+      '/platform-admin/pivot/sf?page=1&content=locations&batchWeek=2026-W38',
     );
     expect(document.querySelector('.popup-overlay')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Publish' })).toBeDisabled();

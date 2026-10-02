@@ -2,7 +2,13 @@ import React, { useMemo, useState } from 'react';
 import { useFetch, authenticatedRequest } from '../../../hooks/useFetch';
 import { useNotification } from '../../../NotificationContext';
 import { PivotOpsStatus } from '../../../components/PivotOps';
-import { SCHEDULE_HANDLER_LABELS, scheduleCadence, scheduleName } from './notificationScheduleCopy';
+import {
+  SCHEDULE_HANDLER_LABELS,
+  runBelongsToSchedule,
+  scheduleCadence,
+  scheduleName,
+} from './notificationScheduleCopy';
+import PivotNotificationSendNow from './PivotNotificationSendNow';
 import './PivotNotificationScheduleAudit.scss';
 
 const NO_FETCH_CACHE = { enabled: false };
@@ -14,6 +20,7 @@ const RUN_STATUS_LABELS = {
   running: 'Running',
   retry_wait: 'Retrying',
   pending: 'Queued',
+  cancelled: 'Cancelled',
 };
 
 function tenantLabel(tenant, tenantKey) {
@@ -73,11 +80,13 @@ function PivotNotificationScheduleAudit({
   const [eligibility, setEligibility] = useState(null);
   const [eligibilityLoading, setEligibilityLoading] = useState(false);
   const [eligibilityError, setEligibilityError] = useState('');
+  const [sendNowOpen, setSendNowOpen] = useState(false);
 
   const {
     data: runsResponse,
     loading: runsLoading,
     error: runsError,
+    refetch: refetchRuns,
   } = useFetch(handlerKey ? '/admin/meridian/jobs/runs' : null, {
     cache: NO_FETCH_CACHE,
     params: {
@@ -89,8 +98,8 @@ function PivotNotificationScheduleAudit({
 
   const runs = useMemo(() => {
     const rows = runsResponse?.success ? (runsResponse.data?.runs || []) : [];
-    return rows.filter((run) => !handlerKey || run?.type === handlerKey);
-  }, [handlerKey, runsResponse]);
+    return rows.filter((run) => !handlerKey || runBelongsToSchedule(definition, run));
+  }, [definition, handlerKey, runsResponse]);
 
   const activeRunId = selectedRunId || runs[0]?.id || '';
   const activeRun = runs.find((run) => run.id === activeRunId) || null;
@@ -119,7 +128,10 @@ function PivotNotificationScheduleAudit({
         data: {
           handlerKey,
           tenantKey: runDraft.tenantKey,
-          payload: { dryRun: runDraft.dryRun !== false },
+          payload: {
+            dryRun: runDraft.dryRun !== false,
+            ...(definition?.definitionKey ? { definitionKey: definition.definitionKey } : {}),
+          },
         },
         headers: { 'Content-Type': 'application/json' },
       },
@@ -151,6 +163,7 @@ function PivotNotificationScheduleAudit({
         params: {
           handlerKey,
           tenantKey: runDraft.tenantKey,
+          ...(definition?.definitionKey ? { definitionKey: definition.definitionKey } : {}),
         },
       },
     );
@@ -178,6 +191,11 @@ function PivotNotificationScheduleAudit({
           </p>
         </div>
         <div className="pivot-notification-schedule-audit__head-actions">
+          {canEnqueue && definition?.id && !sendNowOpen ? (
+            <button type="button" className="linear-btn linear-btn--primary" onClick={() => setSendNowOpen(true)}>
+              Send now
+            </button>
+          ) : null}
           {onEdit ? (
             <button type="button" className="linear-btn linear-btn--secondary" onClick={onEdit}>
               Edit schedule
@@ -188,6 +206,21 @@ function PivotNotificationScheduleAudit({
           </button>
         </div>
       </header>
+
+      {sendNowOpen ? (
+        <PivotNotificationSendNow
+          definition={definition}
+          tenants={tenants}
+          tenantKey={scopedTenant}
+          onClose={() => setSendNowOpen(false)}
+          onSent={(sentRuns) => {
+            const first = sentRuns.find((run) => run.runId);
+            if (first) setSelectedRunId(first.runId);
+            refetchRuns?.();
+            onQueued?.();
+          }}
+        />
+      ) : null}
 
       <section className="pivot-notification-schedule-audit__checks" aria-label="Check history">
         <h3>Checks</h3>

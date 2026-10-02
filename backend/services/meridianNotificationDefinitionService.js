@@ -1,20 +1,26 @@
 const getGlobalModels = require('./getGlobalModelService');
 const { connectToGlobalDatabase } = require('../connectionsManager');
 const { getMergedTenants, getTenantByKey, upsertStoredTenantRow } = require('./tenantConfigService');
-const { isPivotTenant, PIVOT_DROP_PILOT_DEFAULTS } = require('../utilities/pivotDropSchedule');
+const {
+  isPivotTenant,
+  resolvePivotLiveBatchWeek,
+  PIVOT_DROP_PILOT_DEFAULTS,
+} = require('../utilities/pivotDropSchedule');
 const { toIsoWeekInTimeZone } = require('../utilities/pivotIsoWeek');
 const {
   validateThirtyMinuteCron,
   floorToThirtyMinuteBucket,
   cronMatchesBucket,
 } = require('../utilities/meridianNotificationCron');
-const { getMeridianJobHandler } = require('./meridianJobRegistry');
+const { getMeridianJobHandler, isFleetMeridianJobHandler } = require('./meridianJobRegistry');
+const { getMeridianOpsTenantKey } = require('./meridianOpsNotifyService');
 const { ensureMeridianJobHandlersLoaded } = require('./meridianJobHandlers');
 const { enqueueMeridianJob } = require('./meridianJobEnqueueService');
 const { isPivotCrewNudgeCronDisabled } = require('./pivotCrewNudgeService');
 const { quietHoursDelayMs } = require('../utilities/meridianQuietHours');
 const { resolveNotificationCheckConfig } = require('../utilities/meridianNotificationCheckConfig');
 const {
+  SCHEDULED_PUSH,
   resolveNotificationRules,
   validateRules,
 } = require('../utilities/meridianNotificationRules');
@@ -152,6 +158,7 @@ function assertHandlerExists(handlerKey) {
 }
 
 function buildDefinitionFields(body = {}, { partial = false, handlerKey = null } = {}) {
+  ensureMeridianJobHandlersLoaded();
   const fields = {};
 
   if (!partial || body.definitionKey !== undefined) {
@@ -172,8 +179,17 @@ function buildDefinitionFields(body = {}, { partial = false, handlerKey = null }
   if (!partial || body.tenantKey !== undefined) {
     fields.tenantKey = normalizeTenantKey(body.tenantKey);
   }
+  if (fields.tenantKey && isFleetMeridianJobHandler(fields.handlerKey || handlerKey)) {
+    throw definitionAdminError(
+      'This handler runs once for all cities; it cannot be scoped to a city',
+      'FLEET_HANDLER_TENANT_SCOPE',
+    );
+  }
 
-  if (!partial || body.enabled !== undefined) {
+  // New schedules start paused unless the caller turns them on.
+  if (!partial) {
+    fields.enabled = body.enabled === true;
+  } else if (body.enabled !== undefined) {
     fields.enabled = body.enabled !== false;
   }
 
@@ -220,9 +236,32 @@ function buildDefinitionFields(body = {}, { partial = false, handlerKey = null }
   return fields;
 }
 
+const SCHEDULED_PUSH_TITLE_MAX = 100;
+const SCHEDULED_PUSH_BODY_MAX = 240;
+
+function assertScheduledPushCopy(row) {
+  if (row.handlerKey !== SCHEDULED_PUSH) return;
+  if (!row.copyBodyFallback) {
+    throw definitionAdminError('A scheduled push needs a message body', 'SCHEDULED_PUSH_BODY_REQUIRED');
+  }
+  if (row.copyBodyFallback.length > SCHEDULED_PUSH_BODY_MAX) {
+    throw definitionAdminError(
+      `Keep the message body to ${SCHEDULED_PUSH_BODY_MAX} characters`,
+      'SCHEDULED_PUSH_BODY_TOO_LONG',
+    );
+  }
+  if (row.copyTitleFallback && row.copyTitleFallback.length > SCHEDULED_PUSH_TITLE_MAX) {
+    throw definitionAdminError(
+      `Keep the title to ${SCHEDULED_PUSH_TITLE_MAX} characters`,
+      'SCHEDULED_PUSH_TITLE_TOO_LONG',
+    );
+  }
+}
+
 async function createMeridianNotificationDefinition(req, body = {}) {
   const { MeridianNotificationDefinition } = await getDefinitionModel(req);
   const fields = buildDefinitionFields(body, { partial: false });
+  assertScheduledPushCopy(fields);
   try {
     const doc = await MeridianNotificationDefinition.create(fields);
     return serializeMeridianNotificationDefinition(doc);
@@ -300,6 +339,16 @@ async function updateMeridianNotificationDefinition(req, idOrKey, body = {}) {
     throw definitionAdminError('Notification definition not found', 'DEFINITION_NOT_FOUND', 404);
   }
   const fields = buildDefinitionFields(body, { partial: true, handlerKey: doc.handlerKey });
+  if (
+    isFleetMeridianJobHandler(fields.handlerKey || doc.handlerKey)
+    && normalizeTenantKey(fields.tenantKey ?? doc.tenantKey)
+  ) {
+    throw definitionAdminError(
+      'This handler runs once for all cities; it cannot be scoped to a city',
+      'FLEET_HANDLER_TENANT_SCOPE',
+    );
+  }
+  assertScheduledPushCopy({ ...leanDoc(doc), ...fields });
   Object.assign(doc, fields);
   try {
     await doc.save();
@@ -333,11 +382,15 @@ function defaultScheduleSpecs() {
   ];
 }
 
+/**
+ * Puts the built-in schedules back to their shipped settings, paused. Restoring
+ * never starts a send: someone has to turn each schedule back on.
+ */
 async function restoreDefaultMeridianNotificationSchedules(req) {
   const { MeridianNotificationDefinition } = await getDefinitionModel(req);
   const restored = [];
   for (const spec of defaultScheduleSpecs()) {
-    const fields = JSON.parse(JSON.stringify(spec));
+    const fields = { ...JSON.parse(JSON.stringify(spec)), enabled: false };
     const existing = await MeridianNotificationDefinition.findOne({
       definitionKey: fields.definitionKey,
       tenantKey: '',
@@ -383,6 +436,19 @@ async function upsertMeridianNotificationOverride(req, tenantKey, definitionKey,
   const key = normalizeDefinitionKey(definitionKey);
   if (!DEFINITION_KEY_PATTERN.test(key)) {
     throw definitionAdminError('Invalid definitionKey', 'INVALID_DEFINITION_KEY');
+  }
+  if (patch != null) {
+    const { MeridianNotificationDefinition } = getGlobalModels(jobReq, 'MeridianNotificationDefinition');
+    const definition = await MeridianNotificationDefinition.findOne({ definitionKey: key, tenantKey: '' })
+      .select('handlerKey')
+      .lean();
+    ensureMeridianJobHandlersLoaded();
+    if (definition && isFleetMeridianJobHandler(definition.handlerKey)) {
+      throw definitionAdminError(
+        'This schedule runs once for all cities; it has no city overrides',
+        'FLEET_HANDLER_OVERRIDE',
+      );
+    }
   }
 
   const existing = Array.isArray(tenant.meridianNotificationOverrides)
@@ -433,6 +499,64 @@ function scheduleTargets(definition, tenants) {
   return tenants.filter(isPivotTenant);
 }
 
+function tenantTimezone(tenant) {
+  return String(tenant?.pivotDropTimezone || '').trim()
+    || PIVOT_DROP_PILOT_DEFAULTS.pivotDropTimezone;
+}
+
+/** What a city run of `definition` (already merged with the city's override) carries. */
+function buildCityRunPayload(definition, tenant, now, rules) {
+  const timezone = tenantTimezone(tenant);
+  return {
+    ...(definition.handlerKey === 'weekly_drop'
+      ? { batchWeek: toIsoWeekInTimeZone(now, timezone) }
+      : {}),
+    ...(definition.handlerKey === SCHEDULED_PUSH
+      ? { batchWeek: resolvePivotLiveBatchWeek(tenant, now) }
+      : {}),
+    definitionKey: definition.definitionKey,
+    copyTitleKey: definition.copyTitleKey,
+    copyBodyKey: definition.copyBodyKey,
+    copyTitleFallback: definition.copyTitleFallback,
+    copyBodyFallback: definition.copyBodyFallback,
+    triggerConfig: cloneTriggerConfig(definition.triggerConfig),
+    rules: rules ?? resolveNotificationRules(definition.handlerKey, definition).rules,
+    timezone,
+  };
+}
+
+/**
+ * One run per matching slot for a fleet handler, on the pilot drop timezone.
+ * City overrides and quiet hours don't apply. The run is filed under the ops
+ * tenant only because every run row needs a tenant.
+ */
+async function enqueueFleetSchedule(jobReq, definition, now) {
+  if (definition.enabled === false) return null;
+  const timezone = PIVOT_DROP_PILOT_DEFAULTS.pivotDropTimezone;
+  const bucket = floorToThirtyMinuteBucket(now, timezone);
+  if (!cronMatchesBucket(definition.scheduleCron, bucket)) return null;
+  const tenantKey = getMeridianOpsTenantKey();
+  const result = await enqueueMeridianJob(jobReq, {
+    handlerKey: definition.handlerKey,
+    tenantKey,
+    scheduledFor: now,
+    payload: {
+      definitionKey: definition.definitionKey,
+      timeBucket: bucket.timeBucket,
+      timezone,
+    },
+  });
+  return {
+    definitionKey: definition.definitionKey,
+    tenantKey,
+    handlerKey: definition.handlerKey,
+    timeBucket: bucket.timeBucket,
+    created: result.created,
+    runId: result.run?._id ? String(result.run._id) : null,
+    runKey: result.run?.runKey || null,
+  };
+}
+
 async function evaluateMeridianNotificationSchedules(req, { now = new Date() } = {}) {
   ensureMeridianJobHandlersLoaded();
   const { jobReq, MeridianNotificationDefinition } = await getDefinitionModel(req);
@@ -442,6 +566,11 @@ async function evaluateMeridianNotificationSchedules(req, { now = new Date() } =
   const nudgeCronDisabled = isPivotCrewNudgeCronDisabled();
 
   for (const raw of definitions) {
+    if (isFleetMeridianJobHandler(raw.handlerKey)) {
+      const run = await enqueueFleetSchedule(jobReq, raw, now);
+      if (run) enqueued.push(run);
+      continue;
+    }
     const targets = scheduleTargets(raw, tenants);
     for (const tenant of targets) {
       const { definition, applied, fields } = resolveDefinitionForTenant(raw, tenant);
@@ -464,8 +593,7 @@ async function evaluateMeridianNotificationSchedules(req, { now = new Date() } =
       const handler = getMeridianJobHandler(definition.handlerKey);
       if (!handler) continue;
 
-      const timezone = String(tenant.pivotDropTimezone || '').trim()
-        || PIVOT_DROP_PILOT_DEFAULTS.pivotDropTimezone;
+      const timezone = tenantTimezone(tenant);
       const bucket = floorToThirtyMinuteBucket(now, timezone);
       if (!cronMatchesBucket(definition.scheduleCron, bucket)) continue;
       if (quietHoursDelayMs(now, timezone, checkConfig.quietHours) > 0) continue;
@@ -475,18 +603,8 @@ async function evaluateMeridianNotificationSchedules(req, { now = new Date() } =
         tenantKey: tenant.tenantKey,
         scheduledFor: now,
         payload: {
-          ...(definition.handlerKey === 'weekly_drop'
-            ? { batchWeek: toIsoWeekInTimeZone(now, timezone) }
-            : {}),
-          definitionKey: definition.definitionKey,
-          copyTitleKey: definition.copyTitleKey,
-          copyBodyKey: definition.copyBodyKey,
-          copyTitleFallback: definition.copyTitleFallback,
-          copyBodyFallback: definition.copyBodyFallback,
-          triggerConfig: cloneTriggerConfig(definition.triggerConfig),
-          rules: resolvedRules.rules,
+          ...buildCityRunPayload(definition, tenant, now, resolvedRules.rules),
           timeBucket: bucket.timeBucket,
-          timezone,
           overrideApplied: applied,
           overriddenFields: fields,
         },
@@ -512,6 +630,8 @@ module.exports = {
   normalizeMeridianNotificationOverrides,
   validateMeridianNotificationOverridesPatch,
   resolveDefinitionForTenant,
+  buildCityRunPayload,
+  scheduleTargets,
   createMeridianNotificationDefinition,
   getMeridianNotificationDefinition,
   listMeridianNotificationDefinitions,

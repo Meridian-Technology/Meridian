@@ -22,9 +22,11 @@ import './PivotTenantPage.scss';
 
 /**
  * Locked Task 0.3: city Catalog on the tenant shell.
- * `/platform-admin/pivot/:tenantKey?page=4`
+ * Content → Organizers: `/platform-admin/pivot/:tenantKey?page=1&content=organizers`
+ * (the old `?page=4` bookmark redirects there).
  */
-export const PIVOT_TENANT_CATALOG_PAGE = PIVOT_TENANT_PAGES.catalog;
+export const PIVOT_TENANT_CATALOG_PAGE = PIVOT_TENANT_PAGES.content;
+const CONTENT_VIEW = 'organizers';
 
 const NO_FETCH_CACHE = { enabled: false };
 const SEARCH_DEBOUNCE_MS = 280;
@@ -396,7 +398,7 @@ function ChipRow({ label, options, value, onChange }) {
  * City-wide organizer catalog (Task 4.2 list + 4.3 detail + 4.4 leftovers).
  * Not week-gated. Audience is live on the dossier only.
  */
-function PivotTenantCatalogPage({ tenantKey, cityDisplayName }) {
+function PivotTenantCatalogPage({ tenantKey, cityDisplayName, nav = null, title = 'Catalog' }) {
   const { addNotification } = useNotification();
   const [searchParams, setSearchParams] = useSearchParams();
   const organizerId = String(searchParams.get('organizerId') || '').trim();
@@ -449,6 +451,10 @@ function PivotTenantCatalogPage({ tenantKey, cityDisplayName }) {
 
     if (next.get('page') !== String(PIVOT_TENANT_CATALOG_PAGE)) {
       next.set('page', String(PIVOT_TENANT_CATALOG_PAGE));
+      changed = true;
+    }
+    if (next.get('content') !== CONTENT_VIEW) {
+      next.set('content', CONTENT_VIEW);
       changed = true;
     }
     setOrDelete('q', debouncedQuery, '');
@@ -728,11 +734,12 @@ function PivotTenantCatalogPage({ tenantKey, cityDisplayName }) {
 
   return (
     <PivotTenantPage
-      title="Catalog"
+      title={title}
       tenantKey={tenantKey}
       cityDisplayName={cityDisplayName}
       className="pivot-tenant-catalog"
     >
+      {nav}
       {organizerId ? (
         <CatalogOrganizerDetail
           tenantKey={tenantKey}

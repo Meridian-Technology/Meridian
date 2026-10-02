@@ -211,7 +211,10 @@ describe('meridianJobRitualScan', () => {
     const seeded = await ensureRitualCrewScanDefinition(req);
     expect(seeded.definitionKey).toBe(RITUAL_CREW_SCAN_DEFINITION_KEY);
     expect(seeded.handlerKey).toBe(RITUAL_CREW_SCAN_HANDLER_KEY);
-    expect(seeded.enabled).toBe(true);
+    // Shipped schedules start paused; turn it on to exercise the kill switch.
+    expect(seeded.enabled).toBe(false);
+    const { MeridianNotificationDefinition } = getGlobalModels(req, 'MeridianNotificationDefinition');
+    await MeridianNotificationDefinition.updateOne({ _id: seeded._id }, { $set: { enabled: true } });
 
     const now = new Date('2026-06-05T22:00:00.000Z');
     const enabled = await evaluateMeridianNotificationSchedules(req, { now });

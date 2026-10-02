@@ -150,8 +150,8 @@ describe('releaseOutcomeNotification', () => {
 });
 
 describe('locationReviewHref', () => {
-  it('deep-links the location migration tab', () => {
+  it('deep-links Content → Locations', () => {
     expect(locationReviewHref('sf', '2026-W38'))
-      .toBe('/platform-admin/pivot/sf?page=7&batchWeek=2026-W38');
+      .toBe('/platform-admin/pivot/sf?page=1&content=locations&batchWeek=2026-W38');
   });
 });

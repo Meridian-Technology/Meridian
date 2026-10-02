@@ -42,6 +42,7 @@ function PivotNotificationWhoRules({
   onChange,
   disabled = false,
   labelPrefix = 'Who',
+  emptyText = 'No conditions. This notification will not send.',
 }) {
   const attributes = catalog?.attributes || [];
   const groups = Array.isArray(rules) ? rules : [];
@@ -94,9 +95,7 @@ function PivotNotificationWhoRules({
         </div>
       </div>
       {groups.length === 0 ? (
-        <p className="pivot-notification-definition-editor__hint">
-          No conditions. This notification will not send.
-        </p>
+        <p className="pivot-notification-definition-editor__hint">{emptyText}</p>
       ) : null}
       {groups.map((group, groupIndex) => (
         <div key={`${labelPrefix}-group-${groupIndex}`}>

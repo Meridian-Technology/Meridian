@@ -156,7 +156,20 @@ function RunStatusPill({ status }) {
 /**
  * Per-tenant Curation — mode (post-mortem / live / curate) follows the selected batch week.
  */
-function PivotTenantCurationPage({ tenantKey, cityDisplayName }) {
+/**
+ * Content → Events and Content → Sources share this component (and its week
+ * state and data), so switching between them doesn't reload. `view` picks the
+ * sections; `nav` is the Content tab bar.
+ */
+function PivotTenantCurationPage({
+  tenantKey,
+  cityDisplayName,
+  view = 'events',
+  nav = null,
+  title = 'Curation',
+}) {
+  const isSources = view === 'sources';
+  const isEvents = !isSources;
   const { addNotification } = useNotification();
   const { showOverlay } = useDashboard();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -2117,14 +2130,14 @@ function PivotTenantCurationPage({ tenantKey, cityDisplayName }) {
 
   return (
     <PivotTenantPage
-      title="Curation"
+      title={title}
       tenantKey={tenantKey}
       cityDisplayName={displayCity}
     //   subtitle={stageMeta.description}
       className="pivot-tenant-curation"
       actions={
         <>
-          {tenantKey && committedWeekValid ? (
+          {isEvents && tenantKey && committedWeekValid ? (
             <button
               type="button"
               className="linear-btn linear-btn--ghost pivot-tenant-curation__purge-trigger"
@@ -2142,19 +2155,21 @@ function PivotTenantCurationPage({ tenantKey, cityDisplayName }) {
             Refresh
             <KeybindTooltip label="Refresh" keybind="R" />
           </button>
-          <button
-            type="button"
-            className="linear-btn linear-btn--ghost"
-            onClick={handleExportCatalogJson}
-            disabled={!events.length}
-            title={
-              selectedIds.size
-                ? `Export ${selectedIds.size} selected event(s) for another Curation panel`
-                : `Export all ${events.length} event(s) in ${committedWeek} for another Curation panel`
-            }
-          >
-            {selectedIds.size ? `Export JSON (${selectedIds.size})` : 'Export JSON'}
-          </button>
+          {isEvents ? (
+            <button
+              type="button"
+              className="linear-btn linear-btn--ghost"
+              onClick={handleExportCatalogJson}
+              disabled={!events.length}
+              title={
+                selectedIds.size
+                  ? `Export ${selectedIds.size} selected event(s) for another Curation panel`
+                  : `Export all ${events.length} event(s) in ${committedWeek} for another Curation panel`
+              }
+            >
+              {selectedIds.size ? `Export JSON (${selectedIds.size})` : 'Export JSON'}
+            </button>
+          ) : null}
           {canPublishCatalog ? (
             <label
               className="pivot-tenant-curation__check"
@@ -2168,7 +2183,7 @@ function PivotTenantCurationPage({ tenantKey, cityDisplayName }) {
               <span>Force into review week</span>
             </label>
           ) : null}
-          {committedWeekValid ? (
+          {isEvents && committedWeekValid ? (
             <button
               type="button"
               className="linear-btn linear-btn--primary"
@@ -2190,6 +2205,8 @@ function PivotTenantCurationPage({ tenantKey, cityDisplayName }) {
         </>
       }
     >
+      {nav}
+
       <aside className="pivot-tenant-curation__batch-banner" aria-label="Batch dates">
         <div className="pivot-tenant-curation__batch-banner-main">
           <p className="pivot-tenant-curation__drop-label">
@@ -2246,16 +2263,18 @@ function PivotTenantCurationPage({ tenantKey, cityDisplayName }) {
         </div>
       </aside>
 
-      <PivotHostLiveWeekAlert
-        alert={hostLiveWeekAlert}
-        onReviewClick={focusHostCreatedReview}
-      />
+      {isEvents ? (
+        <PivotHostLiveWeekAlert
+          alert={hostLiveWeekAlert}
+          onReviewClick={focusHostCreatedReview}
+        />
+      ) : null}
 
       {!batchWeekValid ? (
         <p className="pivot-lab__error">Enter a valid batch week (YYYY-Www).</p>
       ) : null}
 
-      {isMonitorStage ? (
+      {isEvents && isMonitorStage ? (
         <PivotCurationMonitorPanel
           stage={stage}
           overview={overview}
@@ -2265,7 +2284,16 @@ function PivotTenantCurationPage({ tenantKey, cityDisplayName }) {
         />
       ) : null}
 
+      {isSources && !canPublishCatalog ? (
+        <p className="pivot-lab__empty">
+          {committedWeek} is past its drop. Sources and saved jobs run for weeks being curated
+          or live; pick a current week above.
+        </p>
+      ) : null}
+
       {canPublishCatalog ? (
+        <>
+      {isEvents ? (
         <>
       <aside className="pivot-tenant-curation__drop" aria-label="Drop and week status">
         <div>
@@ -2297,7 +2325,11 @@ function PivotTenantCurationPage({ tenantKey, cityDisplayName }) {
         readiness={readiness}
         loading={readinessLoading}
       />
+        </>
+      ) : null}
 
+      {isSources ? (
+        <>
       {/* Upstream of Saved jobs: discovery finds sources; Refresh all recrawls them. */}
       <PivotTenantSourcesPanel
         tenantKey={tenantKey}
@@ -2625,7 +2657,11 @@ function PivotTenantCurationPage({ tenantKey, cityDisplayName }) {
           </>
         ) : null}
       </section>
+        </>
+      ) : null}
 
+      {isEvents ? (
+        <>
       <section className="linear-section pivot-lab__section" aria-labelledby="curation-manual">
         <div className="pivot-lab__section-head">
           <div>
@@ -2719,8 +2755,10 @@ function PivotTenantCurationPage({ tenantKey, cityDisplayName }) {
       ) : null}
         </>
       ) : null}
+        </>
+      ) : null}
 
-      {committedWeekValid ? (
+      {isEvents && committedWeekValid ? (
         <>
           <PivotBatchTagRadar
             batchWeek={batchWeek}

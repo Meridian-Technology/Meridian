@@ -27,6 +27,7 @@ const pivotCarouselCurationDraftSchema = require('../schemas/pivotCarouselCurati
 const pivotCarouselRevisionSchema = require('../schemas/pivotCarouselRevision');
 const justGoLandingEventSchema = require('../schemas/justGoLandingEvent');
 const justGoWaitlistSchema = require('../schemas/justGoWaitlist');
+const justGoCityInterestSchema = require('../schemas/justGoCityInterest');
 const justGoLandingQrSchema = require('../schemas/justGoLandingQr');
 const pivotComputeJobSchema = require('../schemas/pivotComputeJob');
 const pivotComputeJobAttemptSchema = require('../schemas/pivotComputeJobAttempt');
@@ -159,6 +160,11 @@ const getGlobalModels = (req, ...names) => {
             'JustGoWaitlist',
             justGoWaitlistSchema,
             'justgo_waitlist'
+        ),
+        JustGoCityInterest: db.model(
+            'JustGoCityInterest',
+            justGoCityInterestSchema,
+            'justgo_city_interest'
         ),
         JustGoLandingQr: db.model(
             'JustGoLandingQr',

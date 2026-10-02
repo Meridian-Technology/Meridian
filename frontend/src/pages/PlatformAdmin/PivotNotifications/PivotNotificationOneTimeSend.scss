@@ -1,0 +1,259 @@
+// Rendered inside Popup's portal, so it carries its own tokens and control
+// styles instead of inheriting them from the page root.
+.pivot-notification-one-time-dialog {
+  --pivot-ops-surface: #ffffff;
+  --pivot-ops-surface-subtle: #f7f6f4;
+  --pivot-ops-ink: #1a1714;
+  --pivot-ops-ink-muted: rgba(26, 23, 20, 0.72);
+  --pivot-ops-ink-soft: rgba(26, 23, 20, 0.5);
+  --pivot-ops-border: rgba(26, 23, 20, 0.12);
+  --pivot-ops-border-strong: rgba(26, 23, 20, 0.22);
+  --pivot-ops-hover: rgba(26, 23, 20, 0.04);
+  --pivot-ops-accent: #ff4f1f;
+  --pivot-ops-accent-hover: #e64518;
+  --pivot-ops-accent-soft: rgba(255, 79, 31, 0.1);
+  --pivot-ops-on-accent: #ffffff;
+  --pivot-ops-danger: #dc2626;
+  --pivot-ops-radius-card: 22px;
+  --pivot-ops-radius-control: 14px;
+  --la-surface: var(--pivot-ops-surface);
+  --la-border: var(--pivot-ops-border-strong);
+  --la-text: var(--pivot-ops-ink);
+  --la-text-secondary: var(--pivot-ops-ink-muted);
+  --la-text-tertiary: var(--pivot-ops-ink-soft);
+  --la-accent: var(--pivot-ops-accent);
+  --la-radius-sm: var(--pivot-ops-radius-control);
+  --la-row-hover: var(--pivot-ops-hover);
+
+  width: min(760px, calc(100vw - 48px));
+  max-height: min(86vh, 900px);
+  overflow: auto;
+  box-sizing: border-box;
+  padding: 22px 22px 18px;
+  border-radius: var(--pivot-ops-radius-card);
+  background: var(--pivot-ops-surface);
+  color: var(--pivot-ops-ink);
+  border: 1px solid var(--pivot-ops-border);
+  box-shadow: 0 24px 60px rgba(26, 23, 20, 0.18);
+  font-size: 13px;
+
+  h3 {
+    margin: 0;
+    font-size: 18px;
+    font-weight: 600;
+    line-height: 1.25;
+  }
+
+  .linear-field {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    min-width: 0;
+  }
+
+  .linear-field__label {
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--pivot-ops-ink-muted);
+  }
+
+  .linear-field--checkbox {
+    flex-direction: row;
+    align-items: center;
+    gap: 8px;
+    color: var(--pivot-ops-ink);
+  }
+
+  input:not([type='checkbox']):not([type='radio']),
+  select,
+  textarea {
+    width: 100%;
+    box-sizing: border-box;
+    border: 1px solid var(--pivot-ops-border-strong);
+    border-radius: var(--pivot-ops-radius-control);
+    background: var(--pivot-ops-surface);
+    color: var(--pivot-ops-ink);
+    font: inherit;
+    font-size: 13px;
+  }
+
+  input:not([type='checkbox']):not([type='radio']),
+  select {
+    height: 36px;
+    padding: 0 12px;
+  }
+
+  textarea {
+    min-height: 84px;
+    padding: 10px 12px;
+    resize: vertical;
+  }
+
+  input:focus,
+  select:focus,
+  textarea:focus {
+    outline: none;
+    border-color: var(--pivot-ops-accent);
+    box-shadow: 0 0 0 3px var(--pivot-ops-accent-soft);
+  }
+
+  input[type='checkbox'],
+  input[type='radio'] {
+    accent-color: var(--pivot-ops-accent);
+  }
+
+  .linear-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    height: 36px;
+    padding: 0 14px;
+    border-radius: var(--pivot-ops-radius-control);
+    border: 1px solid transparent;
+    background: transparent;
+    color: var(--pivot-ops-ink);
+    font: inherit;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+
+    &:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+  }
+
+  .linear-btn--primary {
+    background: var(--pivot-ops-accent);
+    border-color: var(--pivot-ops-accent);
+    color: var(--pivot-ops-on-accent);
+
+    &:hover:not(:disabled) {
+      background: var(--pivot-ops-accent-hover);
+      border-color: var(--pivot-ops-accent-hover);
+    }
+  }
+
+  .linear-btn--secondary {
+    background: var(--pivot-ops-surface);
+    border-color: var(--pivot-ops-border-strong);
+    color: var(--pivot-ops-ink);
+
+    &:hover:not(:disabled) {
+      background: var(--pivot-ops-hover);
+    }
+  }
+}
+
+.pivot-notification-one-time {
+  display: grid;
+  gap: 16px;
+
+  &__head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+  }
+
+  &__step {
+    margin: 0 0 2px;
+    font-size: 12px;
+    color: var(--pivot-ops-ink-soft);
+  }
+
+  &__message {
+    display: grid;
+    gap: 8px;
+  }
+
+  &__fieldset {
+    display: grid;
+    gap: 6px;
+    margin: 0;
+    padding: 0;
+    border: 0;
+
+    legend {
+      margin-bottom: 6px;
+      padding: 0;
+      font-size: 15px;
+      font-weight: 600;
+    }
+  }
+
+  &__cities {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: 4px 12px;
+  }
+
+  &__when {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 16px;
+
+    input[type='datetime-local'] {
+      width: auto;
+    }
+  }
+
+  &__muted {
+    margin: 0;
+    font-size: 12px;
+    color: var(--pivot-ops-ink-muted);
+  }
+
+  &__error {
+    margin: 0;
+    color: var(--pivot-ops-danger);
+  }
+
+  &__actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+  }
+}
+
+.pivot-one-time-sends {
+  &__list {
+    display: grid;
+    gap: 10px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  &__item {
+    display: grid;
+    gap: 4px;
+    padding: 10px 0;
+    border-top: 1px solid var(--pivot-ops-border, rgba(26, 23, 20, 0.12));
+
+    &:first-child {
+      border-top: 0;
+    }
+  }
+
+  &__item-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+
+  &__body {
+    margin: 0;
+    color: var(--pivot-ops-ink-muted);
+  }
+
+  &__cities {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 12px;
+    font-size: 13px;
+  }
+}

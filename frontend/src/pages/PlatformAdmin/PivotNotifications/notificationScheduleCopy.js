@@ -6,6 +6,8 @@ export const SCHEDULE_HANDLER_LABELS = Object.freeze({
   ritual_crew_consensus: 'Crew confirm nudge',
   solo_swipe_reminder: 'Solo swipe reminder',
   event_discovery: 'New events',
+  admin_weekly_report: 'Admin weekly report',
+  scheduled_push: 'Scheduled push',
 });
 
 export const SCHEDULE_PURPOSES = Object.freeze({
@@ -14,6 +16,7 @@ export const SCHEDULE_PURPOSES = Object.freeze({
   ritual_crew_consensus: 'Asks crew members who have not confirmed the plan.',
   solo_swipe_reminder: 'Reminds people without a crew to finish their deck.',
   event_discovery: 'Tells people about newly published events.',
+  admin_weekly_report: 'Emails the Just Go weekly report to every platform admin.',
 });
 
 const ATTRIBUTE_LABELS = Object.freeze({
@@ -57,6 +60,11 @@ function describeRuleGroup(group) {
 
 export function schedulePurpose(definition) {
   const handler = definition?.handlerKey || '';
+  if (handler === 'scheduled_push') {
+    return definition?.copyBodyFallback
+      ? `Sends “${definition.copyBodyFallback}”`
+      : 'Sends a push with its own message.';
+  }
   return SCHEDULE_PURPOSES[handler] || 'Sends the notification on this schedule.';
 }
 
@@ -70,7 +78,16 @@ export function describeWhoRules(rules) {
 
 export function scheduleName(definition) {
   const handler = definition?.handlerKey || '';
+  if (handler === 'scheduled_push' && definition?.definitionKey) return definition.definitionKey;
   return SCHEDULE_HANDLER_LABELS[handler] || definition?.definitionKey || handler || 'Schedule';
+}
+
+// Scheduled runs name their schedule; direct sends (e.g. a manual weekly drop) don't.
+export function runBelongsToSchedule(definition, run) {
+  if (!definition?.handlerKey || run?.type !== definition.handlerKey) return false;
+  if (run?.payload?.oneTime) return false;
+  const runDefinition = run?.payload?.definitionKey;
+  return !runDefinition || !definition.definitionKey || runDefinition === definition.definitionKey;
 }
 
 export function scheduleCadence(definition) {
@@ -80,12 +97,11 @@ export function scheduleCadence(definition) {
 }
 
 export function lastRunForSchedule(definition, runs = []) {
-  const handler = definition?.handlerKey;
   const tenant = definition?.tenantKey
     ? String(definition.tenantKey).trim().toLowerCase()
     : '';
   return runs.find((run) => {
-    if (!handler || run?.type !== handler) return false;
+    if (!runBelongsToSchedule(definition, run)) return false;
     if (!tenant) return true;
     return String(run.tenantKey || '').trim().toLowerCase() === tenant;
   }) || null;

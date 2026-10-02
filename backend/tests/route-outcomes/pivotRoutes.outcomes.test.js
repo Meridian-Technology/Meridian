@@ -30,6 +30,10 @@ jest.mock('../../services/pivotLandingWaitlistService', () => ({
   joinWaitlist: jest.fn(),
 }));
 
+jest.mock('../../services/justGoCityInterestService', () => ({
+  joinCityInterest: jest.fn(),
+}));
+
 jest.mock('../../services/pivotLandingQrService', () => ({
   hopLandingQr: jest.fn(),
 }));
@@ -203,6 +207,51 @@ describe('pivotRoutes GET /pivot/cities', () => {
     expect(response.statusCode).toBe(200);
     expect(response.body.success).toBe(true);
     expect(response.body.data.cities).toHaveLength(1);
+  });
+});
+
+describe('pivotRoutes city directory and demand waitlist', () => {
+  const {joinCityInterest} = require('../../services/justGoCityInterestService');
+
+  beforeEach(() => {
+    listPivotCities.mockResolvedValue({data: {cities: [
+      {tenantKey: 'sf', cityDisplayName: 'San Francisco'},
+    ]}});
+    joinCityInterest.mockReset();
+  });
+
+  it('searches beyond active tenants while marking live cities', async () => {
+    const app = buildBaseApp();
+    const unsupported = await request(app).get('/pivot/city-directory/search?q=des%20moines');
+    expect(unsupported.statusCode).toBe(200);
+    expect(unsupported.body.data.cities[0]).toMatchObject({
+      cityId: 4853828, available: false, tenantKey: null,
+    });
+    const live = await request(app).get('/pivot/city-directory/search?q=san%20francisco');
+    expect(live.body.data.cities[0]).toMatchObject({
+      cityId: 5391959, available: true, tenantKey: 'sf',
+    });
+    const broad = await request(app).get('/pivot/city-directory/search?q=sa');
+    expect(broad.body.data.cities[0]).toMatchObject({
+      cityId: 5391959, available: true, tenantKey: 'sf',
+    });
+  });
+
+  it('returns the nearest city for a map tap', async () => {
+    const response = await request(buildBaseApp())
+      .get('/pivot/city-directory/nearest?latitude=37.7749&longitude=-122.4194');
+    expect(response.statusCode).toBe(200);
+    expect(response.body.data.city.cityId).toBe(5391959);
+  });
+
+  it('submits city interest without tenant entry', async () => {
+    joinCityInterest.mockResolvedValue({data: {cityId: 4853828, cityLabel: 'Des Moines, IA'}});
+    const response = await request(buildBaseApp()).post('/pivot/city-interest').send({
+      cityId: 4853828, email: 'person@example.com', source: 'ios', consent: true,
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.body.data.cityId).toBe(4853828);
+    expect(joinCityInterest).toHaveBeenCalled();
   });
 });
 

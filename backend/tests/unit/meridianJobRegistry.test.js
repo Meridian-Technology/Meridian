@@ -26,8 +26,25 @@ describe('meridianJobRegistry', () => {
     expect(handler.category).toBe('notification');
     expect(handler.buildRunKey({ tenantKey: 'sf' })).toBe('probe:sf');
     expect(listMeridianJobHandlers()).toEqual([
-      { handlerKey: 'probe', category: 'notification' },
+      { handlerKey: 'probe', category: 'notification', scope: 'city', channel: 'push' },
     ]);
+  });
+
+  it('accepts fleet handlers and rejects unknown scopes', () => {
+    registerMeridianJobHandler('fleet_probe', {
+      category: 'notification',
+      scope: 'fleet',
+      channel: 'email',
+      buildRunKey: () => 'fleet_probe',
+      execute: jest.fn(),
+    });
+    expect(getMeridianJobHandler('fleet_probe')).toMatchObject({ scope: 'fleet', channel: 'email' });
+    expect(() => registerMeridianJobHandler('bad_scope', {
+      category: 'notification',
+      scope: 'galaxy',
+      buildRunKey: () => 'x',
+      execute: jest.fn(),
+    })).toThrow(/scope must be one of/);
   });
 
   it('rejects missing spec fields and duplicate handler keys', () => {

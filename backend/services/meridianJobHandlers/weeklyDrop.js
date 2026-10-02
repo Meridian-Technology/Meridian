@@ -105,7 +105,7 @@ const WEEKLY_DROP_DEFINITION_SPEC = Object.freeze({
   definitionKey: 'weekly_drop',
   handlerKey: 'weekly_drop',
   tenantKey: '',
-  enabled: true,
+  enabled: false,
   scheduleCron: `${PIVOT_DROP_PILOT_DEFAULTS.pivotDropMinute} ${PIVOT_DROP_PILOT_DEFAULTS.pivotDropHour} * * ${PIVOT_DROP_PILOT_DEFAULTS.pivotDropDayOfWeek}`,
   copyTitleKey: NOTIFICATION_COPY_KEYS.weeklyDrop.title,
   copyBodyKey: NOTIFICATION_COPY_KEYS.weeklyDrop.body,

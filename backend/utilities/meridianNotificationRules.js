@@ -4,6 +4,7 @@ const SOLO_SWIPE_REMINDER = 'solo_swipe_reminder';
 const RITUAL_CREW_SCAN = 'ritual_crew_scan';
 const RITUAL_CREW_CONSENSUS = 'ritual_crew_consensus';
 const EVENT_DISCOVERY = 'event_discovery';
+const SCHEDULED_PUSH = 'scheduled_push';
 
 const DEFAULT_CREW_MIN_ACTIVE_MEMBERS = 2;
 const DEFAULT_UNFINISHED_SWIPE_HOURS = 12;
@@ -71,6 +72,16 @@ const CATALOG = Object.freeze({
     outcomes: Object.freeze(['send']),
     attributes: Object.freeze([
       attribute('hoursSinceLastDiscoveryPush', 'Hours since last new-events push', 'number'),
+    ]),
+  }),
+  // No rules means everyone with push on.
+  [SCHEDULED_PUSH]: Object.freeze({
+    outcomes: Object.freeze(['send']),
+    attributes: Object.freeze([
+      attribute('hasCrew', 'Has a crew', 'boolean'),
+      attribute('deckComplete', 'Deck complete', 'boolean'),
+      attribute('unfinishedCardCount', 'Unfinished cards', 'number'),
+      attribute('alreadyNotifiedThisBatchWeek', 'Already notified this week', 'boolean'),
     ]),
   }),
 });
@@ -330,6 +341,7 @@ module.exports = {
   RITUAL_CREW_SCAN,
   RITUAL_CREW_CONSENSUS,
   EVENT_DISCOVERY,
+  SCHEDULED_PUSH,
   DEFAULT_CREW_MIN_ACTIVE_MEMBERS,
   DEFAULT_UNFINISHED_SWIPE_HOURS,
   DEFAULT_DISCOVERY_DEBOUNCE_HOURS,

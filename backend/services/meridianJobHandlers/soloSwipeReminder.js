@@ -354,7 +354,7 @@ const SOLO_SWIPE_REMINDER_DEFINITION_SPEC = Object.freeze({
   definitionKey: SOLO_SWIPE_REMINDER_DEFINITION_KEY,
   handlerKey: SOLO_SWIPE_REMINDER_HANDLER_KEY,
   tenantKey: '',
-  enabled: true,
+  enabled: false,
   scheduleCron: SOLO_SWIPE_REMINDER_CRON,
   copyTitleKey: NOTIFICATION_COPY_KEYS.ritual.swipe.title,
   copyBodyKey: NOTIFICATION_COPY_KEYS.ritual.swipe.body,
