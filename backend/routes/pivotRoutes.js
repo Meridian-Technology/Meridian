@@ -63,6 +63,13 @@ const {
 const { getPivotLandingDrop } = require('../services/pivotLandingDropService');
 const { recordLandingEvent, getLandingConfig } = require('../services/pivotLandingService');
 const { joinWaitlist } = require('../services/pivotLandingWaitlistService');
+const {joinCityInterest} = require('../services/justGoCityInterestService');
+const {
+  searchCities,
+  getCity,
+  nearestCity,
+  citySelection,
+} = require('../services/justGoCityDirectoryService');
 const { hopLandingQr } = require('../services/pivotLandingQrService');
 const {
   pivotReferralValidateRateLimit,
@@ -106,6 +113,57 @@ router.get('/cities', async (req, res) => {
       success: false,
       message: 'Unable to load just go cities.',
     });
+  }
+});
+
+router.get('/city-directory/search', pivotLandingConfigRateLimit, async (req, res) => {
+  try {
+    const query = String(req.query.q || '').trim();
+    if (query.length < 2 || query.length > 80) {
+      return res.status(400).json({success: false, message: 'Search needs 2 to 80 characters.'});
+    }
+    const {data} = await listPivotCities(req);
+    const cities = searchCities(query, 12, data.cities).map(city => citySelection(city, data.cities));
+    return res.status(200).json({success: true, data: {cities}});
+  } catch (err) {
+    logPivotRouteError('GET /pivot/city-directory/search', err, req);
+    return res.status(500).json({success: false, message: 'Unable to search cities.'});
+  }
+});
+
+router.get('/city-directory/nearest', pivotLandingConfigRateLimit, async (req, res) => {
+  try {
+    const city = nearestCity(Number(req.query.latitude), Number(req.query.longitude));
+    const {data} = await listPivotCities(req);
+    return res.status(200).json({success: true, data: {city: city ? citySelection(city, data.cities) : null}});
+  } catch (err) {
+    logPivotRouteError('GET /pivot/city-directory/nearest', err, req);
+    return res.status(500).json({success: false, message: 'Unable to find a city here.'});
+  }
+});
+
+router.get('/city-directory/:cityId', pivotLandingConfigRateLimit, async (req, res) => {
+  try {
+    const city = getCity(req.params.cityId);
+    if (!city) return res.status(404).json({success: false, message: 'City not found.'});
+    const {data} = await listPivotCities(req);
+    return res.status(200).json({success: true, data: {city: citySelection(city, data.cities)}});
+  } catch (err) {
+    logPivotRouteError('GET /pivot/city-directory/:cityId', err, req);
+    return res.status(500).json({success: false, message: 'Unable to load city.'});
+  }
+});
+
+router.post('/city-interest', pivotLandingWaitlistRateLimit, async (req, res) => {
+  try {
+    const result = await joinCityInterest(req, req.body);
+    if (result.error) return res.status(result.status || 400).json({
+      success: false, message: result.error, code: result.code,
+    });
+    return res.status(200).json({success: true, data: result.data});
+  } catch (err) {
+    logPivotRouteError('POST /pivot/city-interest', err, req);
+    return res.status(500).json({success: false, message: 'Unable to join this city waitlist.'});
   }
 });
 
