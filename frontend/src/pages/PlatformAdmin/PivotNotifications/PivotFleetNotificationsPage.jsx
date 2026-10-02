@@ -17,6 +17,7 @@ import PivotBatchWeekPicker from '../PivotTenantDashboard/PivotBatchWeekPicker';
 import usePivotBatchWeekState from '../PivotTenantDashboard/usePivotBatchWeekState';
 import PivotNotificationDefinitionEditor from './PivotNotificationDefinitionEditor';
 import PivotNotificationScheduleAudit from './PivotNotificationScheduleAudit';
+import PivotOneTimeSends from './PivotOneTimeSends';
 import PivotWeeklyDropPage from '../PivotWeeklyDrop/PivotWeeklyDropPage';
 import { summarizeNotificationActivity } from './notificationActivity';
 import {
@@ -42,6 +43,7 @@ const RUN_STATUS_LABELS = {
   running: 'Running',
   retry_wait: 'Retrying',
   pending: 'Queued',
+  cancelled: 'Cancelled',
 };
 
 function tenantLabel(tenant, tenantKey) {
@@ -260,7 +262,7 @@ function PivotFleetNotificationsPage({
   const restoreDefaultSchedules = useCallback(async () => {
     if (restoringDefaults) return;
     const confirmed = window.confirm(
-      'Restore all default schedules? Each built-in schedule goes back to its shipped clock, message, conditions, and on/off state.',
+      'Restore all default schedules? Each built-in schedule goes back to its shipped clock, message, and conditions, and comes back paused. Nothing sends until you turn a schedule on.',
     );
     if (!confirmed) return;
     setRestoringDefaults(true);
@@ -280,7 +282,7 @@ function PivotFleetNotificationsPage({
     setEnabledById({});
     addNotification({
       title: 'Default schedules restored',
-      message: 'Built-in schedules are back to their shipped settings.',
+      message: 'Built-in schedules are back to their shipped settings, paused.',
       type: 'success',
     });
     refetchDefinitions({ silent: true });
@@ -496,6 +498,12 @@ function PivotFleetNotificationsPage({
           <p className="pivot-lab__empty">No schedules yet.</p>
         )}
       </PivotOpsSection>
+
+      <PivotOneTimeSends
+        tenants={pivotTenants}
+        tenantKey={scopedTenant}
+        onSent={() => refetchRecent({ silent: true })}
+      />
 
       <Popup
         isOpen={Boolean(editorState)}

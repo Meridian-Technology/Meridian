@@ -59,7 +59,7 @@ describe('MeridianJobRun schema', () => {
     expect(run.summary.accepted).toBe(8);
     expect(MERIDIAN_JOB_RUN_CATEGORIES).toEqual(['notification', 'compute_surface']);
     expect(MERIDIAN_JOB_RUN_STATUSES).toEqual([
-      'pending', 'running', 'retry_wait', 'succeeded', 'failed', 'preview',
+      'pending', 'running', 'retry_wait', 'succeeded', 'failed', 'preview', 'cancelled',
     ]);
   });
 

@@ -206,7 +206,14 @@ describe('meridianJobAdminService', () => {
   it('lists registered handlers for the definition editor', () => {
     expect(listEnqueueableMeridianJobHandlers()).toEqual(
       expect.arrayContaining([
-        { handlerKey: 'weekly_drop', category: 'notification' },
+        { handlerKey: 'weekly_drop', category: 'notification', scope: 'city', channel: 'push' },
+        {
+          handlerKey: 'admin_weekly_report',
+          category: 'notification',
+          scope: 'fleet',
+          channel: 'email',
+          timezone: 'America/New_York',
+        },
       ]),
     );
   });

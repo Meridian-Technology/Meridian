@@ -90,7 +90,8 @@ function formFromDefinition(definition) {
     definitionKey: definition?.definitionKey || '',
     handlerKey: definition?.handlerKey || '',
     tenantKey: definition?.tenantKey || '',
-    enabled: definition?.enabled !== false,
+    // New schedules start paused.
+    enabled: definition ? definition.enabled !== false : false,
     scheduleParts: schedule.parts,
     advancedCron: Boolean(schedule.advanced),
     scheduleCron: definition?.scheduleCron || cronFromScheduleParts(schedule.parts),
@@ -147,6 +148,10 @@ function PivotNotificationDefinitionEditor({
       : [];
     return rows.slice().sort((a, b) => String(a.handlerKey).localeCompare(String(b.handlerKey)));
   }, [handlersResponse]);
+  const selectedHandler = handlers.find((handler) => handler.handlerKey === form.handlerKey) || null;
+  const fleetHandler = selectedHandler?.scope === 'fleet';
+  const emailHandler = selectedHandler?.channel === 'email';
+  const ownMessage = form.handlerKey === 'scheduled_push';
 
   const {
     data: catalogResponse,
@@ -227,16 +232,17 @@ function PivotNotificationDefinitionEditor({
     if (!form.handlerKey) errors.handlerKey = 'handlerKey is required';
     const cron = validateThirtyMinuteCron(currentCron(form));
     if (cron.error) errors.scheduleCron = cron.error;
-    const quiet = quietHoursError(form);
+    const quiet = fleetHandler ? null : quietHoursError(form);
     if (quiet) errors.quietHours = quiet;
     const catalogMatches = catalog?.handlerKey === form.handlerKey;
     const rules = catalogMatches && Array.isArray(form.rules)
       ? form.rules
       : (catalogMatches ? catalog.defaultRules : null);
-    if (!Array.isArray(rules)) errors.rules = 'Who rules are still loading';
+    if (!Array.isArray(rules) && !emailHandler) errors.rules = 'Who rules are still loading';
+    if (ownMessage && !form.copyBodyFallback.trim()) errors.message = 'Add a message body';
     setFieldErrors(errors);
     return { errors, cron, rules };
-  }, [catalog, creating, form]);
+  }, [catalog, creating, emailHandler, fleetHandler, form, ownMessage]);
 
   const handleSave = useCallback(async (event) => {
     event.preventDefault();
@@ -255,18 +261,41 @@ function PivotNotificationDefinitionEditor({
       return;
     }
 
-    const body = {
-      handlerKey: form.handlerKey,
-      tenantKey: form.tenantKey || null,
-      enabled: form.enabled !== false,
-      scheduleCron: cron.normalized,
-      copyTitleKey: voiceResult?.titleKey || voiceKeys.title || null,
-      copyBodyKey: voiceResult?.bodyKey || voiceKeys.body || null,
-      copyTitleFallback: definition?.copyTitleFallback || null,
-      copyBodyFallback: definition?.copyBodyFallback || null,
-      triggerConfig: triggerConfigFromForm(form),
-      rules,
-    };
+    const messageCopy = ownMessage
+      ? {
+        copyTitleKey: null,
+        copyBodyKey: null,
+        copyTitleFallback: form.copyTitleFallback.trim() || null,
+        copyBodyFallback: form.copyBodyFallback.trim() || null,
+      }
+      : {
+        copyTitleKey: voiceResult?.titleKey || voiceKeys.title || null,
+        copyBodyKey: voiceResult?.bodyKey || voiceKeys.body || null,
+        copyTitleFallback: definition?.copyTitleFallback || null,
+        copyBodyFallback: definition?.copyBodyFallback || null,
+      };
+    const body = emailHandler
+      ? {
+        handlerKey: form.handlerKey,
+        tenantKey: null,
+        enabled: form.enabled !== false,
+        scheduleCron: cron.normalized,
+        copyTitleKey: null,
+        copyBodyKey: null,
+        copyTitleFallback: null,
+        copyBodyFallback: null,
+        triggerConfig: {},
+        rules: [],
+      }
+      : {
+        handlerKey: form.handlerKey,
+        tenantKey: fleetHandler ? null : (form.tenantKey || null),
+        enabled: form.enabled !== false,
+        scheduleCron: cron.normalized,
+        ...messageCopy,
+        triggerConfig: fleetHandler ? {} : triggerConfigFromForm(form),
+        rules,
+      };
     if (creating) body.definitionKey = form.definitionKey.trim().toLowerCase();
 
     const path = creating
@@ -294,7 +323,19 @@ function PivotNotificationDefinitionEditor({
       type: 'success',
     });
     onSaved?.(res.data);
-  }, [addNotification, creating, definition, form, onSaved, validateForm, voiceKeys.body, voiceKeys.title]);
+  }, [
+    addNotification,
+    creating,
+    definition,
+    emailHandler,
+    fleetHandler,
+    form,
+    onSaved,
+    ownMessage,
+    validateForm,
+    voiceKeys.body,
+    voiceKeys.title,
+  ]);
 
   const handleDelete = useCallback(async () => {
     if (!definition?.id) return;
@@ -543,8 +584,15 @@ function PivotNotificationDefinitionEditor({
         <p className="pivot-notification-definition-editor__lead">
           {condensed
             ? schedulePurpose(definition)
-            : 'Handlers stay in code. Schedule minutes are only :00 or :30 in each city’s drop timezone.'}
+            : fleetHandler
+              ? `Runs once for all cities. Schedule minutes are only :00 or :30, in ${selectedHandler.timezone || 'the pilot drop timezone'}.`
+              : 'Handlers stay in code. Schedule minutes are only :00 or :30 in each city’s drop timezone.'}
         </p>
+        {emailHandler ? (
+          <p className="pivot-notification-definition-editor__summary">
+            Always emailed to every platform admin.
+          </p>
+        ) : null}
         {condensed && !timedOnly && whoSummary ? (
           <p className="pivot-notification-definition-editor__summary">{whoSummary}</p>
         ) : null}
@@ -573,6 +621,9 @@ function PivotNotificationDefinitionEditor({
               onChange={(event) => setForm((current) => ({
                 ...current,
                 handlerKey: event.target.value,
+                tenantKey: handlers.find((handler) => handler.handlerKey === event.target.value)?.scope === 'fleet'
+                  ? ''
+                  : current.tenantKey,
                 rules: null,
                 discoveryOn: 'catalog_publish',
               }))}
@@ -586,6 +637,7 @@ function PivotNotificationDefinitionEditor({
               ))}
             </select>
           </label>
+          {fleetHandler ? null : (
           <label className="linear-field">
             <span className="linear-field__label">Scope</span>
             <select
@@ -602,6 +654,7 @@ function PivotNotificationDefinitionEditor({
               ))}
             </select>
           </label>
+          )}
           <label className="linear-field linear-field--checkbox">
             <input
               type="checkbox"
@@ -634,6 +687,7 @@ function PivotNotificationDefinitionEditor({
           </p>
         ) : null}
 
+        {fleetHandler ? null : (
         <div className="pivot-notification-definition-editor__quiet">
           <label className="linear-field">
             <span className="linear-field__label">Quiet hours start</span>
@@ -658,6 +712,7 @@ function PivotNotificationDefinitionEditor({
             />
           </label>
         </div>
+        )}
         {form.handlerKey === 'event_discovery' ? (
           <label className="linear-field">
             <span className="linear-field__label">Fire mode</span>
@@ -680,12 +735,45 @@ function PivotNotificationDefinitionEditor({
         </>
         ) : null}
 
-        <PivotNotificationVoiceFields
-          ref={voiceRef}
-          titleKey={voiceKeys.title}
-          bodyKey={voiceKeys.body}
-          disabled={saving}
-        />
+        {ownMessage ? (
+          <div className="pivot-notification-definition-editor__message">
+            <label className="linear-field">
+              <span className="linear-field__label">Title</span>
+              <input
+                aria-label="Push title"
+                value={form.copyTitleFallback}
+                maxLength={100}
+                placeholder="just go*"
+                disabled={saving}
+                onChange={(event) => setField('copyTitleFallback', event.target.value)}
+              />
+            </label>
+            <label className="linear-field">
+              <span className="linear-field__label">Message</span>
+              <textarea
+                aria-label="Push message"
+                value={form.copyBodyFallback}
+                maxLength={240}
+                rows={2}
+                disabled={saving}
+                onChange={(event) => setField('copyBodyFallback', event.target.value)}
+              />
+            </label>
+            {fieldErrors.message ? (
+              <p className="pivot-notification-definition-editor__error" role="alert">
+                {fieldErrors.message}
+              </p>
+            ) : null}
+          </div>
+        ) : null}
+        {emailHandler || ownMessage ? null : (
+          <PivotNotificationVoiceFields
+            ref={voiceRef}
+            titleKey={voiceKeys.title}
+            bodyKey={voiceKeys.body}
+            disabled={saving}
+          />
+        )}
 
         {condensed && timedOnly ? (
           <div className="pivot-notification-definition-editor__when">
@@ -708,6 +796,9 @@ function PivotNotificationDefinitionEditor({
             rules={form.rules}
             disabled={saving}
             labelPrefix="Who"
+            emptyText={ownMessage
+              ? 'No conditions. Sends to everyone in the city with push on.'
+              : undefined}
             onChange={(rules) => setField('rules', rules)}
           />
         )}
@@ -730,7 +821,7 @@ function PivotNotificationDefinitionEditor({
               Advanced settings
             </button>
           ) : null}
-          {condensed && onOpenChecks ? (
+          {condensed && onOpenChecks && !fleetHandler ? (
             <button
               type="button"
               className="linear-btn linear-btn--secondary"
@@ -755,7 +846,7 @@ function PivotNotificationDefinitionEditor({
         </div>
       </form>
 
-      {fleetTemplate && !condensed ? (
+      {fleetTemplate && !condensed && !fleetHandler ? (
         <form className="pivot-notification-definition-editor__override" onSubmit={handleSaveOverride}>
           <h3 className="pivot-notification-definition-editor__section-title">City overrides</h3>
           <p className="pivot-notification-definition-editor__hint">

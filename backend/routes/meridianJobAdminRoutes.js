@@ -22,6 +22,13 @@ const {
   upsertMeridianNotificationOverride,
 } = require('../services/meridianNotificationDefinitionService');
 const { previewNotificationEligibility } = require('../services/meridianNotificationEligibilityService');
+const { sendMeridianNotificationNow } = require('../services/meridianNotificationSendNowService');
+const {
+  previewOneTimeSend,
+  sendOneTime,
+  listOneTimeSends,
+  cancelOneTimeSend,
+} = require('../services/meridianOneTimeSendService');
 
 const router = express.Router();
 
@@ -34,6 +41,7 @@ function handleMeridianJobAdminError(res, error) {
     success: false,
     message: error?.message || 'Meridian job admin error',
     code: error?.code || 'MERIDIAN_JOB_ADMIN_ERROR',
+    ...(error?.details ? { details: error.details } : {}),
   });
 }
 
@@ -140,6 +148,7 @@ router.get(
       const data = await previewNotificationEligibility(req, {
         handlerKey: req.query.handlerKey,
         tenantKey: req.query.tenantKey,
+        definitionKey: req.query.definitionKey,
       });
       return res.json({ success: true, data });
     } catch (error) {
@@ -279,6 +288,88 @@ router.post(
     try {
       const data = await restoreDefaultMeridianNotificationSchedules(req);
       return res.json({ success: true, data });
+    } catch (error) {
+      return handleMeridianJobAdminError(res, error);
+    }
+  },
+);
+
+router.get(
+  '/admin/meridian/jobs/one-time',
+  verifyToken,
+  requirePlatformAdmin,
+  async (req, res) => {
+    try {
+      const data = await listOneTimeSends(req, { limit: req.query.limit });
+      return res.json({ success: true, data });
+    } catch (error) {
+      return handleMeridianJobAdminError(res, error);
+    }
+  },
+);
+
+router.post(
+  '/admin/meridian/jobs/one-time/preview',
+  verifyToken,
+  requirePlatformAdmin,
+  async (req, res) => {
+    try {
+      const body = req.body && typeof req.body === 'object' ? req.body : {};
+      const data = await previewOneTimeSend(req, body);
+      return res.json({ success: true, data });
+    } catch (error) {
+      return handleMeridianJobAdminError(res, error);
+    }
+  },
+);
+
+router.post(
+  '/admin/meridian/jobs/one-time',
+  verifyToken,
+  requirePlatformAdmin,
+  async (req, res) => {
+    try {
+      const body = req.body && typeof req.body === 'object' ? req.body : {};
+      const data = await sendOneTime(req, body, {
+        triggeredBy: req.user?.globalUserId || req.user?.userId || null,
+      });
+      return res.status(201).json({ success: true, data });
+    } catch (error) {
+      return handleMeridianJobAdminError(res, error);
+    }
+  },
+);
+
+router.post(
+  '/admin/meridian/jobs/one-time/:id/cancel',
+  verifyToken,
+  requirePlatformAdmin,
+  async (req, res) => {
+    try {
+      const data = await cancelOneTimeSend(req, req.params.id, {
+        cancelledBy: req.user?.globalUserId || req.user?.userId || null,
+      });
+      return res.json({ success: true, data });
+    } catch (error) {
+      return handleMeridianJobAdminError(res, error);
+    }
+  },
+);
+
+router.post(
+  '/admin/meridian/jobs/definitions/:id/send-now',
+  verifyToken,
+  requirePlatformAdmin,
+  async (req, res) => {
+    try {
+      const body = req.body && typeof req.body === 'object' ? req.body : {};
+      const data = await sendMeridianNotificationNow(req, req.params.id, {
+        cities: body.cities,
+        fingerprint: body.fingerprint,
+        ignoreQuietHours: body.ignoreQuietHours === true,
+        triggeredBy: req.user?.globalUserId || req.user?.userId || null,
+      });
+      return res.status(201).json({ success: true, data });
     } catch (error) {
       return handleMeridianJobAdminError(res, error);
     }

@@ -115,7 +115,8 @@ describe('meridian notification definitions', () => {
 
     expect(created.definitionKey).toBe('ritual_crew_scan');
     expect(created.tenantKey).toBe(null);
-    expect(created.enabled).toBe(true);
+    // New schedules start paused unless the caller turns them on.
+    expect(created.enabled).toBe(false);
     expect(created.scheduleCron).toBe('0,30 * * * *');
     expect(created.triggerConfig).toEqual({ lookbackHours: 6 });
     expect(created.rules).toEqual([]);
@@ -128,10 +129,10 @@ describe('meridian notification definitions', () => {
     expect(byKey.id).toBe(created.id);
 
     const updated = await updateMeridianNotificationDefinition(req, created.id, {
-      enabled: false,
+      enabled: true,
       scheduleCron: '0 18 * * 4',
     });
-    expect(updated.enabled).toBe(false);
+    expect(updated.enabled).toBe(true);
     expect(updated.scheduleCron).toBe('0 18 * * 4');
 
     await expect(
@@ -263,6 +264,7 @@ describe('meridian notification definitions', () => {
       definitionKey: 'weekly_drop',
       handlerKey: 'weekly_drop',
       scheduleCron: '0 18 * * 4',
+      enabled: true,
     });
 
     const checks = [
@@ -283,6 +285,7 @@ describe('meridian notification definitions', () => {
       definitionKey: 'weekly_drop',
       handlerKey: 'weekly_drop',
       scheduleCron: '30 21 * * 0',
+      enabled: true,
     });
 
     // Monday in UTC is still Sunday in Los Angeles.
@@ -317,12 +320,62 @@ describe('meridian notification definitions', () => {
     expect(sent.enqueued.map((row) => row.tenantKey)).toEqual(['nyc']);
   });
 
-  it('restores built-in schedules and leaves a custom schedule in place', async () => {
+  it('runs the admin weekly report once per slot for all cities, to a fixed audience', async () => {
+    await seedPivotTenant(req, 'nyc', 'America/New_York');
+    await seedPivotTenant(req, 'la', 'America/Los_Angeles');
+
+    await expect(createMeridianNotificationDefinition(req, {
+      definitionKey: 'admin_weekly_report_nyc',
+      handlerKey: 'admin_weekly_report',
+      tenantKey: 'nyc',
+      scheduleCron: '0 9 * * 0',
+    })).rejects.toMatchObject({ code: 'FLEET_HANDLER_TENANT_SCOPE', status: 400 });
+    await expect(createMeridianNotificationDefinition(req, {
+      definitionKey: 'admin_weekly_report_rules',
+      handlerKey: 'admin_weekly_report',
+      scheduleCron: '0 9 * * 0',
+      rules: [{ outcome: 'send', conditions: [{ attribute: 'hasCrew', operator: 'is', value: true }] }],
+    })).rejects.toMatchObject({ code: 'INVALID_RULES' });
+
+    const created = await createMeridianNotificationDefinition(req, {
+      definitionKey: 'admin_weekly_report',
+      handlerKey: 'admin_weekly_report',
+      scheduleCron: '0 9 * * 0',
+    });
+    expect(created.enabled).toBe(false);
+    await expect(updateMeridianNotificationDefinition(req, created.id, { tenantKey: 'la' }))
+      .rejects.toMatchObject({ code: 'FLEET_HANDLER_TENANT_SCOPE' });
+    await expect(upsertMeridianNotificationOverride(req, 'nyc', 'admin_weekly_report', { enabled: true }))
+      .rejects.toMatchObject({ code: 'FLEET_HANDLER_OVERRIDE' });
+
+    // Sunday 2026-06-07 13:00 UTC = 09:00 New York (the pilot drop timezone).
+    const now = new Date('2026-06-07T13:00:00.000Z');
+    expect((await evaluateMeridianNotificationSchedules(req, { now })).enqueued).toHaveLength(0);
+
+    await updateMeridianNotificationDefinition(req, created.id, { enabled: true });
+    const first = await evaluateMeridianNotificationSchedules(req, { now });
+    expect(first.enqueued).toEqual([expect.objectContaining({
+      handlerKey: 'admin_weekly_report',
+      tenantKey: 'sf',
+      created: true,
+      runKey: 'admin_weekly_report:2026-06-07T09:00',
+    })]);
+    const second = await evaluateMeridianNotificationSchedules(req, { now });
+    expect(second.enqueued[0].created).toBe(false);
+    expect((await evaluateMeridianNotificationSchedules(req, {
+      now: new Date('2026-06-07T16:00:00.000Z'),
+    })).enqueued).toHaveLength(0);
+
+    const { MeridianJobRun } = getGlobalModels(req, 'MeridianJobRun');
+    expect(await MeridianJobRun.countDocuments({ type: 'admin_weekly_report' })).toBe(1);
+  });
+
+  it('restores built-in schedules paused and leaves a custom schedule in place', async () => {
     await createMeridianNotificationDefinition(req, {
       definitionKey: 'ritual_crew_scan',
       handlerKey: 'ritual_stub',
       scheduleCron: '0 9 * * *',
-      enabled: false,
+      enabled: true,
       rules: [],
     });
     await createMeridianNotificationDefinition(req, {
@@ -342,7 +395,8 @@ describe('meridian notification definitions', () => {
 
     const scan = restored.find((row) => row.definitionKey === 'ritual_crew_scan');
     expect(scan.handlerKey).toBe('ritual_crew_scan');
-    expect(scan.enabled).toBe(true);
+    // Restoring an enabled schedule pauses it: restore never starts a send.
+    expect(scan.enabled).toBe(false);
     expect(scan.scheduleCron).toBe('0,30 8-21 * * *');
     expect(scan.rules[0].conditions.map((row) => row.attribute)).toEqual([
       'quorumMet',
@@ -353,11 +407,16 @@ describe('meridian notification definitions', () => {
     ]);
 
     const weekly = restored.find((row) => row.definitionKey === 'weekly_drop');
-    expect(weekly.enabled).toBe(true);
     expect(weekly.scheduleCron).toBe('0 18 * * 4');
     expect(weekly.rules).toEqual([]);
 
-    expect(restored.find((row) => row.definitionKey === 'event_discovery').enabled).toBe(false);
+    expect(restored.every((row) => row.enabled === false)).toBe(true);
+    expect(restored.map((row) => row.handlerKey)).not.toContain('admin_weekly_report');
+    const { MeridianJobRun } = getGlobalModels(req, 'MeridianJobRun');
+    await seedPivotTenant(req, 'nyc', 'America/New_York');
+    const tick = await evaluateMeridianNotificationSchedules(req, { now: new Date('2026-06-04T22:00:00.000Z') });
+    expect(tick.enqueued).toHaveLength(0);
+    expect(await MeridianJobRun.countDocuments()).toBe(0);
 
     const listed = await listMeridianNotificationDefinitions(req);
     expect(listed.map((row) => row.definitionKey).sort()).toEqual([

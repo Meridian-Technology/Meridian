@@ -7,7 +7,13 @@ const {
 const {
   MERIDIAN_JOB_DELIVERY_STATUSES,
 } = require('../schemas/meridianJobDelivery');
-const { getMeridianJobHandler, listMeridianJobHandlers } = require('./meridianJobRegistry');
+const {
+  getMeridianJobHandler,
+  isFleetMeridianJobHandler,
+  listMeridianJobHandlers,
+} = require('./meridianJobRegistry');
+const { getMeridianOpsTenantKey } = require('./meridianOpsNotifyService');
+const { PIVOT_DROP_PILOT_DEFAULTS } = require('../utilities/pivotDropSchedule');
 const { ensureMeridianJobHandlersLoaded } = require('./meridianJobHandlers');
 const { enqueueMeridianJob } = require('./meridianJobEnqueueService');
 
@@ -258,9 +264,12 @@ async function enqueueMeridianJobAdmin(req, {
 } = {}) {
   ensureMeridianJobHandlersLoaded();
   const normalizedHandler = typeof handlerKey === 'string' ? handlerKey.trim() : '';
-  const normalizedTenant = typeof tenantKey === 'string' ? tenantKey.trim().toLowerCase() : '';
+  let normalizedTenant = typeof tenantKey === 'string' ? tenantKey.trim().toLowerCase() : '';
   if (!normalizedHandler) {
     throw meridianJobAdminError('handlerKey is required', 'HANDLER_KEY_REQUIRED');
+  }
+  if (isFleetMeridianJobHandler(normalizedHandler)) {
+    normalizedTenant = getMeridianOpsTenantKey();
   }
   if (!normalizedTenant) {
     throw meridianJobAdminError('tenantKey is required', 'TENANT_KEY_REQUIRED');
@@ -294,7 +303,11 @@ async function enqueueMeridianJobAdmin(req, {
 
 function listEnqueueableMeridianJobHandlers() {
   ensureMeridianJobHandlersLoaded();
-  return listMeridianJobHandlers();
+  return listMeridianJobHandlers().map((handler) => (
+    handler.scope === 'fleet'
+      ? { ...handler, timezone: PIVOT_DROP_PILOT_DEFAULTS.pivotDropTimezone }
+      : handler
+  ));
 }
 
 module.exports = {

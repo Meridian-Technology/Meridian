@@ -36,6 +36,7 @@ const handlers = {
   data: [
     { handlerKey: 'weekly_drop', category: 'notification' },
     { handlerKey: 'ritual_crew_scan', category: 'notification' },
+    { handlerKey: 'scheduled_push', category: 'notification' },
   ],
 };
 
@@ -69,14 +70,19 @@ function stubFetches({ merged, catalog = null, layers = null } = {}) {
     }
     if (path.includes('/admin/meridian/jobs/notification-rule-catalog')) {
       const crew = path.includes('ritual_crew_scan');
+      const scheduledPush = path.includes('scheduled_push');
+      let handlerKey = 'weekly_drop';
+      if (crew) handlerKey = 'ritual_crew_scan';
+      if (scheduledPush) handlerKey = 'scheduled_push';
+      let attributes = [];
+      if (crew) attributes = [{ key: 'quorumMet', label: 'Quorum met', type: 'boolean' }];
+      if (scheduledPush) attributes = [{ key: 'hasCrew', label: 'Has a crew', type: 'boolean' }];
       return {
         data: {
           success: true,
           data: {
-            handlerKey: crew ? 'ritual_crew_scan' : 'weekly_drop',
-            attributes: crew
-              ? [{ key: 'quorumMet', label: 'Quorum met', type: 'boolean' }]
-              : [],
+            handlerKey,
+            attributes,
             operators: {
               boolean: [{ key: 'is', label: 'is' }],
               number: [{ key: 'is', label: 'is' }],
@@ -214,7 +220,7 @@ describe('PivotNotificationDefinitionEditor', () => {
             definitionKey: 'crew_ping',
             handlerKey: 'weekly_drop',
             tenantKey: null,
-            enabled: true,
+            enabled: false,
             scheduleCron: '0 18 * * 5',
             copyTitleKey: 'notifications.weeklyDrop.title',
             copyBodyKey: 'notifications.weeklyDrop.body',
@@ -228,6 +234,54 @@ describe('PivotNotificationDefinitionEditor', () => {
     });
     await waitFor(() => {
       expect(onSaved).toHaveBeenCalled();
+    });
+  });
+
+  it('creates a scheduled push with its own message', async () => {
+    stubFetches();
+    mockAuthenticatedRequest.mockResolvedValue({
+      data: { success: true, data: { ...fleetDefinition, definitionKey: 'friday_lunch' } },
+    });
+
+    view = render(
+      <PivotNotificationDefinitionEditor
+        definition={null}
+        tenants={tenants}
+        onCancel={jest.fn()}
+        onSaved={jest.fn()}
+      />,
+    );
+
+    fireEvent.change(screen.getByLabelText('Definition key'), { target: { value: 'friday_lunch' } });
+    fireEvent.change(screen.getByLabelText('Definition handler'), { target: { value: 'scheduled_push' } });
+    expect(await screen.findByText('No conditions. Sends to everyone in the city with push on.'))
+      .toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Create schedule' }));
+    expect(await screen.findByText('Add a message body')).toBeInTheDocument();
+    expect(mockAuthenticatedRequest).not.toHaveBeenCalled();
+
+    fireEvent.change(screen.getByLabelText('Push title'), { target: { value: 'lunch?' } });
+    fireEvent.change(screen.getByLabelText('Push message'), { target: { value: 'Plans for tonight?' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Create schedule' }));
+
+    await waitFor(() => {
+      expect(mockAuthenticatedRequest).toHaveBeenCalledWith(
+        '/admin/meridian/jobs/definitions',
+        expect.objectContaining({
+          method: 'POST',
+          data: expect.objectContaining({
+            definitionKey: 'friday_lunch',
+            handlerKey: 'scheduled_push',
+            enabled: false,
+            copyTitleKey: null,
+            copyBodyKey: null,
+            copyTitleFallback: 'lunch?',
+            copyBodyFallback: 'Plans for tonight?',
+            rules: [],
+          }),
+        }),
+      );
     });
   });
 
