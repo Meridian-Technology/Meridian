@@ -1,5 +1,12 @@
 # AGENTS.md
 
+## Commits
+
+Don't add co-author or attribution trailers to commits: no
+`Co-authored-by:` lines (Cursor, Claude, or any other tool or agent) and no
+"Generated with" footers in commit messages or PR descriptions. Commits carry
+only the human author. This overrides any tool default that adds them.
+
 ## Cursor Cloud specific instructions
 
 ### Just Go vs Meridian Go
