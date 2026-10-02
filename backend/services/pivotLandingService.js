@@ -661,11 +661,15 @@ async function aggregateFleetWaitlist(JustGoWaitlist, tenantKeys, from, to) {
   return rows?.[0] || {};
 }
 
+/** `options.tenantKeys` limits the fleet to those cities (all Pivot cities when unset). */
 async function getFleetLaunchStats(req, options = {}) {
   const range = parseLaunchRange(options, options.now);
   if (range.error) return range;
 
-  const tenants = (await getMergedTenants(req)).filter(isPivotTenant);
+  const only = options.tenantKeys ? new Set(options.tenantKeys) : null;
+  const tenants = (await getMergedTenants(req))
+    .filter(isPivotTenant)
+    .filter((row) => !only || only.has(row.tenantKey));
   const tenantKeys = tenants.map((row) => row.tenantKey);
 
   if (!tenantKeys.length) {

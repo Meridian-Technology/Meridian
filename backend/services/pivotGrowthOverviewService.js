@@ -126,9 +126,13 @@ async function getTenantGrowthOverview(req, options = {}) {
  * Each city's launch date applies to that city before merging; the fleet window
  * starts at the earliest launch week only when every city has one.
  * A city that fails to load is listed in `failedCities`, not silently dropped.
+ * `options.tenantKeys` limits the fleet to those cities (all Pivot cities when unset).
  */
 async function getFleetGrowthOverview(req, options = {}) {
-  const pivotTenants = (await getMergedTenants(req)).filter(isPivotTenant);
+  const only = options.tenantKeys ? new Set(options.tenantKeys) : null;
+  const pivotTenants = (await getMergedTenants(req))
+    .filter(isPivotTenant)
+    .filter((tenant) => !only || only.has(tenant.tenantKey));
   const members = new Map();
   const deckOpens = [];
   const intents = [];

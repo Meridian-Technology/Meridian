@@ -14,7 +14,7 @@ const groups = {
       /\/unit\/(?:clusterPivotHostNames|eventPivotIndexes|pivotBatch|pivotCatalog|pivotCuration|pivotDiscovery|pivotEnrichment|pivotEventSimilarity|pivotExtraction|pivotFieldParsing|pivotHost|pivotIngest|pivotLocation|pivotMovie|pivotOffloaded|pivotOrganizer|pivotRichData|pivotScrape|pivotSite|pivotSource|pivotStructured|pivotTag)/,
     ],
     'compute-admin': [
-      /\/unit\/(?:pivotAdmin|pivotCompute|pivotFleet|pivotGrowth|pivotLab|pivotTenantInsights|pivotTenantJourney|pivotTenantOps|pivotWeeklyReport)/,
+      /\/unit\/(?:pivotAdmin|pivotCompute|pivotFleet|pivotGrowth|pivotLab|pivotTenantInsights|pivotTenantJourney|pivotTenantOps|pivotWeeklyBatchQuality|pivotWeeklyReport)/,
       /\/route-outcomes\/(?:pivotAdmin|pivotComputeWorker)/,
     ],
     'consumer-experience': [
@@ -22,7 +22,7 @@ const groups = {
       /\/route-outcomes\/pivotRoutes/,
     ],
     'crews-weekly-drop': [
-      /\/unit\/(?:pivotCrew|pivotCrossCrew|pivotDropSchedule|pivotRitual|pivotWeek(?!lyReport))/,
+      /\/unit\/(?:pivotCrew|pivotCrossCrew|pivotDropSchedule|pivotRitual|pivotWeek(?!ly(?:BatchQuality|Report)))/,
       /\/route-outcomes\/pivotCrewRoutes/,
     ],
     'jobs-notifications': [
