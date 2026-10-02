@@ -214,7 +214,13 @@ function BatchResult({ result }) {
   );
 }
 
-export default function PivotTenantLocationMigrationPage({ tenantKey, cityDisplayName, onTenantUpdated }) {
+export default function PivotTenantLocationMigrationPage({
+  tenantKey,
+  cityDisplayName,
+  onTenantUpdated,
+  nav = null,
+  title = 'Location migration',
+}) {
   const { addNotification } = useNotification();
   const [searchParams, setSearchParams] = useSearchParams();
   const urlBatchWeek = searchParams.get('batchWeek');
@@ -430,7 +436,7 @@ export default function PivotTenantLocationMigrationPage({ tenantKey, cityDispla
 
   return (
     <PivotTenantPage
-      title="Location migration"
+      title={title}
       subtitle={`${cityDisplayName || tenantKey} · Prepare structured event locations for ${weekRange}.`}
       tenantKey={tenantKey}
       cityDisplayName={cityDisplayName}
@@ -447,6 +453,7 @@ export default function PivotTenantLocationMigrationPage({ tenantKey, cityDispla
         </>
       )}
     >
+      {nav}
       {statusQuery.error ? (
         <PivotOpsBanner tone="danger" title="Location status unavailable" role="alert">{String(statusQuery.error)}</PivotOpsBanner>
       ) : null}

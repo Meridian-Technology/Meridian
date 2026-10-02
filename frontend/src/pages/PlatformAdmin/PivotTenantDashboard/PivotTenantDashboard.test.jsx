@@ -57,7 +57,9 @@ jest.mock('../../../components/Dashboard/Dashboard', () => {
 });
 
 jest.mock('./PivotTenantOverviewPage', () => () => <div>overview-page</div>);
-jest.mock('./PivotTenantCurationPage', () => () => <div>curation-page</div>);
+jest.mock('./PivotTenantCurationPage', () => ({ view, title }) => (
+  <div>curation-page:{view}:{title}</div>
+));
 jest.mock('./PivotTenantAudiencePage', () => {
   const { useLocation } = require('react-router-dom');
   return ({ tenantKey }) => {
@@ -65,7 +67,7 @@ jest.mock('./PivotTenantAudiencePage', () => {
     return <div>audience-page:{tenantKey}:{search}</div>;
   };
 });
-jest.mock('./PivotTenantCatalogPage', () => () => <div>catalog-page</div>);
+jest.mock('./PivotTenantCatalogPage', () => ({ title }) => <div>catalog-page:{title}</div>);
 // Mocked like every other tab: its real graph reaches Popup, which imports
 // @iconify-icon as untransformed ESM and cannot be loaded under jest.
 jest.mock('./carousel/PivotCarouselPage', () => ({ tenantKey }) => (
@@ -139,17 +141,15 @@ describe('PivotTenantDashboard city operations shell', () => {
     mockDesignReviewEnabled = false;
   });
 
-  it('keeps existing bookmarks stable and appends Location migration as page 7', () => {
+  it('keeps existing bookmarks stable with Content at page 1', () => {
     renderDashboard('/platform-admin/pivot/nyc');
 
     expect(screen.getByTestId('tenant-dash-shell')).toBeInTheDocument();
     expect(screen.getByTestId('menu-0')).toHaveTextContent('Overview');
-    expect(screen.getByTestId('menu-1')).toHaveTextContent('Curation');
-    expect(screen.getByTestId('menu-4')).toHaveTextContent('Catalog');
-    expect(screen.getByTestId('menu-4')).toHaveAttribute(
-      'data-icon',
-      'mdi:account-group-outline',
-    );
+    expect(screen.getByTestId('menu-1')).toHaveTextContent('Content');
+    // Catalog (4) and Location migration (7) are Content tabs now.
+    expect(screen.queryByTestId('menu-4')).toBeNull();
+    expect(screen.queryByTestId('menu-7')).toBeNull();
     expect(screen.getByTestId('menu-5')).toHaveTextContent('Voice');
     expect(screen.getByTestId('menu-8')).toHaveTextContent('Carousels');
     expect(screen.getByTestId('menu-6')).toHaveTextContent('Growth');
@@ -157,20 +157,22 @@ describe('PivotTenantDashboard city operations shell', () => {
       'data-icon',
       'mdi:rocket-launch-outline',
     );
-    expect(screen.getByTestId('menu-7')).toHaveTextContent('Location migration');
-    expect(screen.getByTestId('menu-7')).toHaveAttribute(
-      'data-icon',
-      'mdi:map-marker-path',
-    );
   });
 
-  it('keeps ?page=4 Catalog bookmarks on Catalog', () => {
-    renderDashboard('/platform-admin/pivot/nyc?page=4');
+  it('opens Content → Events at ?page=1', () => {
+    renderDashboard('/platform-admin/pivot/nyc?page=1&batchWeek=2026-W36');
 
-    expect(screen.getByText('catalog-page')).toBeInTheDocument();
-    expect(screen.queryByText(/city-voice-page/)).toBeNull();
-    expect(screen.queryByText(/city-growth-page/)).toBeNull();
-    expect(screen.queryByText('curation-page')).toBeNull();
+    expect(screen.getByText('curation-page:events:Content')).toBeInTheDocument();
+    expect(screen.getByTestId('menu-1')).toHaveAttribute('data-selected', 'true');
+  });
+
+  it('redirects a Catalog bookmark (?page=4) to Content → Organizers', () => {
+    renderDashboard('/platform-admin/pivot/nyc?page=4&organizerId=org-1');
+
+    expect(screen.getByTestId('current-page')).toHaveTextContent('1');
+    expect(screen.getByText('catalog-page:Content')).toBeInTheDocument();
+    expect(screen.getByTestId('menu-1')).toHaveAttribute('data-selected', 'true');
+    expect(screen.queryByText(/curation-page/)).toBeNull();
   });
 
   it('shows city Voice at ?page=5', () => {
@@ -178,7 +180,7 @@ describe('PivotTenantDashboard city operations shell', () => {
 
     expect(screen.getByText('city-voice-page:tenant:nyc')).toBeInTheDocument();
     expect(screen.getByTestId('menu-5')).toHaveAttribute('data-selected', 'true');
-    expect(screen.queryByText('catalog-page')).toBeNull();
+    expect(screen.queryByText(/catalog-page/)).toBeNull();
     expect(screen.queryByText(/city-growth-page/)).toBeNull();
   });
 
@@ -191,12 +193,13 @@ describe('PivotTenantDashboard city operations shell', () => {
     expect(screen.queryByText(/city-voice-page/)).toBeNull();
   });
 
-  it('shows the tenant-specific location migration at ?page=7', () => {
+  it('redirects a Location migration bookmark (?page=7) to Content → Locations', () => {
     renderDashboard('/platform-admin/pivot/nyc?page=7');
 
+    expect(screen.getByTestId('current-page')).toHaveTextContent('1');
     expect(screen.getByText('city-location-migration-page:nyc')).toBeInTheDocument();
     expect(screen.queryByText('overview-page')).toBeNull();
-    expect(screen.queryByText('curation-page')).toBeNull();
+    expect(screen.queryByText(/curation-page/)).toBeNull();
   });
 
   it('does not show Growth (or waitlist emails) on Overview', () => {
@@ -236,7 +239,7 @@ describe('PivotTenantDashboard city operations shell', () => {
     expect(items.map((item) => item.textContent).slice(0, 3)).toEqual([
       'Overview',
       'Growth',
-      'Curation',
+      'Content',
     ]);
     expect(items[1]).toHaveAttribute('data-testid', 'menu-6');
     expect(items[1]).toHaveAttribute('data-selected', 'true');
@@ -307,7 +310,7 @@ describe('PivotTenantDashboard city operations shell', () => {
     expect(screen.getByTestId('menu-2')).toHaveTextContent('Audience');
     expect(screen.getByTestId('menu-2')).toHaveAttribute('data-selected', 'true');
     expect(screen.queryByTestId('menu-3')).toBeNull();
-    expect(screen.getByTestId('menu-4')).toHaveTextContent('Catalog');
+    expect(screen.queryByTestId('menu-4')).toBeNull();
   });
 
   it('redirects a Drop deck bookmark without a user to Audience deck rules', () => {
@@ -335,13 +338,13 @@ describe('PivotTenantDashboard city operations shell', () => {
     )).toBeInTheDocument();
   });
 
-  it('redirects a disabled Location migration bookmark to Curation', () => {
+  it('redirects a disabled Location migration bookmark to Content → Events', () => {
     mockLocationMigrationEnabled = false;
     renderDashboard('/platform-admin/pivot/nyc?page=7&batchWeek=2026-W36');
 
     expect(screen.getByTestId('current-page')).toHaveTextContent('1');
     expect(screen.getByTestId('current-batch-week')).toHaveTextContent('2026-W36');
-    expect(screen.getByText('curation-page')).toBeInTheDocument();
+    expect(screen.getByText('curation-page:events:Content')).toBeInTheDocument();
     expect(screen.queryByTestId('menu-7')).toBeNull();
   });
 });

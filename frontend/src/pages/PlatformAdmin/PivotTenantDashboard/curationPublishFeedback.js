@@ -59,7 +59,10 @@ export function locationReviewBlock(event) {
 
 export function locationReviewHref(tenantKey, batchWeek) {
   if (!tenantKey) return null;
-  const params = new URLSearchParams({ page: String(PIVOT_TENANT_PAGES.locationMigration) });
+  const params = new URLSearchParams({
+    page: String(PIVOT_TENANT_PAGES.content),
+    content: 'locations',
+  });
   if (batchWeek) params.set('batchWeek', batchWeek);
   return `/platform-admin/pivot/${encodeURIComponent(tenantKey)}?${params.toString()}`;
 }

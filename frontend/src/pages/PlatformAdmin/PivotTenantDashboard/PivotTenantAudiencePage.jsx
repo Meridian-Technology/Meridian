@@ -240,8 +240,8 @@ function PivotTenantAudiencePage({
   });
 
   const curationHref = batchWeekValid
-    ? `/platform-admin/pivot/${encodeURIComponent(tenantKey)}?page=${PIVOT_TENANT_PAGES.curation}&batchWeek=${encodeURIComponent(batchWeek)}`
-    : `/platform-admin/pivot/${encodeURIComponent(tenantKey)}?page=${PIVOT_TENANT_PAGES.curation}`;
+    ? `/platform-admin/pivot/${encodeURIComponent(tenantKey)}?page=${PIVOT_TENANT_PAGES.content}&batchWeek=${encodeURIComponent(batchWeek)}`
+    : `/platform-admin/pivot/${encodeURIComponent(tenantKey)}?page=${PIVOT_TENANT_PAGES.content}`;
 
   return (
     <PivotTenantPage

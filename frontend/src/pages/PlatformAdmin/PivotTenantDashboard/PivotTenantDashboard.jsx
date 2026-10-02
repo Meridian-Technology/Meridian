@@ -5,18 +5,15 @@ import { useFetch } from '../../../hooks/useFetch';
 import useAdminDashboardTheme from '../../../hooks/useAdminDashboardTheme';
 import { isPivotTenant } from '../TenantManagement/tenantPivotUtils';
 import PivotTenantOverviewPage from './PivotTenantOverviewPage';
-import PivotTenantCurationPage from './PivotTenantCurationPage';
+import PivotTenantContentPage from './PivotTenantContentPage';
 import PivotTenantAudiencePage from './PivotTenantAudiencePage';
-import PivotTenantCatalogPage from './PivotTenantCatalogPage';
 import PivotVoicePage from './PivotVoicePage';
 import PivotCarouselPage from './carousel/PivotCarouselPage';
 import { DESIGN_REVIEW_ENABLED } from './creativeStudioAccess';
 import PivotTenantGrowthPage from './PivotTenantGrowthPage';
 import PivotNotificationsPage from '../PivotNotifications/PivotNotificationsPage';
 import PivotComputeJobs from './PivotComputeJobs';
-import PivotTenantLocationMigrationPage, {
-  RICH_LOCATION_MIGRATION_UI_ENABLED,
-} from './PivotTenantLocationMigrationPage';
+import { RICH_LOCATION_MIGRATION_UI_ENABLED } from './PivotTenantLocationMigrationPage';
 import PivotTenantDropdown from './PivotTenantDropdown';
 import PivotJustGoLogo from './PivotJustGoLogo';
 import {
@@ -54,10 +51,17 @@ function PivotTenantGate({ title, body, onBack }) {
   );
 }
 
-function DisabledLocationMigrationRedirect() {
+/*
+ * Catalog (4) and Location migration (7) merged into Content (1). Their old
+ * bookmarks open the matching Content tab; Location migration falls back to
+ * Events while its UI flag is off.
+ */
+function LegacyContentRedirect({ content }) {
   const [searchParams] = useSearchParams();
   const next = new URLSearchParams(searchParams);
-  next.set('page', String(PIVOT_TENANT_PAGES.curation));
+  next.set('page', String(PIVOT_TENANT_PAGES.content));
+  if (content) next.set('content', content);
+  else next.delete('content');
   return <Navigate to={`?${next.toString()}`} replace />;
 }
 
@@ -118,7 +122,8 @@ function LegacyCreativeLink({ tenantKey, cityDisplayName }) {
 /**
  * Per-tenant Just Go ops shell.
  * Route: /platform-admin/pivot/:tenantKey?page=0..12.
- * Index 7 is reserved for Location migration even when its UI is disabled.
+ * Content (1) holds events, sources, organizers, and (flagged) locations; the
+ * old Catalog (4) and Location migration (7) indexes redirect into it.
  * Audience (2) holds journeys, the user/deck inspector, and deck rules; the
  * old Drop deck index (3) redirects into it. Growth (6) holds landing,
  * waitlist, QR codes, and acquisition; the old Analytics index (11) redirects
@@ -162,14 +167,15 @@ function PivotTenantDashboard() {
         ),
       },
       {
-        key: 'curation',
-        label: 'Curation',
+        key: 'content',
+        label: 'Content',
         icon: 'mdi:clipboard-edit-outline',
         element: (
-          <PivotTenantCurationPage
+          <PivotTenantContentPage
             key={tenantKey}
             tenantKey={tenantKey}
             cityDisplayName={cityDisplayName}
+            onTenantUpdated={refetch}
           />
         ),
       },
@@ -197,15 +203,11 @@ function PivotTenantDashboard() {
       },
       {
         key: 'catalog',
+        hideFromNav: true,
+        navParentIndex: PIVOT_TENANT_PAGES.content,
         label: 'Catalog',
         icon: 'mdi:account-group-outline',
-        element: (
-          <PivotTenantCatalogPage
-            key={tenantKey}
-            tenantKey={tenantKey}
-            cityDisplayName={cityDisplayName}
-          />
-        ),
+        element: <LegacyContentRedirect content="organizers" />,
       },
       {
         key: 'voice',
@@ -238,17 +240,13 @@ function PivotTenantDashboard() {
 
     items.push({
       key: 'locationMigration',
-      hideFromNav: !RICH_LOCATION_MIGRATION_UI_ENABLED,
+      hideFromNav: true,
+      navParentIndex: PIVOT_TENANT_PAGES.content,
       label: 'Location migration',
       icon: 'mdi:map-marker-path',
-      element: RICH_LOCATION_MIGRATION_UI_ENABLED ? (
-        <PivotTenantLocationMigrationPage
-          key={tenantKey}
-          tenantKey={tenantKey}
-          cityDisplayName={cityDisplayName}
-          onTenantUpdated={refetch}
-        />
-      ) : <DisabledLocationMigrationRedirect />,
+      element: (
+        <LegacyContentRedirect content={RICH_LOCATION_MIGRATION_UI_ENABLED ? 'locations' : null} />
+      ),
     });
 
     /*

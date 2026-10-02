@@ -5,7 +5,9 @@
  */
 export const PIVOT_TENANT_PAGES = Object.freeze({
   overview: 0,
-  curation: 1,
+  // Content absorbed Curation (1), Catalog (4) and Location migration (7);
+  // 4 and 7 redirect into it.
+  content: 1,
   // Audience absorbed User journeys (2) and Drop deck (3); 3 redirects into it.
   audience: 2,
   dropDeck: 3,

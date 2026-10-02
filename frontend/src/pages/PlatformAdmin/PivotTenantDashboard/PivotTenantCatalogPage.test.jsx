@@ -57,8 +57,8 @@ describe('PivotTenantCatalogPage', () => {
     postRequest.mockReset();
   });
 
-  it('is locked to tenant-shell page 4', () => {
-    expect(PIVOT_TENANT_CATALOG_PAGE).toBe(4);
+  it('lives on the Content page (index 1)', () => {
+    expect(PIVOT_TENANT_CATALOG_PAGE).toBe(1);
   });
 
   it('shows a weekless empty state for an empty city', () => {
