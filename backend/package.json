@@ -68,7 +68,8 @@
     "cluster:pivot-host-names": "node migrations/clusterPivotHostNames.js",
     "backfill:pivot-organizers": "node migrations/backfillPivotOrganizers.js",
     "backfill:pivot-rich-locations": "node migrations/backfillPivotRichLocations.js",
-    "migrate:pivot-source-keys": "node migrations/migratePivotSourceKeys.js"
+    "migrate:pivot-source-keys": "node migrations/migratePivotSourceKeys.js",
+    "migrate:mobile-analytics": "node migrations/migrateMobileAnalyticsToTenants.js"
   },
   "devDependencies": {
     "jest": "^30.3.0",

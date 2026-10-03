@@ -194,7 +194,7 @@ async function aggregateMedianCardsSeen(AnalyticsEvent, batchWeek) {
       },
       { $group: { _id: '$user_id', cardsSeen: { $sum: 1 } } },
     ]);
-    return median(rows.map((r) => r.cardsSeen));
+    return median(rows.map((row) => row.cardsSeen));
   } catch (error) {
     console.error(
       `[pivotTenantJourney] medianCardsSeen failed batchWeek=${batchWeek}:`,
@@ -379,6 +379,7 @@ async function getJourneyPath(req, options = {}) {
   try {
     startCount = await AnalyticsEvent.countDocuments(startMatch);
     const startSessions = await AnalyticsEvent.distinct('session_id', startMatch);
+    const nextLabels = {};
 
     if (startSessions.length) {
       const streams = await AnalyticsEvent.aggregate([
@@ -411,7 +412,6 @@ async function getJourneyPath(req, options = {}) {
         },
       ]);
 
-      const nextLabels = {};
       for (const s of streams) {
         const stream = (s.stream || []).map((x) => x.label);
         const startIdx = stream.indexOf(startingEvent);
@@ -424,12 +424,12 @@ async function getJourneyPath(req, options = {}) {
           }
         }
       }
-
-      nextSteps = Object.entries(nextLabels)
-        .sort((a, b) => b[1] - a[1])
-        .slice(0, PATH_NEXT_LIMIT)
-        .map(([event, count]) => ({ event, count }));
     }
+
+    nextSteps = Object.entries(nextLabels)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, PATH_NEXT_LIMIT)
+      .map(([event, count]) => ({ event, count }));
   } catch (error) {
     console.error(
       `[pivotTenantJourney] path failed tenant=${tenantKey} batchWeek=${batchWeek}:`,

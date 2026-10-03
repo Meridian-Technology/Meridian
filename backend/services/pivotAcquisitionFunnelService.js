@@ -1,11 +1,12 @@
 const getGlobalModels = require('./getGlobalModelService');
 const getModels = require('./getModelService');
+const { connectToDatabase } = require('../connectionsManager');
 const { getMergedTenants } = require('./tenantConfigService');
 const { resolvePivotTenant } = require('./pivotIngestPublishService');
 const { isPivotTenant } = require('./pivotReferralCodeService');
 
 const VOLUME_FUNNEL_DISCLAIMER =
-  'Monthly volume funnel (UTC). Landing visitors are not joined to app users, so counts can rise or fall between steps. Swiping deck counts each person once, in the month of their first deck swipe. App open is unique people with a Just Go app event — session_start is not recorded.';
+  'Monthly volume funnel (UTC). Landing visitors are not joined to app users, so counts can rise or fall between steps. Swiping deck counts each person once, in the month of their first deck swipe. App open counts people with a Just Go app event that month, including a signed-in session start.';
 
 const ACQUISITION_STAGES = Object.freeze([
   {
@@ -94,43 +95,6 @@ function zeros() {
   return { unique: 0, events: 0 };
 }
 
-function platformAnalyticsReq(req) {
-  if (!req?.globalDb) {
-    throw new Error('req.globalDb is not set; cannot read Just Go analytics.');
-  }
-  return { db: req.globalDb, school: 'www' };
-}
-
-async function loadCityUserIds(req, tenantKey) {
-  try {
-    const { TenantMembership } = getGlobalModels(req, 'TenantMembership');
-    return TenantMembership.distinct('tenantUserId', {
-      tenantKey,
-      status: { $ne: 'left' },
-    });
-  } catch (error) {
-    console.error(
-      `[pivotAcquisitionFunnel] membership lookup failed tenant=${tenantKey}:`,
-      error,
-    );
-    return [];
-  }
-}
-
-function cityAnalyticsClause(tenantKey, cityUserIds) {
-  const clauses = [{ 'properties.tenantKey': tenantKey }];
-  if (cityUserIds?.length) {
-    clauses.push({
-      user_id: { $in: cityUserIds },
-      $or: [
-        { 'properties.tenantKey': { $exists: false } },
-        { 'properties.tenantKey': null },
-      ],
-    });
-  }
-  return { $or: clauses };
-}
-
 function landingMatch(type, { tenantKey, tenantKeys, start, end } = {}) {
   const match = {
     type,
@@ -163,54 +127,87 @@ async function aggregateLandingStage(JustGoLandingEvent, type, scope) {
   return facetCounts(rows);
 }
 
-async function aggregateAnalyticsStage(AnalyticsEvent, eventNames, cityClause, { start, end }) {
-  const match = {
-    event: { $in: eventNames },
-    ts: { $gte: start, $lt: end },
-  };
-  if (cityClause) Object.assign(match, cityClause);
-  const rows = await AnalyticsEvent.aggregate([
-    { $match: match },
-    {
-      $facet: {
-        unique: [
-          {
-            $group: {
-              _id: { $ifNull: ['$user_id', '$anonymous_id'] },
-            },
+function actorIdsFromFacet(rows) {
+  const ids = new Set();
+  for (const row of rows?.[0]?.uniqueIds || []) {
+    if (row?._id != null && row._id !== '') ids.add(String(row._id));
+  }
+  return ids;
+}
+
+async function loadCityAnalyticsModels(tenantKeys) {
+  const models = [];
+  for (const tenantKey of tenantKeys) {
+    const db = await connectToDatabase(tenantKey);
+    models.push(getModels({ db, school: tenantKey }, 'AnalyticsEvent').AnalyticsEvent);
+  }
+  return models;
+}
+
+/**
+ * Unique people and raw event counts. Fleet passes one model per city and
+ * counts a person once across cities.
+ */
+async function aggregateAnalyticsStage(models, eventNames, { start, end }) {
+  const ids = new Set();
+  let events = 0;
+  await Promise.all(
+    (models || []).map(async (AnalyticsEvent) => {
+      const rows = await AnalyticsEvent.aggregate([
+        {
+          $match: {
+            event: { $in: eventNames },
+            ts: { $gte: start, $lt: end },
           },
-          { $match: { _id: { $ne: null } } },
-          { $count: 'count' },
-        ],
-        events: [{ $count: 'count' }],
-      },
-    },
-  ]);
-  return facetCounts(rows);
+        },
+        {
+          $facet: {
+            uniqueIds: [
+              { $group: { _id: { $ifNull: ['$user_id', '$anonymous_id'] } } },
+              { $match: { _id: { $ne: null } } },
+            ],
+            events: [{ $count: 'count' }],
+          },
+        },
+      ]);
+      actorIdsFromFacet(rows).forEach((id) => ids.add(id));
+      events += facetCounts(rows).events;
+    }),
+  );
+  return { unique: ids.size, events };
 }
 
 /** First-ever deck swipe per actor, counted in the month that first swipe occurred. */
-async function aggregateFirstDeckSwipe(AnalyticsEvent, cityClause, { start, end }) {
-  const match = { event: { $in: DECK_EVENTS } };
-  if (cityClause) Object.assign(match, cityClause);
-  const rows = await AnalyticsEvent.aggregate([
-    { $match: match },
-    {
-      $group: {
-        _id: { $ifNull: ['$user_id', '$anonymous_id'] },
-        firstTs: { $min: '$ts' },
-      },
-    },
-    {
-      $match: {
-        _id: { $ne: null },
-        firstTs: { $gte: start, $lt: end },
-      },
-    },
-    { $count: 'count' },
-  ]);
-  const count = Number(rows[0]?.count) || 0;
-  return { unique: count, events: count };
+async function aggregateFirstDeckSwipe(models, { start, end }) {
+  const first = new Map();
+  await Promise.all(
+    (models || []).map(async (AnalyticsEvent) => {
+      const rows = await AnalyticsEvent.aggregate([
+        { $match: { event: { $in: DECK_EVENTS } } },
+        {
+          $group: {
+            _id: { $ifNull: ['$user_id', '$anonymous_id'] },
+            firstTs: { $min: '$ts' },
+          },
+        },
+      ]);
+      for (const row of rows) {
+        if (row?._id == null || row._id === '') continue;
+        const ts = new Date(row.firstTs).getTime();
+        if (!Number.isFinite(ts)) continue;
+        const key = String(row._id);
+        const prev = first.get(key);
+        if (prev == null || ts < prev) first.set(key, ts);
+      }
+    }),
+  );
+  const startMs = start.getTime();
+  const endMs = end.getTime();
+  let unique = 0;
+  for (const ts of first.values()) {
+    if (ts >= startMs && ts < endMs) unique += 1;
+  }
+  return { unique, events: unique };
 }
 
 function attachRates(countsByKey) {
@@ -255,7 +252,7 @@ function funnelPayload({ tenantKey, cityDisplayName, scope, stages, range }) {
   };
 }
 
-async function loadLandingAndApp(req, { tenantKey, tenantKeys, cityClause, range }) {
+async function loadLandingAndApp(req, { tenantKey, tenantKeys, range }) {
   const { start, end } = range;
   let landing = zeros();
   let storeClick = zeros();
@@ -277,16 +274,11 @@ async function loadLandingAndApp(req, { tenantKey, tenantKeys, cityClause, range
   let onboarding = zeros();
   let deck = zeros();
   try {
-    const { AnalyticsEvent } = getModels(platformAnalyticsReq(req), 'AnalyticsEvent');
+    const models = await loadCityAnalyticsModels(tenantKey ? [tenantKey] : tenantKeys);
     [install, onboarding, deck] = await Promise.all([
-      aggregateAnalyticsStage(AnalyticsEvent, INSTALL_EVENTS, cityClause, { start, end }),
-      aggregateAnalyticsStage(
-        AnalyticsEvent,
-        ['pivot_onboarding_completed'],
-        cityClause,
-        { start, end },
-      ),
-      aggregateFirstDeckSwipe(AnalyticsEvent, cityClause, { start, end }),
+      aggregateAnalyticsStage(models, INSTALL_EVENTS, { start, end }),
+      aggregateAnalyticsStage(models, ['pivot_onboarding_completed'], { start, end }),
+      aggregateFirstDeckSwipe(models, { start, end }),
     ]);
   } catch (error) {
     console.error(
@@ -317,7 +309,7 @@ async function getAcquisitionFunnel(req, options = {}) {
   if (scope === 'fleet') {
     const tenants = (await getMergedTenants(req)).filter(isPivotTenant);
     const tenantKeys = tenants.map((row) => row.tenantKey);
-    const stages = await loadLandingAndApp(req, { tenantKeys, cityClause: null, range });
+    const stages = await loadLandingAndApp(req, { tenantKeys, range });
     return funnelPayload({
       tenantKey: null,
       cityDisplayName: 'All cities',
@@ -332,10 +324,8 @@ async function getAcquisitionFunnel(req, options = {}) {
 
   const { tenant } = tenantResult;
   const tenantKey = tenant.tenantKey;
-  const cityUserIds = await loadCityUserIds(req, tenantKey);
   const stages = await loadLandingAndApp(req, {
     tenantKey,
-    cityClause: cityAnalyticsClause(tenantKey, cityUserIds),
     range,
   });
 
