@@ -1014,7 +1014,68 @@ async function getPivotExplorePreview(req, options = {}) {
   });
 }
 
+const PIVOT_EVENT_ID = /^[0-9a-f]{24}$/i;
+
+/**
+ * One published event in the Explore card shape, for event detail opened from
+ * a share link or notification (only an id in hand). Unlike the public event
+ * contract this is signed in, so it can carry `externalLink`, ticket details,
+ * and the viewer's intent and friends. Ended events stay readable so old
+ * share links still open.
+ */
+async function getPivotEvent(req, eventId) {
+  const userId = req.user?.userId;
+  if (!userId) {
+    return {
+      error: 'Authentication required.',
+      status: 401,
+      code: 'UNAUTHORIZED',
+    };
+  }
+
+  const eventKey = String(eventId || '').trim();
+  if (!PIVOT_EVENT_ID.test(eventKey)) {
+    return {
+      error: 'A valid eventId is required.',
+      status: 400,
+      code: 'INVALID_EVENT_ID',
+    };
+  }
+
+  const { Event } = getModels(req, 'Event');
+  const event = await Event.findOne({ _id: eventKey, ...PUBLISHED_BATCH_WEEK_PROBE })
+    .select(PUBLIC_EVENT_FIELDS)
+    .lean();
+  if (!event || !resolveDisplayHost(event.customFields?.pivot)) {
+    return {
+      error: 'Event not found.',
+      status: 404,
+      code: 'EVENT_NOT_FOUND',
+    };
+  }
+
+  const tenant = await getTenantByKey(req, req.school);
+  const friendSocial = await loadFriendSocial(req, userId, [event._id], FRIEND_CAP, null);
+  if (await userHasActiveCrews(req, userId)) {
+    await applyCrewSocialCounts(req, userId, [event._id], null, friendSocial.socialByEvent);
+  }
+  const richLocationViewerContext = await loadRichLocationViewerContext(
+    req,
+    [event._id],
+    { tenant },
+  );
+
+  const [serialized] = serializeExploreCatalogEvents([event], {
+    socialByEvent: friendSocial.socialByEvent,
+    userIntents: friendSocial.userIntents,
+    socialByEventAndSlot: friendSocial.socialByEventAndSlot,
+    richLocationViewerContext,
+  });
+  return { data: serialized };
+}
+
 module.exports = {
+  getPivotEvent,
   getPivotExplore,
   getPivotExplorePreview,
   normalizeExploreLimit,

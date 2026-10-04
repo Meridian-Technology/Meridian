@@ -20,6 +20,7 @@ const {
   validatePivotEventTags,
 } = require('../../services/pivotTagCatalogService');
 const {
+  getPivotEvent,
   getPivotExplore,
   normalizeExploreLimit,
   normalizeExploreOffset,
@@ -1420,5 +1421,86 @@ describe('getPivotExplore', () => {
       retrieval: 'crews_rail',
     });
     expect(result.data.events.some((event) => event.crewRegisteredCount > 0)).toBe(true);
+  });
+});
+
+describe('getPivotEvent', () => {
+  const userId = '507f191e810c19729de860eb';
+  const eventId = '665a1b2c3d4e5f6789012345';
+  const req = { user: { userId }, school: 'nyc', globalDb: {} };
+  const event = {
+    _id: eventId,
+    name: 'Friday Night Board Games',
+    location: 'Brooklyn',
+    start_time: new Date('2026-05-28T19:00:00.000Z'),
+    end_time: new Date('2026-05-28T23:00:00.000Z'),
+    externalLink: 'https://partiful.com/e/example',
+    hostingId: '665a00000000000000000001',
+    customFields: {
+      pivot: {
+        batchWeek: '2026-W22',
+        ingestStatus: 'published',
+        host: { name: 'Brooklyn Board Game Cafe' },
+      },
+    },
+  };
+
+  function mockSingleEventModels(found, intentRows = []) {
+    const findOne = jest.fn(() => ({
+      select: jest.fn().mockReturnThis(),
+      lean: jest.fn().mockResolvedValue(found),
+    }));
+    getModels.mockReturnValue(withExploreModels({
+      Event: { findOne },
+      Friendship: {
+        find: jest.fn(() => ({
+          select: jest.fn().mockReturnThis(),
+          lean: jest.fn().mockResolvedValue([]),
+        })),
+      },
+      PivotEventIntent: { find: jest.fn(() => mockIntentFind(intentRows)) },
+      User: mockUserModel(),
+    }));
+    return { findOne };
+  }
+
+  beforeEach(() => {
+    getModels.mockReset();
+    getTenantByKey.mockReset();
+    getTenantByKey.mockResolvedValue({ tenantKey: 'nyc', pivotPilot: true });
+  });
+
+  it('returns the explore card shape with the register link and viewer intent', async () => {
+    const { findOne } = mockSingleEventModels(event, [
+      { eventId, status: 'interested' },
+    ]);
+
+    const result = await getPivotEvent(req, eventId);
+
+    expect(findOne).toHaveBeenCalledWith(expect.objectContaining({
+      _id: eventId,
+      'customFields.pivot.ingestStatus': 'published',
+      status: { $in: ['approved', 'not-applicable'] },
+    }));
+    expect(result.data.externalLink).toBe('https://partiful.com/e/example');
+    expect(result.data.displayHost).toEqual({ name: 'Brooklyn Board Game Cafe' });
+    expect(result.data.userIntent).toBe('interested');
+    expect(result.data).not.toHaveProperty('hostingId');
+  });
+
+  it('returns 404 for a missing or unpublished event', async () => {
+    mockSingleEventModels(null);
+    const result = await getPivotEvent(req, eventId);
+    expect(result).toMatchObject({ status: 404, code: 'EVENT_NOT_FOUND' });
+  });
+
+  it('rejects malformed ids and signed-out requests', async () => {
+    expect(await getPivotEvent(req, 'not-an-id')).toMatchObject({
+      status: 400,
+      code: 'INVALID_EVENT_ID',
+    });
+    expect(await getPivotEvent({ school: 'nyc' }, eventId)).toMatchObject({
+      status: 401,
+    });
   });
 });
