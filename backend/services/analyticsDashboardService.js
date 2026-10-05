@@ -61,28 +61,37 @@ async function getOverviewMetrics(AnalyticsEvent, timeRange = '30d', platform) {
         ...getPlatformFilter(platform)
     };
     
-    // Unique users (distinct user_id + anonymous_id)
+    // Stitch an anonymous device to its signed-in users within this window,
+    // then deduplicate people across devices. Anonymous-only devices count once.
     const uniqueUsersResult = await AnalyticsEvent.aggregate([
         { $match: baseMatch },
         {
             $group: {
-                _id: null,
-                authenticatedUsers: { $addToSet: '$user_id' },
-                anonymousUsers: { $addToSet: '$anonymous_id' }
+                _id: '$anonymous_id',
+                authenticatedUsers: { $addToSet: '$user_id' }
             }
         },
         {
             $project: {
-                uniqueUsers: {
-                    $size: {
-                        $setUnion: [
-                            { $filter: { input: '$authenticatedUsers', cond: { $ne: ['$$this', null] } } },
-                            '$anonymousUsers'
-                        ]
-                    }
+                authenticatedUsers: {
+                    $filter: { input: '$authenticatedUsers', cond: { $ne: ['$$this', null] } }
                 }
             }
-        }
+        },
+        {
+            $project: {
+                actors: {
+                    $cond: [
+                        { $gt: [{ $size: '$authenticatedUsers' }, 0] },
+                        '$authenticatedUsers',
+                        ['$_id']
+                    ]
+                }
+            }
+        },
+        { $unwind: '$actors' },
+        { $group: { _id: '$actors' } },
+        { $count: 'uniqueUsers' }
     ]);
     
     const uniqueUsers = uniqueUsersResult[0]?.uniqueUsers || 0;
@@ -223,34 +232,48 @@ async function getOverviewMetrics(AnalyticsEvent, timeRange = '30d', platform) {
     const avgSessionDurationSeconds = sessionDurationResult[0]?.avgDurationSeconds || 0;
     const medianSessionDurationSeconds = sessionDurationResult[0]?.medianDurationSeconds || 0;
     
-    // Web vs Mobile breakdown
-    // Unique users by platform type
+    // Web vs mobile breakdown uses the same anonymous-to-account stitching
+    // as the headline count, within each platform type.
     const platformUsersResult = await AnalyticsEvent.aggregate([
         { $match: baseMatch },
         {
             $group: {
                 _id: {
-                    $cond: [
-                        { $eq: ['$platform', 'web'] },
-                        'web',
-                        'mobile'
-                    ]
+                    platform: {
+                        $cond: [{ $eq: ['$platform', 'web'] }, 'web', 'mobile']
+                    },
+                    anonymousId: '$anonymous_id'
                 },
-                users: {
-                    $addToSet: {
-                        $cond: [
-                            { $ne: ['$user_id', null] },
-                            '$user_id',
-                            '$anonymous_id'
-                        ]
-                    }
+                authenticatedUsers: { $addToSet: '$user_id' }
+            }
+        },
+        {
+            $project: {
+                platform: '$_id.platform',
+                authenticatedUsers: {
+                    $filter: { input: '$authenticatedUsers', cond: { $ne: ['$$this', null] } }
                 }
             }
         },
         {
             $project: {
+                platform: 1,
+                actors: {
+                    $cond: [
+                        { $gt: [{ $size: '$authenticatedUsers' }, 0] },
+                        '$authenticatedUsers',
+                        ['$_id.anonymousId']
+                    ]
+                }
+            }
+        },
+        { $unwind: '$actors' },
+        { $group: { _id: { platform: '$platform', actor: '$actors' } } },
+        { $group: { _id: '$_id.platform', uniqueUsers: { $sum: 1 } } },
+        {
+            $project: {
                 platform: '$_id',
-                uniqueUsers: { $size: '$users' },
+                uniqueUsers: 1,
                 _id: 0
             }
         }
@@ -1330,4 +1353,3 @@ module.exports = {
     getPathStartingPoints,
     getTimeRange
 };
-
