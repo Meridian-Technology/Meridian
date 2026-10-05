@@ -6,6 +6,8 @@ const globalSessionSchema = require('../schemas/globalSession');
 const tenantConfigSchema = require('../schemas/tenantConfig');
 const pivotReferralCodeSchema = require('../schemas/pivotReferralCode');
 const pivotReferralRedemptionSchema = require('../schemas/pivotReferralRedemption');
+const pivotUserInviteSchema = require('../schemas/pivotUserInvite');
+const pivotUserInviteAcceptanceSchema = require('../schemas/pivotUserInviteAcceptance');
 const pivotWeeklySnapshotSchema = require('../schemas/pivotWeeklySnapshot');
 const pivotLabNotesSchema = require('../schemas/pivotLabNotes');
 const pivotTagCatalogSchema = require('../schemas/pivotTagCatalog');
@@ -67,6 +69,12 @@ const getGlobalModels = (req, ...names) => {
             'PivotReferralRedemption',
             pivotReferralRedemptionSchema,
             'pivot_referral_redemptions'
+        ),
+        PivotUserInvite: db.model('PivotUserInvite', pivotUserInviteSchema, 'pivot_user_invites'),
+        PivotUserInviteAcceptance: db.model(
+            'PivotUserInviteAcceptance',
+            pivotUserInviteAcceptanceSchema,
+            'pivot_user_invite_acceptances'
         ),
         PivotWeeklySnapshot: db.model(
             'PivotWeeklySnapshot',

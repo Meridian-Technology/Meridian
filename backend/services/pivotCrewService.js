@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const { justGoPublicUrl } = require('../utilities/justGoPublicUrl');
 const getModels = require('./getModelService');
 const pivotCrewMembershipSchema = require('../schemas/pivotCrewMembership');
 const NotificationService = require('./notificationService');
@@ -13,7 +14,6 @@ const CREW_NAME_MAX_LENGTH = 80;
 const MAX_INVITE_PLACEHOLDERS_PER_REQUEST = 20;
 const PIVOT_CREW_INVITED_DISPLAY_LABEL = 'invited';
 const PIVOT_CREW_JOIN_DEEP_LINK_PREFIX = 'meridian://pivot/crew/join?token=';
-const PIVOT_CREW_JOIN_WEB_LINK_PREFIX = 'https://meridian.study/pivot/crew/join?token=';
 
 function unauthorized() {
   return { error: 'Authentication required.', status: 401, code: 'UNAUTHORIZED' };
@@ -50,7 +50,9 @@ function buildCrewInviteLinks(token) {
   const trimmed = String(token || '').trim();
   return {
     deepLink: `${PIVOT_CREW_JOIN_DEEP_LINK_PREFIX}${encodeURIComponent(trimmed)}`,
-    webLink: `${PIVOT_CREW_JOIN_WEB_LINK_PREFIX}${encodeURIComponent(trimmed)}`,
+    // justgo.lol is the Just Go link domain; /pivot/* opens either app via
+    // associated domains and falls back to the web join page.
+    webLink: justGoPublicUrl(`/pivot/crew/join?token=${encodeURIComponent(trimmed)}`),
   };
 }
 
