@@ -76,9 +76,9 @@ function funnelPayload(overrides = {}) {
       stages: [
         { key: 'landing', label: 'Landing page', unique: 100, events: 140 },
         { key: 'store_click', label: 'Store click', unique: 40, events: 55, conversionFromPrev: 0.4 },
-        { key: 'install', label: 'App open', unique: 25, events: 80, conversionFromPrev: 0.625 },
+        { key: 'install', label: 'App activity', unique: 25, events: 80, conversionFromPrev: 0.625 },
         { key: 'onboarding', label: 'Onboarding', unique: 18, events: 18, conversionFromPrev: 0.72 },
-        { key: 'deck', label: 'Swiping deck', unique: 12, events: 12, conversionFromPrev: 0.667 },
+        { key: 'deck', label: 'First deck decision', unique: 12, events: 12, conversionFromPrev: 0.667 },
       ],
       ...overrides,
     },
@@ -155,8 +155,8 @@ describe('PivotFleetGrowthPage', () => {
     expect(screen.getByText(/September 2026/)).toBeInTheDocument();
     expect(screen.queryByText(FUNNEL_COUNTING_NOTES)).not.toBeInTheDocument();
     fireEvent.click(screen.getByLabelText('How counts are defined'));
-    expect(screen.getByRole('note')).toHaveTextContent(/session_start is not written/i);
-    expect(screen.getByText(/first swipe only/i)).toBeInTheDocument();
+    expect(screen.getByRole('note')).toHaveTextContent(/not a verified install count/i);
+    expect(screen.getByText(/first decision only/i)).toBeInTheDocument();
   });
 
   it('steps the month and loads the fleet acquisition route', () => {

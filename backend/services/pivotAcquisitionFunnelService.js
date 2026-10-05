@@ -6,7 +6,7 @@ const { resolvePivotTenant } = require('./pivotIngestPublishService');
 const { isPivotTenant } = require('./pivotReferralCodeService');
 
 const VOLUME_FUNNEL_DISCLAIMER =
-  'Monthly volume funnel (UTC). Landing visitors are not joined to app users, so counts can rise or fall between steps. Swiping deck counts each person once, in the month of their first deck swipe. App open counts people with a Just Go app event that month, including a signed-in session start.';
+  'Monthly volume funnel (UTC). Landing visitors are not joined to app users, so counts can rise or fall between steps. App activity is not an install count. First deck decision counts each person once, in the month of their first pass or interested action.';
 
 const ACQUISITION_STAGES = Object.freeze([
   {
@@ -23,9 +23,9 @@ const ACQUISITION_STAGES = Object.freeze([
   },
   {
     key: 'install',
-    label: 'App open',
-    hint: 'Unique people with a Just Go app event',
-    source: 'pivot_*|login_completed|session_start',
+    label: 'App activity',
+    hint: 'Unique people with a Just Go app event; not verified installs',
+    source: 'analytics_events.app=justgo,env=prod',
   },
   {
     key: 'onboarding',
@@ -35,21 +35,13 @@ const ACQUISITION_STAGES = Object.freeze([
   },
   {
     key: 'deck',
-    label: 'Swiping deck',
-    hint: 'People whose first deck swipe was this month',
-    source: 'pivot_card_view|pivot_card_pass|pivot_card_interested',
+    label: 'First deck decision',
+    hint: 'People whose first pass or interested action was this month',
+    source: 'pivot_card_pass|pivot_card_interested',
   },
 ]);
 
-const DECK_EVENTS = ['pivot_card_view', 'pivot_card_pass', 'pivot_card_interested'];
-const INSTALL_EVENTS = [
-  'session_start',
-  'login_completed',
-  'pivot_explore_open',
-  'pivot_onboarding_completed',
-  ...DECK_EVENTS,
-];
-
+const DECK_EVENTS = ['pivot_card_pass', 'pivot_card_interested'];
 const MONTH_PATTERN = /^(\d{4})-(0[1-9]|1[0-2])$/;
 
 function utcMonthString(date = new Date()) {
@@ -156,8 +148,10 @@ async function aggregateAnalyticsStage(models, eventNames, { start, end }) {
       const rows = await AnalyticsEvent.aggregate([
         {
           $match: {
-            event: { $in: eventNames },
+            ...(eventNames ? { event: { $in: eventNames } } : {}),
             ts: { $gte: start, $lt: end },
+            app: 'justgo',
+            env: 'prod',
           },
         },
         {
@@ -177,13 +171,13 @@ async function aggregateAnalyticsStage(models, eventNames, { start, end }) {
   return { unique: ids.size, events };
 }
 
-/** First-ever deck swipe per actor, counted in the month that first swipe occurred. */
+/** First-ever deck decision per actor, counted in the month it occurred. */
 async function aggregateFirstDeckSwipe(models, { start, end }) {
   const first = new Map();
   await Promise.all(
     (models || []).map(async (AnalyticsEvent) => {
       const rows = await AnalyticsEvent.aggregate([
-        { $match: { event: { $in: DECK_EVENTS } } },
+        { $match: { event: { $in: DECK_EVENTS }, app: 'justgo', env: 'prod' } },
         {
           $group: {
             _id: { $ifNull: ['$user_id', '$anonymous_id'] },
@@ -276,7 +270,7 @@ async function loadLandingAndApp(req, { tenantKey, tenantKeys, range }) {
   try {
     const models = await loadCityAnalyticsModels(tenantKey ? [tenantKey] : tenantKeys);
     [install, onboarding, deck] = await Promise.all([
-      aggregateAnalyticsStage(models, INSTALL_EVENTS, { start, end }),
+      aggregateAnalyticsStage(models, null, { start, end }),
       aggregateAnalyticsStage(models, ['pivot_onboarding_completed'], { start, end }),
       aggregateFirstDeckSwipe(models, { start, end }),
     ]);
@@ -297,7 +291,7 @@ async function loadLandingAndApp(req, { tenantKey, tenantKeys, range }) {
 }
 
 /**
- * Monthly volume funnel: landing → store click → app open → onboarding → first deck swipe.
+ * Monthly volume funnel: landing → store click → app activity → onboarding → first deck decision.
  * Deck is first-ever swipe per person, attributed to that UTC month.
  */
 async function getAcquisitionFunnel(req, options = {}) {
@@ -345,5 +339,4 @@ module.exports = {
   VOLUME_FUNNEL_DISCLAIMER,
   rateOrNull,
   DECK_EVENTS,
-  INSTALL_EVENTS,
 };
