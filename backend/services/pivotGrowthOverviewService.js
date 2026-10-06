@@ -29,14 +29,23 @@ async function loadMemberships(req, tenantKey) {
   ).lean();
 }
 
-/** Global users who redeemed a referral code. */
+/** Global users who redeemed a referral code or accepted a friend's invite link. */
 async function loadReferredGlobalIds(req, globalUserIds) {
   if (!globalUserIds.length) return new Set();
-  const { PivotReferralRedemption } = getGlobalModels(req, 'PivotReferralRedemption');
-  const ids = await PivotReferralRedemption.distinct('globalUserId', {
-    globalUserId: { $in: globalUserIds },
-  });
-  return new Set(ids.map(String));
+  const { PivotReferralRedemption, PivotUserInviteAcceptance } = getGlobalModels(
+    req,
+    'PivotReferralRedemption',
+    'PivotUserInviteAcceptance',
+  );
+  const [redeemed, invited] = await Promise.all([
+    PivotReferralRedemption.distinct('globalUserId', {
+      globalUserId: { $in: globalUserIds },
+    }),
+    PivotUserInviteAcceptance.distinct('inviteeGlobalUserId', {
+      inviteeGlobalUserId: { $in: globalUserIds },
+    }),
+  ]);
+  return new Set([...redeemed, ...invited].map(String));
 }
 
 /** One row per user per drop week that they opened or acted on the deck. */

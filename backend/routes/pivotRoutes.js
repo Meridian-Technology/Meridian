@@ -1,6 +1,16 @@
 const express = require('express');
 const { body, validationResult } = require('express-validator');
 const { validateReferralCode, redeemReferralCode } = require('../services/pivotReferralCodeService');
+const {
+  getMyPivotUserInvite,
+  previewPivotUserInvite,
+  acceptPivotUserInvite,
+} = require('../services/pivotUserInviteService');
+const { getPivotSocialWeek } = require('../services/pivotSocialService');
+const {
+  getPivotPlanVisibility,
+  updatePivotPlanVisibility,
+} = require('../services/pivotPlanVisibilityService');
 const { getPivotFeed, getPivotEventFriends } = require('../services/pivotFeedService');
 const { getPivotEventCrossCrewOverlap } = require('../services/pivotCrossCrewService');
 const { getPivotEvent, getPivotExplore } = require('../services/pivotExploreService');
@@ -463,6 +473,71 @@ router.post('/referral/redeem', verifyToken, async (req, res) => {
       success: false,
       message: 'Unable to redeem referral code.',
     });
+  }
+});
+
+function sendPivotResult(res, result) {
+  if (result.error) {
+    return res.status(result.status || 400).json({
+      success: false,
+      message: result.error,
+      code: result.code,
+    });
+  }
+  return res.status(200).json({ success: true, data: result.data });
+}
+
+router.get('/invites/me', verifyToken, async (req, res) => {
+  try {
+    return sendPivotResult(res, await getMyPivotUserInvite(req));
+  } catch (err) {
+    logPivotRouteError('GET /pivot/invites/me', err, req);
+    return res.status(500).json({ success: false, message: 'Unable to load your invite link.' });
+  }
+});
+
+router.get('/invites/:code/preview', pivotReferralValidateRateLimit, async (req, res) => {
+  try {
+    return sendPivotResult(res, await previewPivotUserInvite(req, req.params.code));
+  } catch (err) {
+    logPivotRouteError('GET /pivot/invites/:code/preview', err, req);
+    return res.status(500).json({ success: false, message: 'Unable to load this invite.' });
+  }
+});
+
+router.post('/invites/:code/accept', verifyToken, async (req, res) => {
+  try {
+    return sendPivotResult(res, await acceptPivotUserInvite(req, req.params.code));
+  } catch (err) {
+    logPivotRouteError('POST /pivot/invites/:code/accept', err, req);
+    return res.status(500).json({ success: false, message: 'Unable to accept this invite.' });
+  }
+});
+
+router.get('/social/week', verifyToken, async (req, res) => {
+  try {
+    return sendPivotResult(res, await getPivotSocialWeek(req, { batchWeek: req.query.batchWeek }));
+  } catch (err) {
+    logPivotRouteError('GET /pivot/social/week', err, req);
+    return res.status(500).json({ success: false, message: 'Unable to load friends.' });
+  }
+});
+
+router.get('/profile/plan-visibility', verifyToken, async (req, res) => {
+  try {
+    return sendPivotResult(res, await getPivotPlanVisibility(req));
+  } catch (err) {
+    logPivotRouteError('GET /pivot/profile/plan-visibility', err, req);
+    return res.status(500).json({ success: false, message: 'Unable to load plan visibility.' });
+  }
+});
+
+router.put('/profile/plan-visibility', verifyToken, async (req, res) => {
+  try {
+    return sendPivotResult(res, await updatePivotPlanVisibility(req, req.body || {}));
+  } catch (err) {
+    logPivotRouteError('PUT /pivot/profile/plan-visibility', err, req);
+    return res.status(500).json({ success: false, message: 'Unable to update plan visibility.' });
   }
 });
 

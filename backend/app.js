@@ -14,6 +14,7 @@ const { initSocket } = require('./socket');
 const getGlobalModels = require('./services/getGlobalModelService');
 const { isAllowedCorsOrigin, isJustGoPublicHost } = require('./utilities/corsOrigins');
 const { registerMobileAssociationRoutes } = require('./utilities/mobileAssociationFiles');
+const { tenantForHost, canOverrideTenant } = require('./utilities/tenantHostRouting');
 
 const s3 = require('./aws-config');
 
@@ -135,25 +136,7 @@ function createApp() {
         }
 
         const host = req.headers.host || '';
-        // Extract subdomain: for 'rpi.meridian.study' -> 'rpi', for 'localhost:5001' -> default tenant
-        let subdomain = host.split('.')[0];
-        const hostLower = String(host).toLowerCase();
-        const isDevTunnelHost =
-          hostLower.includes('devtunnels.ms') || hostLower.includes('ngrok');
-        
-        // In development, if host is localhost, a tunnel, or an IP address, default to rpi so tenant
-        // features work. Use ?school= or X-Tenant header to override. Production www uses www
-        // subdomain explicitly (e.g. www.meridian.study). justgo.lol is public apex, not a school.
-        if (isJustGoPublicHost(host)) {
-            subdomain = 'www';
-        } else if (
-          host.includes('localhost') ||
-          isDevTunnelHost ||
-          /^\d+\.\d+\.\d+\.\d+/.test(subdomain) ||
-          !host.includes('.')
-        ) {
-            subdomain = process.env.NODE_ENV === 'production' ? 'www' : 'rpi';
-        }
+        let subdomain = tenantForHost(host, process.env.NODE_ENV === 'production');
 
         // Development only: allow X-Tenant header or ?school= to override tenant (for local testing)
         if (process.env.NODE_ENV !== 'production') {
@@ -164,7 +147,7 @@ function createApp() {
               tenantKeysCache = tenants.map((tenant) => tenant.tenantKey);
               tenantKeysLastFetchedAt = now;
             }
-            if (override && tenantKeysCache.includes(String(override).toLowerCase())) {
+            if (override && canOverrideTenant(override, tenantKeysCache)) {
                 subdomain = override.toLowerCase();
             } else if (override) {
                 console.warn('[tenant] X-Tenant ignored (unknown key)', {
