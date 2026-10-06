@@ -1,5 +1,5 @@
 import React from 'react';
-import { Navigate, useParams } from 'react-router-dom';
+import { Navigate, useLocation, useParams } from 'react-router-dom';
 import { JUSTGO_CREATOR_ROUTES } from '../JustGoCreator/justGoCreatorRoutes';
 import JustGoLanding from './JustGoLanding';
 import { landingTenantKeyFromParam, normalizeLandingTenantKey } from './justGoLandingUtils';
@@ -16,4 +16,15 @@ export function JustGoApexCityLanding() {
     return <Navigate to={JUSTGO_CREATOR_ROUTES.home} replace />;
   }
   return <Navigate to="/" replace />;
+}
+
+/**
+ * justgo.lol/clip/{city}[/{tag}] — App Clip links on NFC tags and QR codes.
+ * iPhones open the clip; everything else lands on that city's page.
+ */
+export function JustGoClipFallback() {
+  const { tenantKey } = useParams();
+  const { search } = useLocation();
+  const city = landingTenantKeyFromParam(tenantKey);
+  return <Navigate to={city ? `/${city}${search}` : `/${search}`} replace />;
 }

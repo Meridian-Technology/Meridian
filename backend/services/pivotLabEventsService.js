@@ -73,6 +73,7 @@ function serializeLabEvent(event, intentStatsByEventId, options = {}) {
     sourceUrl: pivot.sourceUrl || null,
     ingestStatus: pivot.ingestStatus || null,
     featured: pivot.featured === true,
+    clipDrop: pivot.clipDrop === true,
     rankingOverride: readRankingOverride(event),
     source: pivot.source || null,
     entrypointId: pivot.entrypointId ? String(pivot.entrypointId) : null,

@@ -6,6 +6,7 @@
  * - landing event POST: 30/min/IP  (`LANDING_EVENT_RATE_LIMIT`; was 60)
  * - QR hop POST: 30/min/IP  (`LANDING_QR_RATE_LIMIT`)
  * - copy / config / drop GET: 60/min/IP (unchanged)
+ * - App Clip drop GET: 60/min/IP (walk-up demos on one venue IP stay well under)
  *
  * Admin GET/PATCH/DELETE are not limited here — `verifyToken` + `requirePlatformAdmin`.
  */
@@ -79,9 +80,15 @@ const pivotLandingQrHopRateLimit = createLandingRateLimit({
   max: QR_HOP_MAX_PER_WINDOW,
 });
 
+const pivotClipDropRateLimit = createLandingRateLimit({
+  message: 'Too many drop requests. Please try again in a minute.',
+  code: 'CLIP_DROP_RATE_LIMIT',
+});
+
 module.exports = {
   createLandingRateLimit,
   pivotLandingDropRateLimit,
+  pivotClipDropRateLimit,
   pivotLandingCopyRateLimit,
   pivotLandingEventRateLimit,
   pivotLandingWaitlistRateLimit,

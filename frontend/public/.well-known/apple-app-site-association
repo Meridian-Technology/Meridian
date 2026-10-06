@@ -8,8 +8,11 @@
       },
       {
         "appID": "S22WF3L7P9.app.justgo",
-        "paths": ["/invite", "/invite/*", "/pivot/*", "/events/*"]
+        "paths": ["/invite", "/invite/*", "/pivot/*", "/events/*", "/clip/*"]
       }
     ]
+  },
+  "appclips": {
+    "apps": ["S22WF3L7P9.app.justgo.Clip"]
   }
 }

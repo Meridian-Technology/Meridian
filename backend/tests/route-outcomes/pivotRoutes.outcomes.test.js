@@ -21,6 +21,10 @@ jest.mock('../../services/pivotLandingDropService', () => ({
   getPivotLandingDrop: jest.fn(),
 }));
 
+jest.mock('../../services/pivotClipDropService', () => ({
+  getPivotClipDrop: jest.fn(),
+}));
+
 jest.mock('../../services/pivotLandingService', () => ({
   recordLandingEvent: jest.fn(),
   getLandingConfig: jest.fn(),
@@ -124,6 +128,7 @@ const {
   redeemPivotEntry,
 } = require('../../services/pivotEntryService');
 const { getPivotLandingDrop } = require('../../services/pivotLandingDropService');
+const { getPivotClipDrop } = require('../../services/pivotClipDropService');
 const { recordLandingEvent, getLandingConfig } = require('../../services/pivotLandingService');
 const { joinWaitlist } = require('../../services/pivotLandingWaitlistService');
 const { hopLandingQr } = require('../../services/pivotLandingQrService');
@@ -377,6 +382,59 @@ describe('pivotRoutes GET /pivot/landing/drop', () => {
     const response = await request(buildBaseApp()).get('/pivot/landing/drop?tenantKey=missing');
     expect(response.statusCode).toBe(404);
     expect(response.body.code).toBe('TENANT_NOT_FOUND');
+  });
+});
+
+describe('pivotRoutes GET /pivot/clip/drop', () => {
+  beforeEach(() => {
+    getPivotClipDrop.mockReset();
+  });
+
+  it('returns 200 with the clip deck and a short public cache', async () => {
+    getPivotClipDrop.mockResolvedValue({
+      data: {
+        tenantKey: 'nyc',
+        cityDisplayName: 'New York City',
+        batchWeek: '2026-W33',
+        liveWeek: '2026-W33',
+        fallback: false,
+        segment: 'clip',
+        dropAt: '2026-08-13T22:00:00.000Z',
+        nextDropAt: '2026-08-20T22:00:00.000Z',
+        events: [
+          {
+            id: 'fri',
+            name: 'friday night market',
+            hostName: 'public records',
+            startTime: '2026-08-14T23:00:00.000Z',
+            location: 'brooklyn',
+            tags: ['live-music'],
+          },
+        ],
+      },
+    });
+
+    const response = await request(buildBaseApp()).get('/pivot/clip/drop?tenantKey=nyc');
+    expect(response.statusCode).toBe(200);
+    expect(response.headers['cache-control']).toBe('public, max-age=60');
+    expect(response.body.data.segment).toBe('clip');
+    expect(response.body.data.events).toHaveLength(1);
+    expect(getPivotClipDrop).toHaveBeenCalledWith(
+      expect.anything(),
+      { tenantKey: 'nyc' },
+    );
+  });
+
+  it('passes service errors through with their status and code', async () => {
+    getPivotClipDrop.mockResolvedValue({
+      error: 'This city is not open yet.',
+      status: 403,
+      code: 'TENANT_NOT_ACTIVE',
+    });
+
+    const response = await request(buildBaseApp()).get('/pivot/clip/drop?tenantKey=sf');
+    expect(response.statusCode).toBe(403);
+    expect(response.body.code).toBe('TENANT_NOT_ACTIVE');
   });
 });
 
