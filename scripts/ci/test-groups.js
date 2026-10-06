@@ -18,7 +18,7 @@ const groups = {
       /\/route-outcomes\/(?:pivotAdmin|pivotComputeWorker)/,
     ],
     'consumer-experience': [
-      /\/unit\/(?:ensureJustGo|eventRichLocation|justGo|publicEvent|pivotAcquisition|pivotContact|pivotEntry|pivotExplore|pivotFeed|pivotFeedback|pivotFriend|pivotIntent|pivotInteraction|pivotLanding|pivotProfile|pivotReferral|pivotRetention|pivotSafety|pivotTimeSlots)/,
+      /\/unit\/(?:ensureJustGo|eventRichLocation|justGo|publicEvent|pivotAcquisition|pivotContact|pivotEntry|pivotExplore|pivotFeed|pivotFeedback|pivotFriend|pivotIntent|pivotInteraction|pivotLanding|pivotPlanVisibility|pivotProfile|pivotReferral|pivotRetention|pivotSafety|pivotSocial|pivotTimeSlots|pivotUserInvite)/,
       /\/route-outcomes\/pivotRoutes/,
     ],
     'crews-weekly-drop': [
@@ -35,7 +35,7 @@ const groups = {
     ],
     'platform-core': [
       /\/integration\//,
-      /\/unit\/(?:adminTenant|appVersion|atlasPolicy|budgetService|cookieUtils|corsOrigins|googleLocation|mobileAnalyticsMigration|mobileAssociation|orgPermission|pivotConfig|pivotIsoWeek|pivotLaunchDate|pivotLogger|pivotMobileConfig|platformAdmin|requireMinAppVersion|requirePivotCreator|reservationMetrics|resourceReservation|richLocationMigration|rootOperator|semesterHelpers|tenantKeyRename|tenantLandingMode|timeBlockHelper|workflowUtilities|wwwPathAllowlist)/,
+      /\/unit\/(?:adminTenant|analyticsIngestionAcknowledgement|appVersion|atlasPolicy|budgetService|cookieUtils|corsOrigins|googleLocation|mobileAnalyticsMigration|mobileAssociation|orgPermission|pivotConfig|pivotIsoWeek|pivotLaunchDate|pivotLogger|pivotMobileConfig|platformAdmin|requireMinAppVersion|requirePivotCreator|reservationMetrics|resourceReservation|richLocationMigration|rootOperator|semesterHelpers|tenantHostRouting|tenantKeyRename|tenantLandingMode|timeBlockHelper|workflowUtilities|wwwPathAllowlist)/,
       /\/route-outcomes\/(?:adminPlatformAdmins|analyticsDashboardRoutes|authRoutes|orgBudgetRoutes|orgRoleRoutes|userRoutes)/,
     ],
   },
