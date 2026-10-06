@@ -1,11 +1,12 @@
 const getGlobalModels = require('./getGlobalModelService');
 const getModels = require('./getModelService');
+const { connectToDatabase } = require('../connectionsManager');
 const { getMergedTenants } = require('./tenantConfigService');
 const { resolvePivotTenant } = require('./pivotIngestPublishService');
 const { isPivotTenant } = require('./pivotReferralCodeService');
 
 const VOLUME_FUNNEL_DISCLAIMER =
-  'Monthly volume funnel (UTC). Landing visitors are not joined to app users, so counts can rise or fall between steps. Swiping deck counts each person once, in the month of their first deck swipe. App open is unique people with a Just Go app event — session_start is not recorded.';
+  'Monthly volume funnel (UTC). Landing visitors are not joined to app users, so counts can rise or fall between steps. App activity is not an install count. First deck decision counts each person once, in the month of their first pass or interested action.';
 
 const ACQUISITION_STAGES = Object.freeze([
   {
@@ -22,9 +23,9 @@ const ACQUISITION_STAGES = Object.freeze([
   },
   {
     key: 'install',
-    label: 'App open',
-    hint: 'Unique people with a Just Go app event',
-    source: 'pivot_*|login_completed|session_start',
+    label: 'App activity',
+    hint: 'Unique people with a Just Go app event; not verified installs',
+    source: 'analytics_events.app=justgo,env=prod',
   },
   {
     key: 'onboarding',
@@ -34,21 +35,13 @@ const ACQUISITION_STAGES = Object.freeze([
   },
   {
     key: 'deck',
-    label: 'Swiping deck',
-    hint: 'People whose first deck swipe was this month',
-    source: 'pivot_card_view|pivot_card_pass|pivot_card_interested',
+    label: 'First deck decision',
+    hint: 'People whose first pass or interested action was this month',
+    source: 'pivot_card_pass|pivot_card_interested',
   },
 ]);
 
-const DECK_EVENTS = ['pivot_card_view', 'pivot_card_pass', 'pivot_card_interested'];
-const INSTALL_EVENTS = [
-  'session_start',
-  'login_completed',
-  'pivot_explore_open',
-  'pivot_onboarding_completed',
-  ...DECK_EVENTS,
-];
-
+const DECK_EVENTS = ['pivot_card_pass', 'pivot_card_interested'];
 const MONTH_PATTERN = /^(\d{4})-(0[1-9]|1[0-2])$/;
 
 function utcMonthString(date = new Date()) {
@@ -94,43 +87,6 @@ function zeros() {
   return { unique: 0, events: 0 };
 }
 
-function platformAnalyticsReq(req) {
-  if (!req?.globalDb) {
-    throw new Error('req.globalDb is not set; cannot read Just Go analytics.');
-  }
-  return { db: req.globalDb, school: 'www' };
-}
-
-async function loadCityUserIds(req, tenantKey) {
-  try {
-    const { TenantMembership } = getGlobalModels(req, 'TenantMembership');
-    return TenantMembership.distinct('tenantUserId', {
-      tenantKey,
-      status: { $ne: 'left' },
-    });
-  } catch (error) {
-    console.error(
-      `[pivotAcquisitionFunnel] membership lookup failed tenant=${tenantKey}:`,
-      error,
-    );
-    return [];
-  }
-}
-
-function cityAnalyticsClause(tenantKey, cityUserIds) {
-  const clauses = [{ 'properties.tenantKey': tenantKey }];
-  if (cityUserIds?.length) {
-    clauses.push({
-      user_id: { $in: cityUserIds },
-      $or: [
-        { 'properties.tenantKey': { $exists: false } },
-        { 'properties.tenantKey': null },
-      ],
-    });
-  }
-  return { $or: clauses };
-}
-
 function landingMatch(type, { tenantKey, tenantKeys, start, end } = {}) {
   const match = {
     type,
@@ -163,54 +119,89 @@ async function aggregateLandingStage(JustGoLandingEvent, type, scope) {
   return facetCounts(rows);
 }
 
-async function aggregateAnalyticsStage(AnalyticsEvent, eventNames, cityClause, { start, end }) {
-  const match = {
-    event: { $in: eventNames },
-    ts: { $gte: start, $lt: end },
-  };
-  if (cityClause) Object.assign(match, cityClause);
-  const rows = await AnalyticsEvent.aggregate([
-    { $match: match },
-    {
-      $facet: {
-        unique: [
-          {
-            $group: {
-              _id: { $ifNull: ['$user_id', '$anonymous_id'] },
-            },
-          },
-          { $match: { _id: { $ne: null } } },
-          { $count: 'count' },
-        ],
-        events: [{ $count: 'count' }],
-      },
-    },
-  ]);
-  return facetCounts(rows);
+function actorIdsFromFacet(rows) {
+  const ids = new Set();
+  for (const row of rows?.[0]?.uniqueIds || []) {
+    if (row?._id != null && row._id !== '') ids.add(String(row._id));
+  }
+  return ids;
 }
 
-/** First-ever deck swipe per actor, counted in the month that first swipe occurred. */
-async function aggregateFirstDeckSwipe(AnalyticsEvent, cityClause, { start, end }) {
-  const match = { event: { $in: DECK_EVENTS } };
-  if (cityClause) Object.assign(match, cityClause);
-  const rows = await AnalyticsEvent.aggregate([
-    { $match: match },
-    {
-      $group: {
-        _id: { $ifNull: ['$user_id', '$anonymous_id'] },
-        firstTs: { $min: '$ts' },
-      },
-    },
-    {
-      $match: {
-        _id: { $ne: null },
-        firstTs: { $gte: start, $lt: end },
-      },
-    },
-    { $count: 'count' },
-  ]);
-  const count = Number(rows[0]?.count) || 0;
-  return { unique: count, events: count };
+async function loadCityAnalyticsModels(tenantKeys) {
+  const models = [];
+  for (const tenantKey of tenantKeys) {
+    const db = await connectToDatabase(tenantKey);
+    models.push(getModels({ db, school: tenantKey }, 'AnalyticsEvent').AnalyticsEvent);
+  }
+  return models;
+}
+
+/**
+ * Unique people and raw event counts. Fleet passes one model per city and
+ * counts a person once across cities.
+ */
+async function aggregateAnalyticsStage(models, eventNames, { start, end }) {
+  const ids = new Set();
+  let events = 0;
+  await Promise.all(
+    (models || []).map(async (AnalyticsEvent) => {
+      const rows = await AnalyticsEvent.aggregate([
+        {
+          $match: {
+            ...(eventNames ? { event: { $in: eventNames } } : {}),
+            ts: { $gte: start, $lt: end },
+            app: 'justgo',
+            env: 'prod',
+          },
+        },
+        {
+          $facet: {
+            uniqueIds: [
+              { $group: { _id: { $ifNull: ['$user_id', '$anonymous_id'] } } },
+              { $match: { _id: { $ne: null } } },
+            ],
+            events: [{ $count: 'count' }],
+          },
+        },
+      ]);
+      actorIdsFromFacet(rows).forEach((id) => ids.add(id));
+      events += facetCounts(rows).events;
+    }),
+  );
+  return { unique: ids.size, events };
+}
+
+/** First-ever deck decision per actor, counted in the month it occurred. */
+async function aggregateFirstDeckSwipe(models, { start, end }) {
+  const first = new Map();
+  await Promise.all(
+    (models || []).map(async (AnalyticsEvent) => {
+      const rows = await AnalyticsEvent.aggregate([
+        { $match: { event: { $in: DECK_EVENTS }, app: 'justgo', env: 'prod' } },
+        {
+          $group: {
+            _id: { $ifNull: ['$user_id', '$anonymous_id'] },
+            firstTs: { $min: '$ts' },
+          },
+        },
+      ]);
+      for (const row of rows) {
+        if (row?._id == null || row._id === '') continue;
+        const ts = new Date(row.firstTs).getTime();
+        if (!Number.isFinite(ts)) continue;
+        const key = String(row._id);
+        const prev = first.get(key);
+        if (prev == null || ts < prev) first.set(key, ts);
+      }
+    }),
+  );
+  const startMs = start.getTime();
+  const endMs = end.getTime();
+  let unique = 0;
+  for (const ts of first.values()) {
+    if (ts >= startMs && ts < endMs) unique += 1;
+  }
+  return { unique, events: unique };
 }
 
 function attachRates(countsByKey) {
@@ -255,7 +246,7 @@ function funnelPayload({ tenantKey, cityDisplayName, scope, stages, range }) {
   };
 }
 
-async function loadLandingAndApp(req, { tenantKey, tenantKeys, cityClause, range }) {
+async function loadLandingAndApp(req, { tenantKey, tenantKeys, range }) {
   const { start, end } = range;
   let landing = zeros();
   let storeClick = zeros();
@@ -277,16 +268,11 @@ async function loadLandingAndApp(req, { tenantKey, tenantKeys, cityClause, range
   let onboarding = zeros();
   let deck = zeros();
   try {
-    const { AnalyticsEvent } = getModels(platformAnalyticsReq(req), 'AnalyticsEvent');
+    const models = await loadCityAnalyticsModels(tenantKey ? [tenantKey] : tenantKeys);
     [install, onboarding, deck] = await Promise.all([
-      aggregateAnalyticsStage(AnalyticsEvent, INSTALL_EVENTS, cityClause, { start, end }),
-      aggregateAnalyticsStage(
-        AnalyticsEvent,
-        ['pivot_onboarding_completed'],
-        cityClause,
-        { start, end },
-      ),
-      aggregateFirstDeckSwipe(AnalyticsEvent, cityClause, { start, end }),
+      aggregateAnalyticsStage(models, null, { start, end }),
+      aggregateAnalyticsStage(models, ['pivot_onboarding_completed'], { start, end }),
+      aggregateFirstDeckSwipe(models, { start, end }),
     ]);
   } catch (error) {
     console.error(
@@ -305,7 +291,7 @@ async function loadLandingAndApp(req, { tenantKey, tenantKeys, cityClause, range
 }
 
 /**
- * Monthly volume funnel: landing → store click → app open → onboarding → first deck swipe.
+ * Monthly volume funnel: landing → store click → app activity → onboarding → first deck decision.
  * Deck is first-ever swipe per person, attributed to that UTC month.
  */
 async function getAcquisitionFunnel(req, options = {}) {
@@ -317,7 +303,7 @@ async function getAcquisitionFunnel(req, options = {}) {
   if (scope === 'fleet') {
     const tenants = (await getMergedTenants(req)).filter(isPivotTenant);
     const tenantKeys = tenants.map((row) => row.tenantKey);
-    const stages = await loadLandingAndApp(req, { tenantKeys, cityClause: null, range });
+    const stages = await loadLandingAndApp(req, { tenantKeys, range });
     return funnelPayload({
       tenantKey: null,
       cityDisplayName: 'All cities',
@@ -332,10 +318,8 @@ async function getAcquisitionFunnel(req, options = {}) {
 
   const { tenant } = tenantResult;
   const tenantKey = tenant.tenantKey;
-  const cityUserIds = await loadCityUserIds(req, tenantKey);
   const stages = await loadLandingAndApp(req, {
     tenantKey,
-    cityClause: cityAnalyticsClause(tenantKey, cityUserIds),
     range,
   });
 
@@ -355,5 +339,4 @@ module.exports = {
   VOLUME_FUNNEL_DISCLAIMER,
   rateOrNull,
   DECK_EVENTS,
-  INSTALL_EVENTS,
 };

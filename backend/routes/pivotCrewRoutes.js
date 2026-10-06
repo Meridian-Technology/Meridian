@@ -9,6 +9,7 @@ const {
   listPivotCrews,
   getPivotCrewDetail,
   updatePivotCrewSettings,
+  leavePivotCrew,
   deletePivotCrew,
   rotatePivotCrewInviteLink,
   joinPivotCrew,
@@ -302,6 +303,29 @@ router.patch(
       return res.status(500).json({
         success: false,
         message: 'Unable to update crew settings.',
+      });
+    }
+  },
+);
+
+router.post(
+  '/:crewId/leave',
+  verifyToken,
+  param('crewId').isMongoId().withMessage('Invalid crew id.'),
+  async (req, res) => {
+    const validationResponse = handleValidation(req, res);
+    if (validationResponse) {
+      return validationResponse;
+    }
+
+    try {
+      const result = await leavePivotCrew(req, req.params.crewId);
+      return handleServiceResult(res, result);
+    } catch (err) {
+      logPivotRouteError('POST /pivot/crews/:crewId/leave', err, req);
+      return res.status(500).json({
+        success: false,
+        message: 'Unable to leave circle.',
       });
     }
   },

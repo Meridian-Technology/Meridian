@@ -80,7 +80,9 @@ function createApp() {
 
   // Other middleware
   const defaultJsonParser = express.json();
+  const analyticsJsonParser = express.json({ limit: '1mb' });
   app.use((req, res, next) => {
+    if (req.path === '/v1/events') return analyticsJsonParser(req, res, next);
     // Compute-result routers own separately bounded parsers for multi-megabyte
     // artifacts. Letting the default 100 KiB parser run first would make those
     // route-specific contracts unreachable in the assembled application.

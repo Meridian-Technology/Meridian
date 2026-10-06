@@ -1,5 +1,11 @@
 jest.mock('../../services/getGlobalModelService', () => jest.fn());
 jest.mock('../../services/getModelService', () => jest.fn());
+jest.mock('../../connectionsManager', () => ({
+  connectToDatabase: jest.fn(async (key) => ({
+    id: `db-${key}`,
+    model: () => null,
+  })),
+}));
 jest.mock('../../services/pivotIngestPublishService', () => ({
   resolvePivotTenant: jest.fn(),
 }));
@@ -18,7 +24,6 @@ const {
   getAcquisitionFunnel,
   parseAcquisitionMonth,
   ACQUISITION_STAGES,
-  INSTALL_EVENTS,
   DECK_EVENTS,
   rateOrNull,
 } = require('../../services/pivotAcquisitionFunnelService');
@@ -28,7 +33,7 @@ const USER_A = '507f191e810c19729de860eb';
 const MONTH = '2026-09';
 
 function mockReq() {
-  return { globalDb: { id: 'platform' } };
+  return { globalDb: { id: 'platform', model: () => null } };
 }
 
 function facetResult(unique, events) {
@@ -38,6 +43,24 @@ function facetResult(unique, events) {
       events: events ? [{ count: events }] : [],
     },
   ];
+}
+
+function actorFacet(unique, events, prefix) {
+  return [
+    {
+      uniqueIds: Array.from({ length: unique }, (_, index) => ({
+        _id: `${prefix}-${index}`,
+      })),
+      events: events ? [{ count: events }] : [],
+    },
+  ];
+}
+
+function deckActors(count, prefix, isoDate) {
+  return Array.from({ length: count }, (_, index) => ({
+    _id: `${prefix}-${index}`,
+    firstTs: new Date(isoDate),
+  }));
 }
 
 function mockLandingAndMembership({ landingAggregate, cityUserIds = [USER_A] }) {
@@ -94,20 +117,20 @@ describe('getAcquisitionFunnel', () => {
     expect(getGlobalModels).not.toHaveBeenCalled();
   });
 
-  it('scopes city events to the UTC month and first deck swipe per person', async () => {
+  it('scopes production Just Go events to the UTC month and first deck decision per person', async () => {
     const landingAggregate = jest
       .fn()
       .mockResolvedValueOnce(facetResult(100, 140))
       .mockResolvedValueOnce(facetResult(40, 55));
-    const analyticsAggregate = jest
+    const tenantAggregate = jest
       .fn()
-      .mockResolvedValueOnce(facetResult(25, 80))
-      .mockResolvedValueOnce(facetResult(18, 18))
-      .mockResolvedValueOnce([{ count: 12 }]);
+      .mockResolvedValueOnce(actorFacet(25, 80, 'city'))
+      .mockResolvedValueOnce(actorFacet(18, 18, 'city-onboard'))
+      .mockResolvedValueOnce(deckActors(12, 'city-deck', '2026-09-05T00:00:00.000Z'));
 
     mockLandingAndMembership({ landingAggregate });
     getModels.mockReturnValue({
-      AnalyticsEvent: { aggregate: analyticsAggregate },
+      AnalyticsEvent: { aggregate: tenantAggregate },
     });
 
     const result = await getAcquisitionFunnel(mockReq(), {
@@ -128,14 +151,19 @@ describe('getAcquisitionFunnel', () => {
       tenantKey: 'nyc',
       createdAt: { $gte: start, $lt: end },
     });
-    expect(analyticsAggregate.mock.calls[0][0][0].$match.event.$in).toEqual(INSTALL_EVENTS);
-    expect(analyticsAggregate.mock.calls[0][0][0].$match.ts).toEqual({ $gte: start, $lt: end });
+    expect(tenantAggregate.mock.calls[0][0][0].$match.event).toBeUndefined();
+    expect(tenantAggregate.mock.calls[0][0][0].$match.ts).toEqual({ $gte: start, $lt: end });
+    expect(tenantAggregate.mock.calls[0][0][0].$match.app).toBe('justgo');
+    expect(tenantAggregate.mock.calls[0][0][0].$match.env).toBe('prod');
+    expect(getModels.mock.calls[0][0].school).toBe('nyc');
 
-    const deckPipeline = analyticsAggregate.mock.calls[2][0];
+    const deckPipeline = tenantAggregate.mock.calls[2][0];
     expect(deckPipeline[0].$match.event.$in).toEqual(DECK_EVENTS);
+    expect(DECK_EVENTS).toEqual(['pivot_card_pass', 'pivot_card_interested']);
+    expect(deckPipeline[0].$match).toEqual(expect.objectContaining({ app: 'justgo', env: 'prod' }));
     expect(deckPipeline[0].$match.ts).toBeUndefined();
     expect(deckPipeline[1].$group.firstTs).toEqual({ $min: '$ts' });
-    expect(deckPipeline[2].$match.firstTs).toEqual({ $gte: start, $lt: end });
+    expect(deckPipeline[2]).toBeUndefined();
   });
 
   it('aggregates fleet landing including unattributed views', async () => {
@@ -143,15 +171,15 @@ describe('getAcquisitionFunnel', () => {
       .fn()
       .mockResolvedValueOnce(facetResult(200, 300))
       .mockResolvedValueOnce(facetResult(50, 60));
-    const analyticsAggregate = jest
+    const tenantAggregate = jest
       .fn()
-      .mockResolvedValueOnce(facetResult(80, 200))
-      .mockResolvedValueOnce(facetResult(40, 40))
-      .mockResolvedValueOnce([{ count: 30 }]);
+      .mockResolvedValueOnce(actorFacet(80, 200, 'fleet'))
+      .mockResolvedValueOnce(actorFacet(40, 40, 'fleet-onboard'))
+      .mockResolvedValueOnce(deckActors(30, 'fleet-deck', '2026-09-05T00:00:00.000Z'));
 
     mockLandingAndMembership({ landingAggregate });
     getModels.mockReturnValue({
-      AnalyticsEvent: { aggregate: analyticsAggregate },
+      AnalyticsEvent: { aggregate: tenantAggregate },
     });
 
     const result = await getAcquisitionFunnel(mockReq(), {

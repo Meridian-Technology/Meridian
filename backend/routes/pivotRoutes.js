@@ -3,7 +3,7 @@ const { body, validationResult } = require('express-validator');
 const { validateReferralCode, redeemReferralCode } = require('../services/pivotReferralCodeService');
 const { getPivotFeed, getPivotEventFriends } = require('../services/pivotFeedService');
 const { getPivotEventCrossCrewOverlap } = require('../services/pivotCrossCrewService');
-const { getPivotExplore } = require('../services/pivotExploreService');
+const { getPivotEvent, getPivotExplore } = require('../services/pivotExploreService');
 const {
   recordFeedAction,
   recordFeedActions,
@@ -1329,6 +1329,30 @@ router.post('/safety/report', verifyToken, async (req, res) => {
     return res.status(500).json({
       success: false,
       message: 'Unable to submit report.',
+    });
+  }
+});
+
+router.get('/events/:eventId', verifyToken, async (req, res) => {
+  try {
+    const result = await getPivotEvent(req, req.params.eventId);
+    if (result.error) {
+      return res.status(result.status || 400).json({
+        success: false,
+        message: result.error,
+        code: result.code,
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: result.data,
+    });
+  } catch (err) {
+    logPivotRouteError('GET /pivot/events/:eventId', err, req);
+    return res.status(500).json({
+      success: false,
+      message: 'Unable to load event.',
     });
   }
 });

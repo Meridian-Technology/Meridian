@@ -23,8 +23,8 @@ const NO_FETCH_CACHE = { enabled: false };
 /** Counting notes — shown from the info affordance, not a page banner. */
 export const FUNNEL_COUNTING_NOTES = `UTC month [start, end).
 Uniques per stage. Not a closed identity funnel: landing visitors are not joined to app users, so a later step can be larger than the one before it.
-deck = first-ever swipe per actor (min ts of pivot_card_view | pass | interested), attributed to that month.
-app open = unique actors with a Just Go app event in-window. session_start is not written.`;
+deck = first-ever pass or interested decision per actor, attributed to that month.
+app activity = unique actors with a production Just Go app event in-window. It is not a verified install count.`;
 
 function FunnelNotesButton() {
   const [open, setOpen] = useState(false);
@@ -204,7 +204,7 @@ function PivotAcquisitionFunnel({ acquisition }) {
                 <FunnelNotesButton />
               </div>
               <p className="pivot-ops-section__description">
-                Unique counts by step this month. Deck is first swipe only.
+                Unique counts by step this month. Deck is first decision only.
               </p>
               <div className="pivot-tenant-analytics__funnel-wrap">
                 <PivotOpsAreaFunnel

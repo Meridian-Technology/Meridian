@@ -943,6 +943,74 @@ async function declinePivotCrewInvite(req, membershipId) {
   return { data: { declined: true } };
 }
 
+/** Leave a crew. Pass ownership to the longest-tenured active member, or close a solo crew. */
+async function leavePivotCrew(req, crewId) {
+  const access = await requireActiveMembership(req, crewId);
+  if (access.error) {
+    return access;
+  }
+
+  const { crew, membership, PivotCrewMembership } = access;
+  let newOwnerUserId = null;
+
+  if (membership.role === 'owner') {
+    const successor = await PivotCrewMembership.findOne({
+      crewId: crew._id,
+      status: 'active',
+      role: 'member',
+      userId: { $ne: null },
+    }).sort({ joinedAt: 1, _id: 1 }).lean();
+
+    if (!successor) {
+      const otherActive = await PivotCrewMembership.findOne({
+        crewId: crew._id,
+        status: 'active',
+        userId: { $ne: toObjectId(req.user.userId) },
+      }).lean();
+      if (otherActive) {
+        return { error: 'Circle membership changed. Try again.', status: 409, code: 'MEMBERSHIP_CHANGED' };
+      }
+      const deleted = await deletePivotCrew(req, crewId);
+      if (deleted.error) {
+        return deleted;
+      }
+      return { data: { crewId, left: true, archivedAt: deleted.data.archivedAt } };
+    }
+
+    const promoted = await PivotCrewMembership.updateOne(
+      { _id: successor._id, crewId: crew._id, status: 'active', role: 'member' },
+      { $set: { role: 'owner' } },
+    );
+    if (!promoted.modifiedCount) {
+      return { error: 'Circle membership changed. Try again.', status: 409, code: 'MEMBERSHIP_CHANGED' };
+    }
+    newOwnerUserId = successor.userId.toString();
+  }
+
+  const left = await PivotCrewMembership.updateOne(
+    { _id: membership._id, crewId: crew._id, status: 'active', role: membership.role },
+    { $set: { status: 'left', role: 'member' } },
+  );
+  if (!left.modifiedCount) {
+    if (newOwnerUserId) {
+      await PivotCrewMembership.updateOne(
+        { crewId: crew._id, userId: toObjectId(newOwnerUserId), status: 'active', role: 'owner' },
+        { $set: { role: 'member' } },
+      );
+    }
+    return { error: 'Circle membership changed. Try again.', status: 409, code: 'MEMBERSHIP_CHANGED' };
+  }
+
+  const batchWeek = toIsoWeek(new Date());
+  scheduleCrewWeekRecomputeForCrew(req, { crewId, batchWeek });
+  scheduleCrewWeekRecompute(req, { userId: req.user.userId, batchWeek });
+  if (newOwnerUserId) {
+    scheduleCrewWeekRecompute(req, { userId: newOwnerUserId, batchWeek });
+  }
+
+  return { data: { crewId, left: true, newOwnerUserId } };
+}
+
 /**
  * Soft-delete a crew (sets archivedAt). Owner-only — members cannot delete.
  * Archived crews drop out of lists/rituals and can no longer be joined.
@@ -1019,6 +1087,7 @@ module.exports = {
   listPivotCrews,
   getPivotCrewDetail,
   updatePivotCrewSettings,
+  leavePivotCrew,
   deletePivotCrew,
   rotatePivotCrewInviteLink,
   joinPivotCrew,

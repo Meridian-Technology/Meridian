@@ -17,6 +17,7 @@ const {
   createPivotCrew,
   listPivotCrews,
   getPivotCrewDetail,
+  leavePivotCrew,
   deletePivotCrew,
   rotatePivotCrewInviteLink,
   joinPivotCrew,
@@ -314,6 +315,65 @@ describe('pivotCrewService (Task 1.2)', () => {
       });
 
       expect(result.code).toBe('SELF_ADD');
+    });
+  });
+
+  describe('leavePivotCrew', () => {
+    it('removes a member from the circle and lets them rejoin with an invite', async () => {
+      const created = await createPivotCrew(req, { name: 'Open Circle' });
+      const crewId = created.data.crew.id;
+      const token = decodeURIComponent(created.data.inviteLink.split('token=')[1]);
+
+      req.user.userId = memberId.toString();
+      await joinPivotCrew(req, { token });
+      const left = await leavePivotCrew(req, crewId);
+      expect(left.data).toMatchObject({ crewId, left: true, newOwnerUserId: null });
+      expect((await listPivotCrews(req)).data.crews).toHaveLength(0);
+      expect((await getPivotCrewDetail(req, crewId)).status).toBe(403);
+
+      const rejoined = await joinPivotCrew(req, { token });
+      expect(rejoined.data.crew.activeMemberCount).toBe(2);
+      expect(rejoined.data.roster.filter((row) => row.userId === memberId.toString())).toHaveLength(1);
+    });
+
+    it('passes ownership to an active member when the owner leaves', async () => {
+      const created = await createPivotCrew(req, { name: 'Pass It On' });
+      const crewId = created.data.crew.id;
+      const token = decodeURIComponent(created.data.inviteLink.split('token=')[1]);
+
+      req.user.userId = memberId.toString();
+      await joinPivotCrew(req, { token });
+      req.user.userId = ownerId.toString();
+      const left = await leavePivotCrew(req, crewId);
+      expect(left.data.newOwnerUserId).toBe(memberId.toString());
+      expect((await listPivotCrews(req)).data.crews).toHaveLength(0);
+      expect((await deletePivotCrew(req, crewId)).status).toBe(403);
+
+      req.user.userId = memberId.toString();
+      const detail = await getPivotCrewDetail(req, crewId);
+      expect(detail.data.crew.role).toBe('owner');
+      expect(detail.data.crew.activeMemberCount).toBe(1);
+      expect(detail.data.roster).toHaveLength(1);
+    });
+
+    it('closes a circle when its only active member leaves', async () => {
+      const created = await createPivotCrew(req, { name: 'Solo Circle' });
+      const crewId = created.data.crew.id;
+      await invitePivotCrewPlaceholders(req, crewId, { count: 1 });
+
+      const left = await leavePivotCrew(req, crewId);
+      expect(left.data.archivedAt).toBeTruthy();
+      expect((await getPivotCrewDetail(req, crewId)).status).toBe(404);
+      expect((await listPivotCrews(req)).data.crews).toHaveLength(0);
+    });
+
+    it('does not let a non-member leave someone else’s circle', async () => {
+      const created = await createPivotCrew(req, { name: 'Private Circle' });
+      req.user.userId = outsiderId.toString();
+
+      const result = await leavePivotCrew(req, created.data.crew.id);
+      expect(result.status).toBe(403);
+      expect(result.code).toBe('FORBIDDEN');
     });
   });
 

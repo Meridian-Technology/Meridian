@@ -15,6 +15,7 @@ jest.mock('../../services/pivotCrewService', () => ({
   createPivotCrew: jest.fn(),
   listPivotCrews: jest.fn(),
   getPivotCrewDetail: jest.fn(),
+  leavePivotCrew: jest.fn(),
   updatePivotCrewSettings: jest.fn(),
   deletePivotCrew: jest.fn(),
   rotatePivotCrewInviteLink: jest.fn(),
@@ -44,6 +45,7 @@ const {
   createPivotCrew,
   listPivotCrews,
   getPivotCrewDetail,
+  leavePivotCrew,
   deletePivotCrew,
   rotatePivotCrewInviteLink,
   joinPivotCrew,
@@ -78,6 +80,7 @@ describe('pivotRoutes /pivot/crews', () => {
     createPivotCrew.mockReset();
     listPivotCrews.mockReset();
     getPivotCrewDetail.mockReset();
+    leavePivotCrew.mockReset();
     deletePivotCrew.mockReset();
     rotatePivotCrewInviteLink.mockReset();
     joinPivotCrew.mockReset();
@@ -345,6 +348,19 @@ describe('pivotRoutes /pivot/crews', () => {
 
     expect(response.status).toBe(400);
     expect(joinPivotCrew).not.toHaveBeenCalled();
+  });
+
+  it('POST /pivot/crews/:crewId/leave leaves a circle', async () => {
+    leavePivotCrew.mockResolvedValue({ data: { crewId: CREW_ID, left: true } });
+
+    const response = await request(buildApp()).post(`/pivot/crews/${CREW_ID}/leave`);
+
+    expect(response.status).toBe(200);
+    expect(response.body.data.left).toBe(true);
+    expect(leavePivotCrew).toHaveBeenCalledWith(
+      expect.objectContaining({ school: 'nyc' }),
+      CREW_ID,
+    );
   });
 
   it('DELETE /pivot/crews/:crewId archives a crew', async () => {

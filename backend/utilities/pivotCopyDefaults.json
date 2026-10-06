@@ -1504,38 +1504,39 @@
       "path": "crew.getStarted.explainCta",
       "kind": "string",
       "params": [],
-      "shipped": "let's go"
+      "shipped": "name your {group.singular}",
+      "usesTokens": true
     },
     {
-      "path": "crew.getStarted.explainStepLock",
+      "path": "crew.getStarted.explainStepChoose",
       "kind": "string",
       "params": [],
-      "shipped": "lock where you're going"
+      "shipped": "choose one event to go to together"
     },
     {
-      "path": "crew.getStarted.explainStepRank",
+      "path": "crew.getStarted.explainStepInvite",
       "kind": "string",
       "params": [],
-      "shipped": "rank what you liked"
+      "shipped": "invite at least one friend"
     },
     {
-      "path": "crew.getStarted.explainStepSwipe",
+      "path": "crew.getStarted.explainStepSave",
       "kind": "string",
       "params": [],
-      "shipped": "swipe the same events"
+      "shipped": "each of you swipes through events and saves what you like"
     },
     {
       "path": "crew.getStarted.explainSubtitle",
       "kind": "string",
       "params": [],
-      "shipped": "a {group.singular} is the friends you go out with. skip the group-chat spiral, swipe the week, lock one plan",
-      "usesTokens": true
+      "shipped": "make one plan each week with friends you already know"
     },
     {
       "path": "crew.getStarted.explainTitle",
       "kind": "string",
       "params": [],
-      "shipped": "stop planning. just go"
+      "shipped": "how {group.plural} work",
+      "usesTokens": true
     },
     {
       "path": "crew.getStarted.inviteBody",
@@ -1950,6 +1951,72 @@
       "params": [],
       "shipped": "no {group.plural} yet",
       "usesTokens": true
+    },
+    {
+      "path": "crew.profile.leaveBody",
+      "kind": "template",
+      "params": [
+        "crewName"
+      ],
+      "shipped": "you'll leave {crewName}. you can rejoin with an invite",
+      "sampleArgs": {
+        "crewName": "friday crew"
+      }
+    },
+    {
+      "path": "crew.profile.leaveCancel",
+      "kind": "string",
+      "params": [],
+      "shipped": "cancel"
+    },
+    {
+      "path": "crew.profile.leaveCloseBody",
+      "kind": "template",
+      "params": [
+        "crewName"
+      ],
+      "shipped": "you're the only member. leaving will close {crewName} and cancel its invites",
+      "sampleArgs": {
+        "crewName": "friday crew"
+      }
+    },
+    {
+      "path": "crew.profile.leaveConfirm",
+      "kind": "string",
+      "params": [],
+      "shipped": "leave"
+    },
+    {
+      "path": "crew.profile.leaveCta",
+      "kind": "string",
+      "params": [],
+      "shipped": "leave {group.singular}",
+      "usesTokens": true
+    },
+    {
+      "path": "crew.profile.leaveError",
+      "kind": "string",
+      "params": [],
+      "shipped": "couldn't leave {group.singular}. try again",
+      "usesTokens": true
+    },
+    {
+      "path": "crew.profile.leaveTitle",
+      "kind": "string",
+      "params": [],
+      "shipped": "leave this {group.singular}?",
+      "usesTokens": true
+    },
+    {
+      "path": "crew.profile.leaveTransferBody",
+      "kind": "template",
+      "params": [
+        "crewName"
+      ],
+      "shipped": "you'll leave {crewName} and another member will become the owner. you can rejoin with an invite",
+      "sampleArgs": {
+        "crewName": "friday crew"
+      }
     },
     {
       "path": "crew.profile.loadError",
