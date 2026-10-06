@@ -30,6 +30,7 @@ function lean(rows) {
 describe('pivotGrowthOverviewService', () => {
   const membershipFind = jest.fn();
   const redemptionDistinct = jest.fn();
+  const inviteAcceptanceDistinct = jest.fn();
   const snapshotFind = jest.fn();
   const intentAggregate = jest.fn();
 
@@ -39,7 +40,9 @@ describe('pivotGrowthOverviewService', () => {
     getGlobalModels.mockReturnValue({
       TenantMembership: { find: membershipFind },
       PivotReferralRedemption: { distinct: redemptionDistinct },
+      PivotUserInviteAcceptance: { distinct: inviteAcceptanceDistinct },
     });
+    inviteAcceptanceDistinct.mockResolvedValue([]);
     getModels.mockReturnValue({
       PivotDeckSnapshot: { find: snapshotFind },
       PivotEventIntent: { aggregate: intentAggregate },
@@ -87,6 +90,32 @@ describe('pivotGrowthOverviewService', () => {
     const w38 = data.series.find((row) => row.week === '2026-W38');
     expect(w38).toMatchObject({ planners: 1, plansSaved: 1, ticketOpeners: 1 });
     expect(data.retention.opened.cohorts.at(-2)).toMatchObject({ week: '2026-W38', size: 2 });
+  });
+
+  it('counts members who joined through a friend invite link as referred', async () => {
+    resolvePivotTenant.mockResolvedValue({
+      tenant: { tenantKey: 'nyc', location: 'New York City', pivotDropDayOfWeek: 4 },
+    });
+    membershipFind.mockReturnValue(
+      lean([
+        { tenantUserId: 'a', globalUserId: 'ga', createdAt: new Date('2026-09-17T12:00:00Z') },
+        { tenantUserId: 'b', globalUserId: 'gb', createdAt: new Date('2026-09-17T13:00:00Z') },
+      ]),
+    );
+    redemptionDistinct.mockResolvedValue(['ga']);
+    inviteAcceptanceDistinct.mockResolvedValue(['gb', 'ga']);
+    snapshotFind.mockReturnValue(lean([]));
+    intentAggregate.mockResolvedValue([]);
+
+    const { data } = await getTenantGrowthOverview(
+      { globalDb: {} },
+      { tenantKey: 'nyc', now: new Date('2026-09-24T12:00:00Z') },
+    );
+
+    expect(inviteAcceptanceDistinct).toHaveBeenCalledWith('inviteeGlobalUserId', {
+      inviteeGlobalUserId: { $in: ['ga', 'gb'] },
+    });
+    expect(data.headline.newMembers).toMatchObject({ value: 2, referredShare: 1 });
   });
 
   it('passes tenant resolution errors through', async () => {

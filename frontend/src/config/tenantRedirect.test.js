@@ -113,6 +113,14 @@ describe('isPathAllowedOnJustGoHost', () => {
     expect(isPathAllowedOnWww('/justgo/terms-of-service')).toBe(true);
   });
 
+  it('opens personal and crew invite links on both hosts', () => {
+    expect(isPathAllowedOnJustGoHost('/invite/k7m2qx9a')).toBe(true);
+    expect(isPathAllowedOnJustGoHost('/pivot/crew/join')).toBe(true);
+    expect(isPathAllowedOnWww('/invite/k7m2qx9a')).toBe(true);
+    expect(isPathAllowedOnWww('/pivot/crew/join')).toBe(true);
+    expect(isPathAllowedOnWww('/pivot/week')).toBe(false);
+  });
+
   it('does not open campus www to city slugs', () => {
     expect(isPathAllowedOnWww('/troy')).toBe(false);
     expect(isPathAllowedOnWww('/justgo')).toBe(true);

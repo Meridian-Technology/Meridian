@@ -266,6 +266,12 @@ const userSchema = new mongoose.Schema({
         enum: ['active', 'left'],
         default: 'active',
     },
+    /** Who sees this user's interested/going events: friends, shared circles only, or nobody. */
+    pivotPlanVisibility: {
+        type: String,
+        enum: ['friends', 'circles', 'nobody'],
+        default: 'friends',
+    },
     /** Set when the user leaves the pilot via POST /pivot/leave-pilot. */
     pivotLeftAt: {
         type: Date,

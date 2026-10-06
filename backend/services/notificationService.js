@@ -883,6 +883,21 @@ class NotificationService {
                     }
                 ]
             },
+            'pivot_invite_accepted': {
+                title: 'New friend',
+                message: '<strong>{{senderName|capitalize}}</strong> accepted your invite. You\'re friends now.',
+                version: '1.0',
+                priority: 'normal',
+                channels: ['in_app', 'push'],
+                sender: '{{sender}}',
+                senderModel: 'User',
+                navigation: {
+                    type: 'navigate',
+                    route: 'PivotFriends',
+                    params: {},
+                    deepLink: 'justgo://pivot/friends',
+                },
+            },
             'crew_invite': {
                 title: 'Crew invite',
                 message: '<strong>{{senderName|capitalize}}</strong> invited you to join <strong>{{crewName|capitalize}}</strong>.',

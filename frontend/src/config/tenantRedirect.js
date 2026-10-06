@@ -173,6 +173,8 @@ const WWW_ALLOWED_PATHS = [
   '/landing',
   '/mobile',
   '/invite',
+  // Crew invite links people share (old meridian.study links still land here).
+  '/pivot/crew/join',
   '/contact',
   '/support',
   '/privacy-policy',
@@ -209,6 +211,7 @@ const JUSTGO_HOST_ALLOWED_PATHS = Object.freeze([
   '/qr',
   '/creator',
   '/invite',
+  '/pivot/crew/join',
   '/privacy-policy',
   '/terms-of-service',
   '/login',
