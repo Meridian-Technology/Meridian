@@ -38,6 +38,7 @@ const {
 } = require('../utilities/pivotEditorialPolicy');
 const { getPivotConfig } = require('./pivotConfigService');
 const { getHiddenUserIdSet } = require('./pivotSafetyService');
+const { resolvePlanVisibleUserIds } = require('./pivotPlanVisibilityService');
 const {
   loadRichLocationViewerContext,
   projectEventRichLocation,
@@ -661,9 +662,15 @@ async function loadFriendSocial(req, userId, eventIds, previewCap = FRIEND_CAP, 
     ...new Set(friendIntentRows.map((row) => String(row.userId))),
   ];
   const users = await User.find({ _id: { $in: friendUserIds } })
-    .select('name username picture')
+    .select('name username picture pivotPlanVisibility')
     .lean();
-  const userById = new Map(users.map((user) => [String(user._id), user]));
+  // Friends who limited who sees their plans drop out of every friend surface.
+  const visibleIds = await resolvePlanVisibleUserIds(req, userId, users);
+  const userById = new Map(
+    users
+      .filter((user) => visibleIds.has(String(user._id)))
+      .map((user) => [String(user._id), user]),
+  );
 
   const socialByEvent = makeEmptySocialMap(eventIds);
   const socialByEventAndSlot = new Map();
@@ -1590,6 +1597,7 @@ module.exports = {
   applyCrewSocialCounts,
   clearFeedCrewConfigCacheForTests,
   loadFriendSocial,
+  getAcceptedFriendIds,
   loadUserInterestTags,
   loadNegativeFeedbackTags,
   collectCatalogTagsFromEvents,
