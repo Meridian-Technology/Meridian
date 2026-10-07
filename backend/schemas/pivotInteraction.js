@@ -14,6 +14,8 @@ const PIVOT_INTERACTION_SURFACES = Object.freeze([
   'recap',
   'plans',
   'detail',
+  // Swipes made in the App Clip, imported after the full app signs in.
+  'clip',
 ]);
 
 const PIVOT_INTERACTION_RETRIEVALS = Object.freeze([

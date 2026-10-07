@@ -1294,6 +1294,40 @@ describe('pivotIngestPublishService updateIngestEvent', () => {
     );
   });
 
+  it('sets the App Clip deck flag and rejects non-boolean values', async () => {
+    const result = await updateIngestEvent(
+      { globalDb: {} },
+      {
+        tenantKey: 'nyc',
+        eventId: '507f1f77bcf86cd799439012',
+        overrides: { clipDrop: 'true' },
+      },
+    );
+
+    expect(result.error).toBeUndefined();
+    expect(Event.findByIdAndUpdate).toHaveBeenCalledWith(
+      '507f1f77bcf86cd799439012',
+      expect.objectContaining({
+        $set: expect.objectContaining({
+          'customFields.pivot': expect.objectContaining({ clipDrop: true }),
+        }),
+      }),
+      expect.any(Object),
+    );
+
+    Event.findByIdAndUpdate.mockClear();
+    const invalid = await updateIngestEvent(
+      { globalDb: {} },
+      {
+        tenantKey: 'nyc',
+        eventId: '507f1f77bcf86cd799439012',
+        overrides: { clipDrop: 'maybe' },
+      },
+    );
+    expect(invalid.code).toBe('INVALID_CLIP_DROP');
+    expect(Event.findByIdAndUpdate).not.toHaveBeenCalled();
+  });
+
   it('updates tags on existing event', async () => {
     validatePivotEventTags.mockResolvedValue({ tags: ['board-games', 'social'] });
 

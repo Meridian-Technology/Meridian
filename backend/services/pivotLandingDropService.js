@@ -75,10 +75,17 @@ function rankLandingEvents(events, dropAt, deckConfig) {
   );
 }
 
-async function loadFeaturedWeek(Event, tenant, batchWeek, now, deckConfig) {
+/**
+ * One curated segment of a week (`buildQuery` picks the flag), ranked as if
+ * the deck opened at that week's drop instant.
+ */
+async function loadDropSegmentWeek(Event, tenant, batchWeek, now, deckConfig, {
+  buildQuery = buildFeaturedLandingQuery,
+  fields = LANDING_EVENT_FIELDS,
+} = {}) {
   const { dropAt } = resolvePivotDropInstant(tenant, batchWeek, now);
-  const events = await Event.find(buildFeaturedLandingQuery(batchWeek, dropAt))
-    .select(LANDING_EVENT_FIELDS)
+  const events = await Event.find(buildQuery(batchWeek, dropAt))
+    .select(fields)
     .sort({ start_time: 1 })
     .lean();
 
@@ -90,8 +97,9 @@ async function loadFeaturedWeek(Event, tenant, batchWeek, now, deckConfig) {
   };
 }
 
-async function getPivotLandingDrop(req, options = {}) {
-  const tenantKey = String(options.tenantKey || '').trim().toLowerCase();
+/** Public drop surfaces only serve active Just Go cities. */
+async function resolvePublicDropTenant(req, tenantKeyInput) {
+  const tenantKey = String(tenantKeyInput || '').trim().toLowerCase();
   if (!tenantKey) {
     return {
       error: 'tenantKey is required.',
@@ -118,6 +126,13 @@ async function getPivotLandingDrop(req, options = {}) {
       code: 'TENANT_NOT_ACTIVE',
     };
   }
+  return { tenant };
+}
+
+async function getPivotLandingDrop(req, options = {}) {
+  const resolved = await resolvePublicDropTenant(req, options.tenantKey);
+  if (resolved.error) return resolved;
+  const { tenant } = resolved;
 
   const now = options.now || new Date();
   const liveWeek = resolvePivotLiveBatchWeek(tenant, now);
@@ -127,14 +142,14 @@ async function getPivotLandingDrop(req, options = {}) {
   const scopedReq = { db, school: tenant.tenantKey };
   const { Event } = getModels(scopedReq, 'Event');
 
-  const current = await loadFeaturedWeek(Event, tenant, liveWeek, now, deckConfig);
+  const current = await loadDropSegmentWeek(Event, tenant, liveWeek, now, deckConfig);
   let loaded = current;
   let fallback = false;
 
   if (current.segmentCount === 0) {
     const previousWeek = shiftIsoWeek(liveWeek, -1);
     if (previousWeek) {
-      const previous = await loadFeaturedWeek(Event, tenant, previousWeek, now, deckConfig);
+      const previous = await loadDropSegmentWeek(Event, tenant, previousWeek, now, deckConfig);
       if (previous.segmentCount > 0) {
         loaded = previous;
         fallback = true;
@@ -162,6 +177,8 @@ module.exports = {
   getPivotLandingDrop,
   serializeLandingDropEvent,
   buildFeaturedLandingQuery,
+  loadDropSegmentWeek,
+  resolvePublicDropTenant,
   LANDING_DROP_LIMIT,
   LANDING_EVENT_FIELDS,
 };

@@ -71,6 +71,7 @@ const {
   redeemPivotEntry,
 } = require('../services/pivotEntryService');
 const { getPivotLandingDrop } = require('../services/pivotLandingDropService');
+const { getPivotClipDrop } = require('../services/pivotClipDropService');
 const { recordLandingEvent, getLandingConfig } = require('../services/pivotLandingService');
 const { joinWaitlist } = require('../services/pivotLandingWaitlistService');
 const {joinCityInterest} = require('../services/justGoCityInterestService');
@@ -91,6 +92,7 @@ const {
   pivotLandingWaitlistRateLimit,
   pivotLandingConfigRateLimit,
   pivotLandingQrHopRateLimit,
+  pivotClipDropRateLimit,
 } = require('../middlewares/pivotLandingDropRateLimit');
 const pivotCrewRoutes = require('./pivotCrewRoutes');
 const pivotCreatorRoutes = require('./pivotCreatorRoutes');
@@ -307,6 +309,32 @@ router.get('/landing/drop', pivotLandingDropRateLimit, async (req, res) => {
     });
   } catch (err) {
     logPivotRouteError('GET /pivot/landing/drop', err, req);
+    return res.status(500).json({
+      success: false,
+      message: 'Unable to load this week’s drop.',
+    });
+  }
+});
+
+/** App Clip deck — public, no account; clip-curated cards ranked at drop time. */
+router.get('/clip/drop', pivotClipDropRateLimit, async (req, res) => {
+  try {
+    const result = await getPivotClipDrop(req, { tenantKey: req.query.tenantKey });
+    if (result.error) {
+      return res.status(result.status || 400).json({
+        success: false,
+        message: result.error,
+        code: result.code,
+      });
+    }
+
+    res.set('Cache-Control', 'public, max-age=60');
+    return res.status(200).json({
+      success: true,
+      data: result.data,
+    });
+  } catch (err) {
+    logPivotRouteError('GET /pivot/clip/drop', err, req);
     return res.status(500).json({
       success: false,
       message: 'Unable to load this week’s drop.',

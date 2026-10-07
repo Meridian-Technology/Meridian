@@ -1,6 +1,8 @@
 const APPLE_TEAM_ID = 'S22WF3L7P9';
 const MERIDIAN_APP_ID = 'com.meridian.mobile';
 const JUSTGO_APP_ID = 'app.justgo';
+/** The Just Go App Clip; NFC tags and posters on this domain launch it. */
+const JUSTGO_APP_CLIP_ID = 'app.justgo.Clip';
 
 const ASSOCIATED_PATHS = Object.freeze([
   '/invite',
@@ -19,6 +21,9 @@ function appleAppSiteAssociation() {
         appID: `${APPLE_TEAM_ID}.${bundleId}`,
         paths: [...ASSOCIATED_PATHS],
       })),
+    },
+    appclips: {
+      apps: [`${APPLE_TEAM_ID}.${JUSTGO_APP_CLIP_ID}`],
     },
   };
 }
@@ -87,6 +92,7 @@ module.exports = {
   APPLE_TEAM_ID,
   MERIDIAN_APP_ID,
   JUSTGO_APP_ID,
+  JUSTGO_APP_CLIP_ID,
   ASSOCIATED_PATHS,
   appleAppSiteAssociation,
   androidAssetLinks,

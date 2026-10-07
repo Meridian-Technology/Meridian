@@ -18,7 +18,7 @@ const groups = {
       /\/route-outcomes\/(?:pivotAdmin|pivotComputeWorker)/,
     ],
     'consumer-experience': [
-      /\/unit\/(?:ensureJustGo|eventRichLocation|justGo|publicEvent|pivotAcquisition|pivotContact|pivotEntry|pivotExplore|pivotFeed|pivotFeedback|pivotFriend|pivotIntent|pivotInteraction|pivotLanding|pivotPlanVisibility|pivotProfile|pivotReferral|pivotRetention|pivotSafety|pivotSocial|pivotTimeSlots|pivotUserInvite)/,
+      /\/unit\/(?:ensureJustGo|eventRichLocation|justGo|publicEvent|pivotAcquisition|pivotClipDrop|pivotContact|pivotEntry|pivotExplore|pivotFeed|pivotFeedback|pivotFriend|pivotIntent|pivotInteraction|pivotLanding|pivotPlanVisibility|pivotProfile|pivotReferral|pivotRetention|pivotSafety|pivotSocial|pivotTimeSlots|pivotUserInvite)/,
       /\/route-outcomes\/pivotRoutes/,
     ],
     'crews-weekly-drop': [

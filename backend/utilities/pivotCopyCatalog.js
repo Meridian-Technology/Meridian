@@ -46,6 +46,8 @@ const PIVOT_COPY_REMOTE_SECTIONS = Object.freeze([
   'landing',
   // Meridian job notification copy (Voice overlay; Expo resolve on send)
   'notifications',
+  // Just Go App Clip (overlay rides on GET /pivot/clip/drop)
+  'clip',
 ]);
 
 const PIVOT_COPY_DENIED_SECTIONS = Object.freeze([

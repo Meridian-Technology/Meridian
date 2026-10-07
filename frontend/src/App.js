@@ -7,7 +7,7 @@ import { isWww, isJustGoHost, setLastTenant, setTenantConfigCache } from './conf
 import ProtectedRoute from './components/ProtectedRoute/ProtectedRoute';
 import JustGoLanding from './pages/JustGoLanding/JustGoLanding';
 import JustGoQrHop from './pages/JustGoLanding/JustGoQrHop';
-import { JustGoApexCityLanding } from './pages/JustGoLanding/justGoHostRoutes';
+import { JustGoApexCityLanding, JustGoClipFallback } from './pages/JustGoLanding/justGoHostRoutes';
 import PlatformProtectedRoute from './components/PlatformProtectedRoute/PlatformProtectedRoute';
 import JustGoCreatorProtectedRoute from './components/JustGoCreatorProtectedRoute/JustGoCreatorProtectedRoute';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
@@ -226,7 +226,10 @@ function App() {
                                         <Route path='/' element={<Layout/>}>
                                             {/* publicly accessible pages */}
                                             {justGoHost ? (
-                                                <Route path="/qr/:name" element={<JustGoQrHop />} />
+                                                <>
+                                                    <Route path="/qr/:name" element={<JustGoQrHop />} />
+                                                    <Route path="/clip/:tenantKey/*" element={<JustGoClipFallback />} />
+                                                </>
                                             ) : (
                                                 <>
                                                     <Route path="/qr/e/:shortId" element={<EventQRRedirect/>}/>

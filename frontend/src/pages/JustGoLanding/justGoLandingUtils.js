@@ -180,6 +180,7 @@ export function cityChipLabel(city) {
 
 export const JUSTGO_LANDING_RESERVED_SLUGS = Object.freeze([
   'qr',
+  'clip',
   'creator',
   'invite',
   'privacy-policy',

@@ -730,6 +730,208 @@
       "shipped": "release to skip"
     },
     {
+      "path": "clip.dropCadence",
+      "kind": "template",
+      "params": [
+        "when"
+      ],
+      "shipped": "a new drop picked for you, every {when}",
+      "sampleArgs": {
+        "when": "thu 6pm"
+      }
+    },
+    {
+      "path": "clip.empty",
+      "kind": "string",
+      "params": [],
+      "shipped": "this week’s drop is still cooking. get the app to catch it first."
+    },
+    {
+      "path": "clip.endTagline",
+      "kind": "string",
+      "params": [],
+      "shipped": "less scrolling. more going."
+    },
+    {
+      "path": "clip.getApp",
+      "kind": "string",
+      "params": [],
+      "shipped": "get just go"
+    },
+    {
+      "path": "clip.keepPicks",
+      "kind": "template",
+      "params": [
+        "count"
+      ],
+      "shipped": "{count, plural, one {keep my pick} other {keep my # picks}}",
+      "sampleArgs": {
+        "count": 2
+      }
+    },
+    {
+      "path": "clip.loadError",
+      "kind": "string",
+      "params": [],
+      "shipped": "couldn’t open the drop"
+    },
+    {
+      "path": "clip.nextDrop",
+      "kind": "template",
+      "params": [
+        "when"
+      ],
+      "shipped": "next one {when}",
+      "sampleArgs": {
+        "when": "thu 6pm"
+      }
+    },
+    {
+      "path": "clip.packDropNumber",
+      "kind": "template",
+      "params": [
+        "number"
+      ],
+      "shipped": "drop №{number}",
+      "sampleArgs": {
+        "number": "40"
+      }
+    },
+    {
+      "path": "clip.packKicker",
+      "kind": "string",
+      "params": [],
+      "shipped": "this week"
+    },
+    {
+      "path": "clip.packPlansUnit",
+      "kind": "template",
+      "params": [
+        "count"
+      ],
+      "shipped": "{count, plural, one {plan} other {plans}}",
+      "sampleArgs": {
+        "count": 2
+      }
+    },
+    {
+      "path": "clip.packSubtitle",
+      "kind": "template",
+      "params": [
+        "weekRange"
+      ],
+      "shipped": "{weekRange}",
+      "sampleArgs": {
+        "weekRange": "jul 6–12"
+      }
+    },
+    {
+      "path": "clip.packTitle",
+      "kind": "template",
+      "params": [
+        "city"
+      ],
+      "shipped": "{city}",
+      "sampleArgs": {
+        "city": "brooklyn"
+      }
+    },
+    {
+      "path": "clip.picksEmpty",
+      "kind": "string",
+      "params": [],
+      "shipped": "too picky? good. the app learns that."
+    },
+    {
+      "path": "clip.picksKeep",
+      "kind": "string",
+      "params": [],
+      "shipped": "they’ll be waiting in the app."
+    },
+    {
+      "path": "clip.picksMore",
+      "kind": "template",
+      "params": [
+        "count"
+      ],
+      "shipped": "+ {count} more",
+      "sampleArgs": {
+        "count": 2
+      }
+    },
+    {
+      "path": "clip.picksSaved",
+      "kind": "string",
+      "params": [],
+      "shipped": "saved"
+    },
+    {
+      "path": "clip.picksTitle",
+      "kind": "string",
+      "params": [],
+      "shipped": "your picks"
+    },
+    {
+      "path": "clip.retry",
+      "kind": "string",
+      "params": [],
+      "shipped": "try again"
+    },
+    {
+      "path": "clip.tutorialGotIt",
+      "kind": "string",
+      "params": [],
+      "shipped": "got it"
+    },
+    {
+      "path": "clip.tutorialInterested",
+      "kind": "string",
+      "params": [],
+      "shipped": "interested"
+    },
+    {
+      "path": "clip.tutorialPass",
+      "kind": "string",
+      "params": [],
+      "shipped": "pass"
+    },
+    {
+      "path": "clip.tutorialSubtitle",
+      "kind": "string",
+      "params": [],
+      "shipped": "left to pass, right to save. just pick what looks good."
+    },
+    {
+      "path": "clip.tutorialTitle",
+      "kind": "string",
+      "params": [],
+      "shipped": "two ways to swipe"
+    },
+    {
+      "path": "clip.valueFriends",
+      "kind": "string",
+      "params": [],
+      "shipped": "see which friends are going"
+    },
+    {
+      "path": "clip.valueHeading",
+      "kind": "string",
+      "params": [],
+      "shipped": "in the app"
+    },
+    {
+      "path": "clip.valuePersonal",
+      "kind": "string",
+      "params": [],
+      "shipped": "a new drop picked for you, every week"
+    },
+    {
+      "path": "clip.valueSources",
+      "kind": "string",
+      "params": [],
+      "shipped": "events from all sources, in one place"
+    },
+    {
       "path": "crew.addMember.cantFindPrompt",
       "kind": "string",
       "params": [],
@@ -5134,6 +5336,28 @@
       "kind": "string",
       "params": [],
       "shipped": "peek design system"
+    },
+    {
+      "path": "week.dropPackSubtitle",
+      "kind": "template",
+      "params": [
+        "weekRange"
+      ],
+      "shipped": "{weekRange}",
+      "sampleArgs": {
+        "weekRange": "jul 6–12"
+      }
+    },
+    {
+      "path": "week.dropPackTitle",
+      "kind": "template",
+      "params": [
+        "city"
+      ],
+      "shipped": "{city}",
+      "sampleArgs": {
+        "city": "brooklyn"
+      }
     },
     {
       "path": "week.dropSoonBody",

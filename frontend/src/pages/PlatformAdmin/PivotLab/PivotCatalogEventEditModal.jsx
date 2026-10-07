@@ -100,6 +100,7 @@ export function catalogEventToEditDraft(event) {
     timeSlots: hasShowtimes ? timeSlots : [],
     ingestStatus: event.ingestStatus || 'staged',
     featured: event.featured === true,
+    clipDrop: event.clipDrop === true,
     tags: Array.isArray(event.tags) ? [...event.tags] : [],
     movie: event.movie || null,
     enrichment: enrichmentToDraft(event.enrichment),
@@ -127,6 +128,7 @@ export function catalogEditDraftToOverrides(draft) {
     end_time: window.end_time || undefined,
     ingestStatus: draft.ingestStatus,
     featured: draft.featured === true,
+    clipDrop: draft.clipDrop === true,
     tags: Array.isArray(draft.tags) ? draft.tags : [],
     ...(useShowtimes ? { timeSlots: normalizedSlots } : { timeSlots: [] }),
     ...(draft.movie ? { movie: draft.movie } : {}),
@@ -621,6 +623,17 @@ function PivotCatalogEventEditModal({
                       />
                       <span className="pivot-manual-import__hint">
                         Internal. Published featured events are the only cards on the public landing deck.
+                      </span>
+                    </label>
+                    <label className="pivot-manual-import__field pivot-manual-import__check">
+                      <span className="pivot-manual-import__label">App Clip deck</span>
+                      <input
+                        type="checkbox"
+                        checked={draft.clipDrop === true}
+                        onChange={(e) => patchDraft({ clipDrop: e.target.checked })}
+                      />
+                      <span className="pivot-manual-import__hint">
+                        Internal. Published App Clip events make up the demo clip&apos;s deck. With none this week, the clip shows the featured cards.
                       </span>
                     </label>
                     {event?.ingestStatus === 'staged' && draft.ingestStatus === 'published' ? (

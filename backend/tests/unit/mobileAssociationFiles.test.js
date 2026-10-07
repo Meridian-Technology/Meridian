@@ -31,6 +31,12 @@ describe('mobile association files', () => {
     });
   });
 
+  it('lets the Just Go App Clip launch from the domain', () => {
+    expect(appleAppSiteAssociation().appclips).toEqual({
+      apps: ['S22WF3L7P9.app.justgo.Clip'],
+    });
+  });
+
   it('builds Android declarations from exact release fingerprints and scopes dynamic links', () => {
     const body = androidAssetLinks({
       ANDROID_MERIDIAN_SHA256_CERT_FINGERPRINTS: MERIDIAN_FINGERPRINT,

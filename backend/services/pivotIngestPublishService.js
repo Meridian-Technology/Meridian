@@ -95,6 +95,21 @@ function parseFeatured(value) {
   };
 }
 
+/** Internal App Clip deck curation — same shape as `featured`. */
+function parseClipDrop(value) {
+  if (value === true || value === 'true' || value === 1 || value === '1') {
+    return { clipDrop: true };
+  }
+  if (value === false || value === 'false' || value === 0 || value === '0') {
+    return { clipDrop: false };
+  }
+  return {
+    error: 'clipDrop must be true or false.',
+    status: 400,
+    code: 'INVALID_CLIP_DROP',
+  };
+}
+
 function parseDateTime(value) {
   if (!value) return null;
   const parsed = new Date(value);
@@ -755,6 +770,7 @@ async function publishIngestEvent(req, options = {}) {
   if (existingDoc?.customFields?.pivot?.batchWeek === resolvedBatchWeek) {
     const previousPivot = existingDoc.customFields.pivot;
     if (previousPivot.featured !== undefined) eventPayload.customFields.pivot.featured = previousPivot.featured;
+    if (previousPivot.clipDrop !== undefined) eventPayload.customFields.pivot.clipDrop = previousPivot.clipDrop;
     if (previousPivot.rankingOverride) eventPayload.customFields.pivot.rankingOverride = previousPivot.rankingOverride;
   }
 
@@ -1054,6 +1070,14 @@ async function updateIngestEvent(req, options = {}) {
     pivotPatch.featured = featuredResult.featured;
   }
 
+  if (overrides.clipDrop !== undefined) {
+    const clipDropResult = parseClipDrop(overrides.clipDrop);
+    if (clipDropResult.error) {
+      return clipDropResult;
+    }
+    pivotPatch.clipDrop = clipDropResult.clipDrop;
+  }
+
   if (overrides.rankingOverride !== undefined) {
     const rankingResult = normalizeRankingOverride(overrides.rankingOverride, {
       actor: actorFromReq(req),
@@ -1274,6 +1298,7 @@ module.exports = {
   resolveCatalogOrgId,
   resolveCreateIngestStatus,
   parseFeatured,
+  parseClipDrop,
   DEFAULT_INGEST_STATUS,
   RELEASE_NOW_CONFIRM_TOKEN,
 };
