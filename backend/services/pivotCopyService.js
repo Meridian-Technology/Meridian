@@ -352,7 +352,7 @@ const EMPTY_MERGED_COPY_PACK = Object.freeze({
 });
 
 /**
- * Push send paths must never fail because copy is down. Missing globalDb,
+ * Push sends and the App Clip drop must never fail because copy is down. Missing globalDb,
  * lookup errors, and empty overlays all yield `p0:t0` / `{}`.
  */
 async function getMergedCopyPackOrEmpty(req, options = {}) {
@@ -362,7 +362,7 @@ async function getMergedCopyPackOrEmpty(req, options = {}) {
       return result.data;
     }
   } catch (error) {
-    console.warn('[pivot] copy pack lookup failed for push', {
+    console.warn('[pivot] copy pack lookup failed', {
       tenantKey: options.tenantKey || null,
       error: error?.message,
     });
@@ -382,11 +382,12 @@ function isLandingCopyEntryKey(path) {
   return LANDING_COPY_SHARED_KEYS.includes(path);
 }
 
-function filterLandingCopyPack(pack) {
+/** A merged pack cut down to `isAllowedKey` entries and every token. */
+function filterPublicCopyPack(pack, isAllowedKey) {
   const source = pack && typeof pack === 'object' ? pack : EMPTY_MERGED_COPY_PACK;
   const entries = {};
   for (const [key, value] of Object.entries(source.entries || {})) {
-    if (typeof value === 'string' && isLandingCopyEntryKey(key)) {
+    if (typeof value === 'string' && isAllowedKey(key)) {
       entries[key] = value;
     }
   }
@@ -403,6 +404,37 @@ function filterLandingCopyPack(pack) {
     tokens,
     entries,
   };
+}
+
+function filterLandingCopyPack(pack) {
+  return filterPublicCopyPack(pack, isLandingCopyEntryKey);
+}
+
+/** The App Clip's own `clip.*` keys plus brand. Public, like the landing. */
+function isClipCopyEntryKey(path) {
+  if (typeof path !== 'string') {
+    return false;
+  }
+  if (path.startsWith('clip.')) {
+    return isRemoteCopyKey(path);
+  }
+  return LANDING_COPY_SHARED_KEYS.includes(path);
+}
+
+function filterClipCopyPack(pack) {
+  return filterPublicCopyPack(pack, isClipCopyEntryKey);
+}
+
+/**
+ * App Clip overlay for one city: platform + tenant packs, `clip.*` keys
+ * only (the app's `week.*` drop is worded separately). The clip has no account, so this rides on the public drop response.
+ * Never throws — empty overlay when copy is down.
+ */
+async function getClipDropCopy(req, options = {}) {
+  const pack = await getMergedCopyPackOrEmpty(req, {
+    tenantKey: options.tenantKey,
+  });
+  return filterClipCopyPack(pack);
 }
 
 /**
@@ -893,6 +925,9 @@ async function resetCopyPack(req, options = {}) {
 }
 
 module.exports = {
+  isClipCopyEntryKey,
+  filterClipCopyPack,
+  getClipDropCopy,
   formatCopyRevision,
   copyRevisionEtag,
   copyRevisionNotModified,

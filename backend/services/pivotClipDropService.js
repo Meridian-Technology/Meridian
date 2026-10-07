@@ -6,6 +6,7 @@
  * Curated with internal `customFields.pivot.clipDrop`. Falls back to the
  * landing's featured segment, then to last week. Neither flag is returned.
  * No ticket links: the clip is a no-account preview, like the landing.
+ * Carries the city's Voice overrides for the pack's text (`copy`).
  */
 
 const { connectToDatabase } = require('../connectionsManager');
@@ -25,6 +26,7 @@ const {
   resolvePublicDropTenant,
   serializeLandingDropEvent,
 } = require('./pivotLandingDropService');
+const { getClipDropCopy } = require('./pivotCopyService');
 
 const CLIP_DROP_LIMIT = 12;
 const CLIP_DESCRIPTION_MAX = 600;
@@ -109,6 +111,7 @@ async function getPivotClipDrop(req, options = {}) {
   }
 
   const nextDropAt = nextDropAtAfter(tenant, liveWeek, now);
+  const copy = await getClipDropCopy(req, { tenantKey: tenant.tenantKey });
   const readsEnabled = isRichLocationCapabilityEnabled(tenant, 'reads');
   const dropAt = loaded
     ? loaded.dropAt
@@ -128,6 +131,8 @@ async function getPivotClipDrop(req, options = {}) {
         ? loaded.ranked.slice(0, CLIP_DROP_LIMIT).map((event) =>
           serializeClipDropEvent(event, { readsEnabled }))
         : [],
+      /** Voice overrides for the pack's text; the clip has no account to fetch them. */
+      copy,
     },
   };
 }

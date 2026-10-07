@@ -147,6 +147,19 @@ describe('getPivotClipDrop', () => {
     expect(CLIP_EVENT_FIELDS).not.toContain('externalLink');
   });
 
+  it('carries an empty Voice overlay when copy is unavailable', async () => {
+    mockEventFindBySegment({ '2026-W33:clip': [catalogEvent({ _id: 'fri' })] });
+
+    const result = await getPivotClipDrop({}, { tenantKey: 'nyc', now: HOUR_BEFORE_NEXT_DROP });
+
+    expect(result.data.copy).toEqual({
+      revision: 'p0:t0',
+      schemaVersion: 1,
+      tokens: {},
+      entries: {},
+    });
+  });
+
   it('caps the deck', async () => {
     const rows = Array.from({ length: CLIP_DROP_LIMIT + 3 }, (_, index) =>
       catalogEvent({

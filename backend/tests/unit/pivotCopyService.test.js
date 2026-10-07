@@ -24,6 +24,8 @@ const {
   getMergedCopyPackOrEmpty,
   getPlatformLandingCopy,
   filterLandingCopyPack,
+  filterClipCopyPack,
+  getClipDropCopy,
   getCopyPointer,
   getCopyCatalog,
   getCopyLayers,
@@ -127,6 +129,35 @@ describe('pivotCopyDefaults catalog (Task 4.1)', () => {
       tokens: { 'group.singular': 'crew' },
       entries: {
         'landing.web.cta': 'yes',
+        'brand.name': 'block',
+      },
+    });
+  });
+
+  it('filterClipCopyPack keeps clip and brand keys only', () => {
+    expect(
+      filterClipCopyPack({
+        revision: 'p1:t2',
+        schemaVersion: 1,
+        tokens: { 'brand.name': 'go now' },
+        entries: {
+          'ticker.week': 'nope',
+          'landing.web.cta': 'nope',
+          'week.dropPackTitle': 'the app’s pack',
+          'clip.packKicker': 'tonight only',
+          'clip.packTitle': 'welcome to {city}',
+          'clip.picksTitle': 'yours',
+          'brand.name': 'block',
+        },
+      }),
+    ).toEqual({
+      revision: 'p1:t2',
+      schemaVersion: 1,
+      tokens: { 'brand.name': 'go now' },
+      entries: {
+        'clip.packKicker': 'tonight only',
+        'clip.packTitle': 'welcome to {city}',
+        'clip.picksTitle': 'yours',
         'brand.name': 'block',
       },
     });
@@ -325,6 +356,39 @@ describe('pivotCopyService (Task 2.2)', () => {
       expect(result.data.entries['brand.name']).toBe('block');
       expect(result.data.entries).not.toHaveProperty('ticker.week');
       expect(result.data.tokens['group.singular']).toBe('block');
+    });
+
+    it('getClipDropCopy merges the city over platform for clip keys only', async () => {
+      await patchCopyPack(req, {
+        scope: 'platform',
+        entries: {
+          'clip.packTitle': 'platform {city}',
+          'clip.packSubtitle': 'platform week',
+          'week.dropPackTitle': 'app pack',
+          'ticker.week': 'secret week',
+        },
+      });
+      await patchCopyPack(req, {
+        scope: 'tenant',
+        tenantKey: 'nyc',
+        entries: { 'clip.packTitle': 'welcome to {city}' },
+      });
+
+      const copy = await getClipDropCopy(req, { tenantKey: 'nyc' });
+      expect(copy.entries).toEqual({
+        'clip.packTitle': 'welcome to {city}',
+        'clip.packSubtitle': 'platform week',
+      });
+      expect(copy.revision).toBe('p1:t1');
+    });
+
+    it('getClipDropCopy never fails the drop', async () => {
+      await expect(getClipDropCopy({}, { tenantKey: 'nyc' })).resolves.toEqual({
+        revision: 'p0:t0',
+        schemaVersion: 1,
+        tokens: {},
+        entries: {},
+      });
     });
 
     it('merges platform-only when no tenant row exists', async () => {

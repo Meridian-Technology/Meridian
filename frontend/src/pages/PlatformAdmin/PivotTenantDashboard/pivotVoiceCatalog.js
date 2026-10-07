@@ -205,6 +205,12 @@ const VOICE_FAMILY_ORDER = [
     sections: ['week', 'recap', 'cardStack', 'swipeTutorial'],
   },
   {
+    id: 'clip',
+    label: 'App Clip',
+    hint: 'The drop people open from a tag or poster, worded apart from the app',
+    sections: ['clip'],
+  },
+  {
     id: 'explore',
     label: 'Explore & plans',
     sections: ['explore', 'plans', 'calendar', 'eventDetail'],
@@ -260,6 +266,7 @@ const SECTION_LABELS = {
   recap: 'Recap',
   cardStack: 'Card stack',
   swipeTutorial: 'Swipe tutorial',
+  clip: 'App Clip',
   explore: 'Explore',
   plans: 'Plans',
   calendar: 'Calendar',
