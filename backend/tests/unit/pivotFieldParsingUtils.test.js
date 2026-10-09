@@ -158,6 +158,27 @@ describe('pivotFieldParsingUtils', () => {
         band: 'mid',
       });
     });
+
+    it('parses currency symbols, code amounts, and pay-what-you-can', () => {
+      expect(parsePrice('€15–€40')).toMatchObject({ min: 15, max: 40, currency: 'EUR', band: 'mid' });
+      expect(parsePrice('£20')).toMatchObject({ min: 20, max: 20, currency: 'GBP', band: 'mid' });
+      expect(parsePrice('20 CAD')).toMatchObject({ min: 20, max: 20, currency: 'CAD' });
+      expect(parsePrice('Free–$10 suggested')).toMatchObject({
+        min: 0,
+        max: 10,
+        suggested: true,
+        isFree: false,
+        band: 'low',
+      });
+      expect(parsePrice('Pay what you can')).toMatchObject({
+        min: 0,
+        max: 0,
+        isFree: false,
+        suggested: true,
+      });
+      expect(parsePrice('$$')).toMatchObject({ band: 'mid', min: null, max: null });
+      expect(parsePrice('free-form address')).toBeNull();
+    });
   });
 
   describe('parseAgeRestriction', () => {

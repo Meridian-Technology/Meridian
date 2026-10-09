@@ -538,36 +538,203 @@ function parseAddress(raw) {
   };
 }
 
+const PRICE_AMOUNT_SRC = String.raw`\d{1,3}(?:,\d{3})+(?:\.\d{1,2})?|\d+(?:[.,]\d{1,2})?`;
+const PRICE_CODE_SRC = 'USD|EUR|GBP|CAD|AUD|NZD|CHF|JPY|SGD|HKD|MXN|BRL|INR|KRW|USDC|SOL|ETH|BTC';
+
+function priceAmountValue(token) {
+  const text = String(token).trim();
+  if (/^\d{1,3}(,\d{3})+(\.\d{1,2})?$/.test(text)) return Number(text.replace(/,/g, ''));
+  if (/^\d+,\d{1,2}$/.test(text)) return Number(text.replace(',', '.'));
+  return Number(text);
+}
+
+function currencyFromPriceSymbol(symbol) {
+  if (symbol === '£') return 'GBP';
+  if (symbol === '€') return 'EUR';
+  if (symbol === '¥') return 'JPY';
+  return 'USD';
+}
+
+/**
+ * Pull currency amounts out of a listing string. Longer spans (ranges) win
+ * over the single amounts inside them, so "$10-15" stays 10 and 15.
+ */
+function extractPriceAmounts(text) {
+  const patterns = [
+    {
+      re: new RegExp(
+        String.raw`([$£€¥])\s*(${PRICE_AMOUNT_SRC})\s*(?:-|–|—|\bto\b)\s*[$£€¥]?\s*(${PRICE_AMOUNT_SRC})`,
+        'gi',
+      ),
+      read(match) {
+        const currency = currencyFromPriceSymbol(match[1]);
+        return [
+          { currency, amount: priceAmountValue(match[2]) },
+          { currency, amount: priceAmountValue(match[3]) },
+        ];
+      },
+    },
+    {
+      re: new RegExp(
+        String.raw`\b(${PRICE_CODE_SRC})\s*(${PRICE_AMOUNT_SRC})\s*(?:-|–|—|\bto\b)\s*(?:\1\s*)?(${PRICE_AMOUNT_SRC})`,
+        'gi',
+      ),
+      read(match) {
+        const currency = match[1].toUpperCase();
+        return [
+          { currency, amount: priceAmountValue(match[2]) },
+          { currency, amount: priceAmountValue(match[3]) },
+        ];
+      },
+    },
+    {
+      re: new RegExp(
+        String.raw`\b(${PRICE_AMOUNT_SRC})\s*(${PRICE_CODE_SRC})\s*(?:-|–|—|\bto\b)\s*(${PRICE_AMOUNT_SRC})\s*\2\b`,
+        'gi',
+      ),
+      read(match) {
+        const currency = match[2].toUpperCase();
+        return [
+          { currency, amount: priceAmountValue(match[1]) },
+          { currency, amount: priceAmountValue(match[3]) },
+        ];
+      },
+    },
+    {
+      re: new RegExp(String.raw`([$£€¥])\s*(${PRICE_AMOUNT_SRC})`, 'gi'),
+      read(match) {
+        return [{ currency: currencyFromPriceSymbol(match[1]), amount: priceAmountValue(match[2]) }];
+      },
+    },
+    {
+      re: new RegExp(String.raw`\b(${PRICE_CODE_SRC})\s*(${PRICE_AMOUNT_SRC})\b`, 'gi'),
+      read(match) {
+        return [{ currency: match[1].toUpperCase(), amount: priceAmountValue(match[2]) }];
+      },
+    },
+    {
+      re: new RegExp(String.raw`\b(${PRICE_AMOUNT_SRC})\s*(${PRICE_CODE_SRC})\b`, 'gi'),
+      read(match) {
+        return [{ currency: match[2].toUpperCase(), amount: priceAmountValue(match[1]) }];
+      },
+    },
+  ];
+
+  const occupied = [];
+  const found = [];
+  function overlaps(start, end) {
+    return occupied.some(([spanStart, spanEnd]) => start < spanEnd && end > spanStart);
+  }
+
+  for (const pattern of patterns) {
+    pattern.re.lastIndex = 0;
+    let match = pattern.re.exec(text);
+    while (match) {
+      const start = match.index;
+      const end = start + match[0].length;
+      if (!overlaps(start, end)) {
+        const amounts = pattern.read(match).filter((row) => Number.isFinite(row.amount));
+        if (amounts.length) {
+          occupied.push([start, end]);
+          found.push(...amounts);
+        }
+      }
+      match = pattern.re.exec(text);
+    }
+  }
+
+  return found;
+}
+
+function mentionsFreePrice(text) {
+  if (/\b(no cover|complimentary|free admission|free entry)\b/i.test(text)) return true;
+  // "free-form" is a Partiful location type, not a ticket price.
+  return /\bfree\b(?![\s-]*form\b)/i.test(text);
+}
+
+function priceBand(max, { isFree, suggested }) {
+  if (isFree) return 'free';
+  if (suggested && max === 0) return 'low';
+  if (max <= 15) return 'low';
+  if (max <= 40) return 'mid';
+  return 'high';
+}
+
 function parsePrice(raw) {
   const text = trimString(raw);
   if (!text) return null;
 
-  if (/\b(free|no cover|complimentary)\b/i.test(text) && !/\$\s*\d/.test(text)) {
-    return { raw: text, min: 0, max: 0, currency: 'USD', isFree: true, suggested: false, band: 'free' };
+  const dollarSigns = text.match(/^(\${1,4})$/);
+  if (dollarSigns) {
+    const count = dollarSigns[1].length;
+    return {
+      raw: text,
+      min: null,
+      max: null,
+      currency: 'USD',
+      isFree: false,
+      suggested: false,
+      band: count <= 1 ? 'low' : count === 2 ? 'mid' : 'high',
+    };
   }
 
-  const range = text.match(/\$\s*(\d+(?:\.\d{1,2})?)\s*(?:-|–|to)\s*\$?\s*(\d+(?:\.\d{1,2})?)/i);
-  const single = text.match(/\$\s*(\d+(?:\.\d{1,2})?)/);
-  if (!range && !single) return null;
+  const amounts = extractPriceAmounts(text);
+  const freeWord = mentionsFreePrice(text);
+  if (!amounts.length) {
+    if (/\b(pay what you can|pwyw|sliding scale)\b/i.test(text)) {
+      return {
+        raw: text,
+        min: 0,
+        max: 0,
+        currency: 'USD',
+        isFree: false,
+        suggested: true,
+        band: 'low',
+      };
+    }
+    if (freeWord) {
+      return {
+        raw: text,
+        min: 0,
+        max: 0,
+        currency: 'USD',
+        isFree: true,
+        suggested: false,
+        band: 'free',
+      };
+    }
+    if (/\bdonat(?:e|ion)\b/i.test(text)) {
+      return {
+        raw: text,
+        min: 0,
+        max: 0,
+        currency: 'USD',
+        isFree: false,
+        suggested: true,
+        band: 'low',
+      };
+    }
+    return null;
+  }
 
-  const min = Number(range ? range[1] : single[1]);
-  const max = Number(range ? range[2] : single[1]);
-  if (!Number.isFinite(min) || !Number.isFinite(max)) return null;
+  const currency = amounts[0].currency;
+  const sameCurrency = amounts.filter((row) => row.currency === currency).map((row) => row.amount);
+  let min = Math.min(...sameCurrency);
+  let max = Math.max(...sameCurrency);
+  if (freeWord && min > 0) min = 0;
+  if (max < min) max = min;
 
-  const suggested = /\bsuggested\b/i.test(text);
-  let band = 'high';
-  if (min === 0 && max === 0) band = 'free';
-  else if (max <= 15) band = 'low';
-  else if (max <= 40) band = 'mid';
+  const suggested = /\b(suggested|donation|donate|sliding|pay what you can|pwyw|flexible)\b/i.test(text);
+  const isFree = min === 0 && max === 0 && !suggested;
 
   return {
     raw: text,
     min,
-    max: max < min ? min : max,
-    currency: 'USD',
-    isFree: min === 0 && max === 0,
+    max,
+    currency,
+    isFree,
     suggested,
-    band,
+    band: priceBand(max, { isFree, suggested }),
   };
 }
 
