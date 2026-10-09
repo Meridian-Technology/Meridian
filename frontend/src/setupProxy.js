@@ -1,7 +1,12 @@
 const { createProxyMiddleware } = require("http-proxy-middleware");
 
 function proxyApiRequest(pathname, req) {
-  if (pathname.startsWith("/static/") || pathname.startsWith("/sockjs-node") || pathname === "/ws") {
+  if (
+    pathname.startsWith("/static/")
+    || pathname.startsWith("/justgo/")
+    || pathname.startsWith("/sockjs-node")
+    || pathname === "/ws"
+  ) {
     return false;
   }
   const accept = req.headers.accept || "";
