@@ -1,7 +1,18 @@
 const {
   CONTRACT_VERSION,
   COMPUTE_JOB_KINDS,
+  ALWAYS_ENABLED_COMPUTE_JOB_KINDS,
+  CAROUSEL_COMPOSE_JOB_KIND,
+  CAROUSEL_COMPOSE_ENV_FLAG,
+  CAROUSEL_COMPOSE_LIMITS,
+  EDITORIAL_COMPOSITION_CAPABILITY,
+  NO_POST_DISPOSITIONS,
   FORBIDDEN_IMPORTABLE_KEYS,
+  enabledComputeJobKinds,
+  isCarouselComposeEnabled,
+  isComputeJobKindEnabled,
+  collectAgentContextViolations,
+  isNoPostComposeResult,
   collectForbiddenImportableViolations,
   validateJobRequest,
   validateContextSnapshot,
@@ -23,7 +34,28 @@ describe('Pivot admin compute job contracts v1 (Phase 1, Step 1.2)', () => {
       'city-source-discovery',
       'city-curation-refresh',
       'carousel-export',
+      'carousel-compose',
     ]);
+    expect(ALWAYS_ENABLED_COMPUTE_JOB_KINDS).toEqual([
+      'city-source-discovery',
+      'city-curation-refresh',
+      'carousel-export',
+    ]);
+  });
+
+  it('keeps carousel-compose describable but disabled until an operator enables it', () => {
+    expect(isCarouselComposeEnabled({})).toBe(false);
+    expect(enabledComputeJobKinds({})).toEqual(ALWAYS_ENABLED_COMPUTE_JOB_KINDS);
+    expect(isComputeJobKindEnabled(CAROUSEL_COMPOSE_JOB_KIND, {})).toBe(false);
+    expect(isComputeJobKindEnabled('carousel-export', {})).toBe(true);
+
+    const enabled = { [CAROUSEL_COMPOSE_ENV_FLAG]: 'true' };
+    expect(isCarouselComposeEnabled(enabled)).toBe(true);
+    expect(enabledComputeJobKinds(enabled)).toContain(CAROUSEL_COMPOSE_JOB_KIND);
+
+    for (const off of ['', '   ', '0', 'false', 'off', 'no', 'maybe']) {
+      expect(isCarouselComposeEnabled({ [CAROUSEL_COMPOSE_ENV_FLAG]: off })).toBe(false);
+    }
   });
 
   describe('job request', () => {
@@ -267,10 +299,224 @@ describe('Pivot admin compute job contracts v1 (Phase 1, Step 1.2)', () => {
       const capability = loadFixture('worker-capability-valid.json');
       expect(validateWorkerCapability(capability)).toEqual({ valid: true });
       expect(capability.supportedContractVersions).toEqual(['1']);
-      expect(capability.supportedKinds).toEqual(COMPUTE_JOB_KINDS);
+      expect(capability.supportedKinds).toEqual(ALWAYS_ENABLED_COMPUTE_JOB_KINDS);
       expect(capability.capabilities.executionModes).toEqual(
         expect.arrayContaining(['artifact-only']),
       );
+    });
+
+    it('requires the narrow composition capability before advertising carousel-compose', () => {
+      expect(validateWorkerCapability(loadFixture('worker-capability-compose-valid.json')))
+        .toEqual({ valid: true });
+
+      const missing = validateWorkerCapability(loadFixture('worker-capability-compose-unsupported.json'));
+      expect(missing.valid).toBe(false);
+      expect(missing.errors).toEqual(expect.arrayContaining([
+        expect.stringContaining(EDITORIAL_COMPOSITION_CAPABILITY),
+      ]));
+
+      for (const incapable of [{ structuredOutput: false }, { imageReview: false }]) {
+        const capability = loadFixture('worker-capability-compose-valid.json');
+        Object.assign(capability.capabilities.editorialComposition, incapable);
+        expect(validateWorkerCapability(capability).valid).toBe(false);
+      }
+    });
+
+    it('still accepts a legacy worker that knows nothing about composition', () => {
+      const legacy = loadFixture('worker-capability-valid.json');
+      expect(legacy.capabilities.editorialComposition).toBeUndefined();
+      expect(validateWorkerCapability(legacy)).toEqual({ valid: true });
+    });
+  });
+
+  describe('carousel-compose editorial job', () => {
+    it('accepts a bound compose request and refuses render material in its options', () => {
+      const request = loadFixture('job-request-compose-valid.json');
+      expect(validateJobRequest(request)).toEqual({ valid: true });
+      expect(request.options).toMatchObject({
+        accountId: expect.stringMatching(/^[0-9a-f]{24}$/),
+        format: 'city-picks',
+        sourceTenantKeys: ['iowacity'],
+        policyVersion: expect.stringMatching(/^pol:/),
+        feedbackVersion: expect.stringMatching(/^fb:/),
+      });
+      expect(request.options.proposedPublicationWindow.timezone).toBe('America/Chicago');
+      expect(request.idempotencyKey).toMatch(/^idem:/);
+
+      expect(validateJobRequest(loadFixture('job-request-compose-invalid-render-token.json')))
+        .toEqual({ valid: false, errors: expect.arrayContaining(['$.options.renderToken: unknown field']) });
+    });
+
+    it('requires every binding the apply path later rechecks', () => {
+      for (const field of ['accountId', 'format', 'sourceTenantKeys', 'proposedPublicationWindow', 'policyVersion', 'feedbackVersion']) {
+        const request = loadFixture('job-request-compose-valid.json');
+        delete request.options[field];
+        expect(validateJobRequest(request).valid).toBe(false);
+      }
+      for (const field of ['idempotencyKey', 'contextVersion', 'requestedAt']) {
+        const request = loadFixture('job-request-compose-valid.json');
+        delete request[field];
+        expect(validateJobRequest(request).valid).toBe(false);
+      }
+    });
+
+    it('accepts an agent-visible context with no render or upload grant', () => {
+      const context = loadFixture('context-compose-valid.json');
+      expect(validateContextSnapshot(context)).toEqual({ valid: true });
+      expect(context.renderToken).toBeUndefined();
+      expect(context.artifactUploadGrant).toBeUndefined();
+      expect(collectAgentContextViolations(context)).toEqual([]);
+      expect(context.attemptId).toMatch(/^[0-9a-f]{24}$/);
+      expect(context.policy.policyVersion).toMatch(/^pol:/);
+      expect(Object.keys(context.policy.proposed).length).toBeGreaterThan(0);
+      expect(context.policy.openChoices.length).toBeGreaterThan(0);
+    });
+
+    it('names the leaked grant rather than calling it an unknown field', () => {
+      const leaked = validateContextSnapshot(loadFixture('context-compose-invalid-render-grant.json'));
+      expect(leaked.valid).toBe(false);
+      expect(leaked.errors).toEqual([
+        expect.stringContaining('root.renderToken'),
+      ]);
+      expect(leaked.errors[0]).toContain('root.artifactUploadGrant');
+    });
+
+    it('refuses candidates and coverage outside the account\'s permitted source tenants', () => {
+      const strayCandidate = loadFixture('context-compose-valid.json');
+      strayCandidate.candidates[1].sourceTenantKey = 'chicago';
+      expect(validateContextSnapshot(strayCandidate)).toEqual({
+        valid: false,
+        errors: expect.arrayContaining([expect.stringContaining('outside the account')]),
+      });
+
+      const strayCoverage = loadFixture('context-compose-valid.json');
+      strayCoverage.coverage.requestedTenantKeys = ['iowacity', 'chicago'];
+      expect(validateContextSnapshot(strayCoverage).valid).toBe(false);
+
+      const wrongOwner = loadFixture('context-compose-valid.json');
+      wrongOwner.cityKey = 'chicago';
+      expect(validateContextSnapshot(wrongOwner)).toEqual({
+        valid: false,
+        errors: expect.arrayContaining([expect.stringContaining('editorial account owner tenant')]),
+      });
+    });
+
+    it('treats wait and needs-editor as completed executions that produce no issue', () => {
+      for (const fixture of ['result-compose-wait.json', 'result-compose-needs-editor.json']) {
+        const result = loadFixture(fixture);
+        expect(validateExecutionResult(result)).toEqual({ valid: true });
+        expect(result.outcome).toBe('completed');
+        expect(result.proposal).toBeNull();
+        expect(NO_POST_DISPOSITIONS).toContain(result.decision.disposition);
+        expect(isNoPostComposeResult(result)).toBe(true);
+      }
+      expect(isNoPostComposeResult(loadFixture('result-compose-valid-ready.json'))).toBe(false);
+      expect(isNoPostComposeResult(loadFixture('result-carousel-valid-completed.json'))).toBe(false);
+    });
+
+    it('requires a wait decision to say when or on what change to reconsider', () => {
+      const result = loadFixture('result-compose-wait.json');
+      result.decision.reconsiderAt = null;
+      result.decision.reconsiderTrigger = null;
+      expect(validateExecutionResult(result)).toEqual({
+        valid: false,
+        errors: expect.arrayContaining([expect.stringContaining('when or on what change')]),
+      });
+    });
+
+    it('accepts a reviewed proposal and binds it to the policy and feedback it saw', () => {
+      const result = loadFixture('result-compose-valid-ready.json');
+      expect(validateExecutionResult(result)).toEqual({ valid: true });
+      expect(result.decision.basedOnPolicyVersion).toMatch(/^pol:/);
+      expect(result.decision.basedOnFeedbackVersion).toMatch(/^fb:/);
+      expect(result.proposal.proposalIdempotencyKey).toMatch(/^idem:/);
+      expect(result.proposal.eventSlides).toHaveLength(3);
+      expect(result.proposal.socialCaption).toBeTruthy();
+      expect(result.proposal.review.disposition).toBe('ready-for-review');
+      expect(collectForbiddenImportableViolations(result)).toEqual([]);
+    });
+
+    it('refuses a one-event issue and a no-post decision that still proposes one', () => {
+      expect(validateExecutionResult(loadFixture('result-compose-invalid-single-event.json'))).toEqual({
+        valid: false,
+        errors: expect.arrayContaining([expect.stringContaining('$.proposal.eventSlides')]),
+      });
+      expect(validateExecutionResult(loadFixture('result-compose-invalid-wait-with-proposal.json'))).toEqual({
+        valid: false,
+        errors: expect.arrayContaining([expect.stringContaining('must not propose an issue')]),
+      });
+      expect(CAROUSEL_COMPOSE_LIMITS.minEventSlides).toBe(2);
+    });
+
+    it('refuses an unreviewed, duplicated, or decision-mismatched proposal', () => {
+      const unreviewed = loadFixture('result-compose-valid-ready.json');
+      unreviewed.proposal.review.disposition = 'repair';
+      expect(validateExecutionResult(unreviewed).valid).toBe(false);
+
+      const uninspected = loadFixture('result-compose-valid-ready.json');
+      uninspected.proposal.review.inspectedSlides = 2;
+      expect(validateExecutionResult(uninspected)).toEqual({
+        valid: false,
+        errors: expect.arrayContaining([expect.stringContaining('every rendered slide must be inspected')]),
+      });
+
+      const duplicated = loadFixture('result-compose-valid-ready.json');
+      duplicated.proposal.eventSlides[2].eventRef = duplicated.proposal.eventSlides[0].eventRef;
+      expect(validateExecutionResult(duplicated)).toEqual({
+        valid: false,
+        errors: expect.arrayContaining([expect.stringContaining('cannot appear twice')]),
+      });
+
+      const mismatched = loadFixture('result-compose-valid-ready.json');
+      mismatched.decision.selectedEventRefs = mismatched.decision.selectedEventRefs.slice(0, 2);
+      expect(validateExecutionResult(mismatched)).toEqual({
+        valid: false,
+        errors: expect.arrayContaining([expect.stringContaining('selected event references')]),
+      });
+    });
+
+    it('refuses an oversized compose result instead of embedding slide bytes', () => {
+      const oversized = loadFixture('result-compose-valid-ready.json');
+      oversized.proposal.editorialAngle = 'x'.repeat(2000);
+      expect(validateExecutionResult(oversized).valid).toBe(false);
+
+      const inflated = loadFixture('result-compose-valid-ready.json');
+      inflated.decision.briefReasons = Array.from(
+        { length: 10 },
+        () => 'y'.repeat(1000),
+      );
+      inflated.decision.evidenceGaps = Array.from({ length: 20 }, () => 'z'.repeat(500));
+      expect(validateExecutionResult(inflated).valid).toBe(true);
+      expect(CAROUSEL_COMPOSE_LIMITS.maxResultBytes).toBe(1024 * 1024);
+    });
+
+    it('refuses a proposal on a failed or cancelled execution', () => {
+      for (const outcome of ['failed', 'cancelled']) {
+        const result = loadFixture('result-compose-valid-ready.json');
+        result.outcome = outcome;
+        result.failure = { code: 'PROVIDER_EXHAUSTED', message: 'Both configured accounts are out of allowance.' };
+        expect(validateExecutionResult(result)).toEqual({
+          valid: false,
+          errors: expect.arrayContaining([expect.stringContaining('only a completed execution')]),
+        });
+      }
+      const failed = loadFixture('result-compose-wait.json');
+      failed.outcome = 'failed';
+      expect(validateExecutionResult(failed)).toEqual({
+        valid: false,
+        errors: expect.arrayContaining([expect.stringContaining('must record a failure')]),
+      });
+    });
+
+    it('keeps compose results out of the discovery, refresh, and export shapes', () => {
+      const compose = loadFixture('result-compose-valid-ready.json');
+      expect(compose.proposals).toBeUndefined();
+      expect(compose.artifacts).toBeUndefined();
+      expect(compose.summary).toBeUndefined();
+
+      const exportResult = loadFixture('result-carousel-valid-completed.json');
+      expect(exportResult.decision).toBeUndefined();
+      expect(exportResult.proposal).toBeUndefined();
     });
   });
 
@@ -317,6 +563,17 @@ describe('Pivot admin compute job contracts v1 (Phase 1, Step 1.2)', () => {
           'worker-capability-valid.json',
           'result-preview-valid.json',
           'result-preview-stale.json',
+          'job-request-compose-valid.json',
+          'job-request-compose-invalid-render-token.json',
+          'context-compose-valid.json',
+          'context-compose-invalid-render-grant.json',
+          'result-compose-valid-ready.json',
+          'result-compose-wait.json',
+          'result-compose-needs-editor.json',
+          'result-compose-invalid-single-event.json',
+          'result-compose-invalid-wait-with-proposal.json',
+          'worker-capability-compose-valid.json',
+          'worker-capability-compose-unsupported.json',
         ]),
       );
     });

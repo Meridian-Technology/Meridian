@@ -3,10 +3,83 @@ const fs = require('fs');
 
 const CONTRACT_VERSION = '1';
 
+/**
+ * Every kind this contract version can describe. Being describable is not the
+ * same as being runnable: `carousel-compose` is gated behind an explicit
+ * feature flag (see `isCarouselComposeEnabled`) so an incomplete editorial
+ * pipeline can be validated and fixture-tested without a worker advertising it
+ * or an admin being able to queue one.
+ */
 const COMPUTE_JOB_KINDS = Object.freeze([
   'city-source-discovery',
   'city-curation-refresh',
   'carousel-export',
+  'carousel-compose',
+]);
+
+/** Kinds that are admitted and advertised without any feature flag. */
+const ALWAYS_ENABLED_COMPUTE_JOB_KINDS = Object.freeze([
+  'city-source-discovery',
+  'city-curation-refresh',
+  'carousel-export',
+]);
+
+const CAROUSEL_COMPOSE_JOB_KIND = 'carousel-compose';
+
+/**
+ * The composition capability is deliberately narrow. It says this worker can
+ * run the carousel editorial pipeline — not that it can run arbitrary agent
+ * work against production.
+ */
+const EDITORIAL_COMPOSITION_CAPABILITY = 'editorialComposition.carouselCompose';
+
+const CAROUSEL_COMPOSE_ENV_FLAG = 'PIVOT_CAROUSEL_COMPOSE_ENABLED';
+
+const CAROUSEL_COMPOSE_LIMITS = Object.freeze({
+  /** Hard floor in the contract: a one-event issue is never a valid proposal. */
+  minEventSlides: 2,
+  maxEventSlides: 8,
+  maxCandidates: 300,
+  maxPostHistory: 50,
+  maxReservations: 50,
+  maxFeedbackNotes: 50,
+  maxEditExamples: 50,
+  maxSourceTenants: 32,
+  maxContextBytes: 2 * 1024 * 1024,
+  maxResultBytes: 1 * 1024 * 1024,
+  maxAlternatives: 3,
+  maxRepairPasses: 5,
+});
+
+const EDITORIAL_DISPOSITIONS = Object.freeze(['ready-for-review', 'wait', 'needs-editor']);
+const EDITORIAL_STAGES = Object.freeze(['assessment', 'composition', 'review']);
+const EDITORIAL_REVIEW_DISPOSITIONS = Object.freeze(['ready-for-review', 'repair', 'needs-editor']);
+/** Dispositions that legitimately end a job without producing an issue. */
+const NO_POST_DISPOSITIONS = Object.freeze(['wait', 'needs-editor']);
+const COVER_ASSET_PROVIDERS = Object.freeze(['event-poster', 'unsplash']);
+const MAGAZINE_FORMATS = Object.freeze(['city-picks', 'sorry-you-missed-it']);
+
+/**
+ * Keys that must never reach an editorial agent's context. The compose context
+ * schema already refuses unknown properties; this is the second, explicit guard
+ * so a later schema addition cannot quietly hand a render or upload grant to a
+ * CLI subprocess.
+ */
+const FORBIDDEN_AGENT_CONTEXT_KEYS = Object.freeze([
+  'renderToken',
+  'renderTokenExpiresAt',
+  'renderUrlBase',
+  'artifactUploadGrant',
+  'uploadToken',
+  'leaseToken',
+  'token',
+  'credential',
+  'credentials',
+  'apiKey',
+  'secret',
+  'password',
+  'mongoConnectionString',
+  'authorization',
 ]);
 
 const CAROUSEL_EXPORT_LIMITS = Object.freeze({
@@ -226,6 +299,16 @@ function collectSchemaErrors(value, node, root = node, trail = '$', found = []) 
       ? node.oneOf.find((candidate) => discriminatorMatch(candidate, value, root))
       : null;
     if (discriminated) return collectSchemaErrors(value, discriminated, root, trail, found);
+    // A nullable ref — `oneOf: [something, null]` — is the common case. When
+    // the value is not null there is only one branch it could have meant, so
+    // report why that branch failed instead of "expected one allowed shape".
+    if (value !== null) {
+      const concrete = node.oneOf.filter((candidate) => {
+        const resolved = candidate?.$ref ? resolveRef(root, candidate.$ref) : candidate;
+        return resolved?.type !== 'null';
+      });
+      if (concrete.length === 1) return collectSchemaErrors(value, concrete[0], root, trail, found);
+    }
     found.push(`${trail}: expected ${schemaTypeLabel(node)}`);
     return found;
   }
@@ -335,17 +418,164 @@ function validateWithSchema(schema, value, { importable = false } = {}) {
   return errors.length ? { valid: false, errors } : { valid: true };
 }
 
+function envFlagEnabled(value, defaultValue = false) {
+  if (value == null || String(value).trim() === '') return defaultValue;
+  const normalized = String(value).trim().toLowerCase();
+  if (['1', 'true', 'on', 'yes'].includes(normalized)) return true;
+  if (['0', 'false', 'off', 'no'].includes(normalized)) return false;
+  return defaultValue;
+}
+
+/**
+ * Off unless an operator turns it on. Phase work lands behind this flag so a
+ * half-built editorial pipeline cannot advertise readiness or consume a
+ * production job.
+ */
+function isCarouselComposeEnabled(env = process.env) {
+  return envFlagEnabled(env?.[CAROUSEL_COMPOSE_ENV_FLAG], false);
+}
+
+function enabledComputeJobKinds(env = process.env) {
+  const kinds = [...ALWAYS_ENABLED_COMPUTE_JOB_KINDS];
+  if (isCarouselComposeEnabled(env)) kinds.push(CAROUSEL_COMPOSE_JOB_KIND);
+  return Object.freeze(kinds);
+}
+
+function isComputeJobKindEnabled(kind, env = process.env) {
+  return enabledComputeJobKinds(env).includes(kind);
+}
+
+function collectAgentContextViolations(value, trail = 'root', found = []) {
+  if (!value || typeof value !== 'object') return found;
+  if (Array.isArray(value)) {
+    value.forEach((item, index) => collectAgentContextViolations(item, `${trail}[${index}]`, found));
+    return found;
+  }
+  for (const [key, child] of Object.entries(value)) {
+    const normalized = String(key).toLowerCase();
+    if (FORBIDDEN_AGENT_CONTEXT_KEYS.some((forbidden) => forbidden.toLowerCase() === normalized)) {
+      found.push(`${trail}.${key}`);
+    }
+    collectAgentContextViolations(child, `${trail}.${key}`, found);
+  }
+  return found;
+}
+
 function validateJobRequest(value) {
   return validateWithSchema(SCHEMAS.jobRequest, value);
 }
 
 function validateContextSnapshot(value) {
-  return validateWithSchema(SCHEMAS.contextSnapshot, value);
+  // Compose contexts are handed to a CLI subprocess, so the credential scan
+  // runs before the shape check: "renderToken is an unknown field" is a far
+  // less useful answer than "this context carries a render grant".
+  if (value?.kind === CAROUSEL_COMPOSE_JOB_KIND) {
+    const leaked = collectAgentContextViolations(value);
+    if (leaked.length) {
+      return {
+        valid: false,
+        errors: [`agent-visible context must not carry render or credential material: ${leaked.join(', ')}`],
+      };
+    }
+  }
+
+  const validation = validateWithSchema(SCHEMAS.contextSnapshot, value);
+  if (!validation.valid || value?.kind !== CAROUSEL_COMPOSE_JOB_KIND) return validation;
+
+  const errors = [];
+  if (Buffer.byteLength(JSON.stringify(value), 'utf8') > CAROUSEL_COMPOSE_LIMITS.maxContextBytes) {
+    errors.push(`$: compose context exceeds ${CAROUSEL_COMPOSE_LIMITS.maxContextBytes} bytes`);
+  }
+  const permitted = new Set(value.account?.sourceTenantKeys || []);
+  const strayCandidate = (value.candidates || [])
+    .find((candidate) => !permitted.has(candidate?.sourceTenantKey));
+  if (strayCandidate) {
+    errors.push(`$.candidates: ${strayCandidate.sourceTenantKey} is outside the account's permitted source tenants`);
+  }
+  const strayCoverage = (value.coverage?.requestedTenantKeys || [])
+    .find((tenantKey) => !permitted.has(tenantKey));
+  if (strayCoverage) {
+    errors.push(`$.coverage.requestedTenantKeys: ${strayCoverage} is outside the account's permitted source tenants`);
+  }
+  if (value.cityKey !== value.account?.ownerTenantKey) {
+    errors.push('$.cityKey: must match the editorial account owner tenant');
+  }
+  return errors.length ? { valid: false, errors } : validation;
+}
+
+/**
+ * Compose-specific rules the JSON schema cannot express. Policy-dependent
+ * limits (three-to-five events, the fourteen-day cap) live with the account
+ * policy in pivotCarouselEditorialPolicy.js; what is enforced here is true for
+ * every editorial account.
+ */
+function collectComposeResultErrors(value) {
+  const errors = [];
+  const disposition = value?.decision?.disposition;
+  const proposal = value?.proposal ?? null;
+
+  if (value.outcome !== 'completed') {
+    if (proposal) errors.push('$.proposal: only a completed execution may carry a proposal');
+    if (!value.failure && value.outcome === 'failed') {
+      errors.push('$.failure: a failed compose execution must record a failure');
+    }
+    return errors;
+  }
+
+  if (disposition === 'ready-for-review') {
+    if (!proposal) {
+      errors.push('$.proposal: a ready-for-review decision requires a proposal');
+      return errors;
+    }
+    if (proposal.review.disposition !== 'ready-for-review') {
+      errors.push('$.proposal.review.disposition: must be ready-for-review when the decision is ready-for-review');
+    }
+    if (proposal.review.inspectedSlides < proposal.eventSlides.length + 1) {
+      errors.push('$.proposal.review.inspectedSlides: every rendered slide must be inspected before review');
+    }
+    const refs = proposal.eventSlides.map((slide) => (
+      `${slide.eventRef.sourceTenantKey}:${slide.eventRef.eventId}`
+    ));
+    if (new Set(refs).size !== refs.length) {
+      errors.push('$.proposal.eventSlides: the same event cannot appear twice in one issue');
+    }
+    const declared = (value.decision.selectedEventRefs || [])
+      .map((ref) => `${ref.sourceTenantKey}:${ref.eventId}`);
+    if (declared.length && (
+      declared.length !== refs.length || declared.some((ref) => !refs.includes(ref))
+    )) {
+      errors.push('$.proposal.eventSlides: must match the decision\'s selected event references');
+    }
+  } else if (NO_POST_DISPOSITIONS.includes(disposition)) {
+    if (proposal) {
+      errors.push(`$.proposal: a ${disposition} decision must not propose an issue`);
+    }
+    if (disposition === 'wait' && !value.decision.reconsiderAt && !value.decision.reconsiderTrigger) {
+      errors.push('$.decision: a wait decision must say when or on what change to reconsider');
+    }
+  }
+  return errors;
+}
+
+function isNoPostComposeResult(value) {
+  return value?.kind === CAROUSEL_COMPOSE_JOB_KIND
+    && value?.outcome === 'completed'
+    && NO_POST_DISPOSITIONS.includes(value?.decision?.disposition);
 }
 
 function validateExecutionResult(value) {
   const validation = validateWithSchema(SCHEMAS.executionResult, value, { importable: true });
-  if (!validation.valid || value?.kind !== 'carousel-export') return validation;
+  if (!validation.valid) return validation;
+
+  if (value?.kind === CAROUSEL_COMPOSE_JOB_KIND) {
+    const composeErrors = collectComposeResultErrors(value);
+    if (Buffer.byteLength(JSON.stringify(value), 'utf8') > CAROUSEL_COMPOSE_LIMITS.maxResultBytes) {
+      composeErrors.push(`$: compose result exceeds ${CAROUSEL_COMPOSE_LIMITS.maxResultBytes} bytes`);
+    }
+    return composeErrors.length ? { valid: false, errors: composeErrors } : validation;
+  }
+
+  if (value?.kind !== 'carousel-export') return validation;
 
   const errors = [];
   const artifacts = Array.isArray(value.artifacts) ? value.artifacts : [];
@@ -396,7 +626,24 @@ function validateDiagnosticExport(value) {
 }
 
 function validateWorkerCapability(value) {
-  return validateWithSchema(SCHEMAS.workerCapability, value);
+  const validation = validateWithSchema(SCHEMAS.workerCapability, value);
+  if (!validation.valid) return validation;
+  const advertisesCompose = Array.isArray(value?.supportedKinds)
+    && value.supportedKinds.includes(CAROUSEL_COMPOSE_JOB_KIND);
+  if (!advertisesCompose) return validation;
+
+  const composition = value?.capabilities?.editorialComposition;
+  const errors = [];
+  if (!composition?.carouselCompose) {
+    errors.push(`$.capabilities.${EDITORIAL_COMPOSITION_CAPABILITY}: required to advertise carousel-compose`);
+  }
+  if (composition?.carouselCompose && composition.structuredOutput === false) {
+    errors.push('$.capabilities.editorialComposition.structuredOutput: composition requires structured output');
+  }
+  if (composition?.carouselCompose && composition.imageReview === false) {
+    errors.push('$.capabilities.editorialComposition.imageReview: composition requires rendered-slide review');
+  }
+  return errors.length ? { valid: false, errors } : validation;
 }
 
 function validateResultPreview(value) {
@@ -419,6 +666,24 @@ function isStaleContextPreview(preview, currentContextVersion) {
 module.exports = {
   CONTRACT_VERSION,
   COMPUTE_JOB_KINDS,
+  ALWAYS_ENABLED_COMPUTE_JOB_KINDS,
+  CAROUSEL_COMPOSE_JOB_KIND,
+  CAROUSEL_COMPOSE_ENV_FLAG,
+  CAROUSEL_COMPOSE_LIMITS,
+  EDITORIAL_COMPOSITION_CAPABILITY,
+  EDITORIAL_DISPOSITIONS,
+  EDITORIAL_STAGES,
+  EDITORIAL_REVIEW_DISPOSITIONS,
+  NO_POST_DISPOSITIONS,
+  COVER_ASSET_PROVIDERS,
+  MAGAZINE_FORMATS,
+  FORBIDDEN_AGENT_CONTEXT_KEYS,
+  isCarouselComposeEnabled,
+  enabledComputeJobKinds,
+  isComputeJobKindEnabled,
+  collectAgentContextViolations,
+  collectComposeResultErrors,
+  isNoPostComposeResult,
   EXECUTION_OUTCOMES,
   PREVIEW_ACTIONS,
   CAROUSEL_EXPORT_LIMITS,

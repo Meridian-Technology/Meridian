@@ -2,6 +2,9 @@
   "name": "my-react-app",
   "version": "0.1.0",
   "private": true,
+  "engines": {
+    "node": "20.x"
+  },
   "dependencies": {
     "@babel/core": "^7.16.0",
     "@iconify/react": "^6.0.2",

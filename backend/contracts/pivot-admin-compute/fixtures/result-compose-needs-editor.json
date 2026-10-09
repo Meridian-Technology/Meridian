@@ -1,0 +1,49 @@
+{
+  "contractVersion": "1",
+  "jobId": "job:compose-iowacity-0003",
+  "scheduleOccurrenceId": null,
+  "kind": "carousel-compose",
+  "cityKey": "iowacity",
+  "tenantKey": "iowacity",
+  "accountId": "653000000000000000000101",
+  "attemptId": "653000000000000000000301",
+  "implementationRevision": "relay-worker@fixture",
+  "basedOnContextVersion": "ctx:compose.iowacity.v1",
+  "completedAt": "2026-10-05T07:02:00.000Z",
+  "outcome": "completed",
+  "idempotencyKey": "idem:compose-iowacity-0003",
+  "decision": {
+    "disposition": "needs-editor",
+    "stageReached": "assessment",
+    "basedOnPolicyVersion": "pol:carousel.1d84be630097772629705f9b1b81768a",
+    "basedOnFeedbackVersion": "fb:iowacity.v12",
+    "proposedPublicationAt": null,
+    "reconsiderAt": null,
+    "reconsiderTrigger": null,
+    "briefReasons": [
+      "Two of three permitted source tenants failed to load, so an absence of material cannot be distinguished from an absence of coverage."
+    ],
+    "alternatives": [],
+    "evidenceGaps": [
+      "Catalog scan is incomplete; this is a coverage limit, not an editorial judgement."
+    ],
+    "selectedEventRefs": [],
+    "coverage": {
+      "requestedTenantKeys": [
+        "iowacity"
+      ],
+      "examinedTenantKeys": [],
+      "pagesExamined": 0,
+      "candidatesConsidered": 0,
+      "truncated": true,
+      "sourceFailures": [
+        {
+          "tenantKey": "iowacity",
+          "code": "SOURCE_TIMEOUT",
+          "message": "Catalog read timed out after three attempts."
+        }
+      ]
+    }
+  },
+  "proposal": null
+}

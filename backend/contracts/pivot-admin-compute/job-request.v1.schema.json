@@ -5,7 +5,8 @@
   "oneOf": [
     { "$ref": "#/$defs/discoveryRequest" },
     { "$ref": "#/$defs/refreshRequest" },
-    { "$ref": "#/$defs/carouselRequest" }
+    { "$ref": "#/$defs/carouselRequest" },
+    { "$ref": "#/$defs/composeRequest" }
   ],
   "$defs": {
     "tagList": {
@@ -60,6 +61,85 @@
           "maxItems": 20,
           "items": { "type": "integer", "minimum": 1, "maximum": 20 }
         }
+      }
+    },
+    "composeOptions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "accountId",
+        "format",
+        "sourceTenantKeys",
+        "proposedPublicationWindow",
+        "policyVersion",
+        "feedbackVersion"
+      ],
+      "properties": {
+        "accountId": { "type": "string", "pattern": "^[0-9a-f]{24}$" },
+        "format": { "enum": ["city-picks", "sorry-you-missed-it"] },
+        "sourceTenantKeys": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 32,
+          "items": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]{0,62}$" }
+        },
+        "proposedPublicationWindow": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["earliest", "latest", "timezone"],
+          "properties": {
+            "earliest": { "type": "string", "format": "date-time" },
+            "latest": { "type": "string", "format": "date-time" },
+            "timezone": { "type": "string", "minLength": 3, "maxLength": 64, "pattern": "^[A-Za-z][A-Za-z0-9+_-]*(?:/[A-Za-z0-9+_-]+){0,2}$" }
+          }
+        },
+        "policyVersion": { "type": "string", "minLength": 5, "maxLength": 128, "pattern": "^pol:[a-zA-Z0-9._-]+$" },
+        "feedbackVersion": { "type": "string", "minLength": 4, "maxLength": 128, "pattern": "^fb:[a-zA-Z0-9._-]+$" },
+        "auditVersion": { "type": "string", "minLength": 5, "maxLength": 128, "pattern": "^aud:[a-zA-Z0-9._-]+$" },
+        "reconsidersJobId": {
+          "oneOf": [
+            { "type": "string", "minLength": 8, "maxLength": 128, "pattern": "^[a-zA-Z0-9:_-]+$" },
+            { "type": "null" }
+          ]
+        }
+      }
+    },
+    "composeRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "contractVersion",
+        "jobId",
+        "scheduleOccurrenceId",
+        "kind",
+        "cityKey",
+        "implementationRevision",
+        "contextVersion",
+        "requestedAt",
+        "idempotencyKey",
+        "options"
+      ],
+      "properties": {
+        "contractVersion": { "const": "1" },
+        "jobId": { "type": "string", "minLength": 8, "maxLength": 128, "pattern": "^[a-zA-Z0-9:_-]+$" },
+        "scheduleOccurrenceId": {
+          "oneOf": [
+            {
+              "type": "string",
+              "minLength": 8,
+              "maxLength": 160,
+              "pattern": "^sched:[a-z0-9-]+@[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:.-]+Z$"
+            },
+            { "type": "null" }
+          ]
+        },
+        "kind": { "const": "carousel-compose" },
+        "cityKey": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]{0,62}$" },
+        "implementationRevision": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9@._+-]+$" },
+        "contextVersion": { "type": "string", "minLength": 8, "maxLength": 128, "pattern": "^ctx:[a-zA-Z0-9._-]+$" },
+        "requestedAt": { "type": "string", "format": "date-time" },
+        "idempotencyKey": { "type": "string", "minLength": 8, "maxLength": 128, "pattern": "^[a-zA-Z0-9:_-]+$" },
+        "options": { "$ref": "#/$defs/composeOptions" }
       }
     },
     "discoveryRequest": {

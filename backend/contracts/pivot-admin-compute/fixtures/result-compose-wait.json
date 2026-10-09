@@ -1,0 +1,43 @@
+{
+  "contractVersion": "1",
+  "jobId": "job:compose-iowacity-0002",
+  "scheduleOccurrenceId": null,
+  "kind": "carousel-compose",
+  "cityKey": "iowacity",
+  "tenantKey": "iowacity",
+  "accountId": "653000000000000000000101",
+  "attemptId": "653000000000000000000301",
+  "implementationRevision": "relay-worker@fixture",
+  "basedOnContextVersion": "ctx:compose.iowacity.v1",
+  "completedAt": "2026-10-05T07:04:00.000Z",
+  "outcome": "completed",
+  "idempotencyKey": "idem:compose-iowacity-0002",
+  "decision": {
+    "disposition": "wait",
+    "stageReached": "assessment",
+    "basedOnPolicyVersion": "pol:carousel.1d84be630097772629705f9b1b81768a",
+    "basedOnFeedbackVersion": "fb:iowacity.v12",
+    "proposedPublicationAt": null,
+    "reconsiderAt": "2026-10-07T07:00:00.000Z",
+    "reconsiderTrigger": "Two more qualifying events in the 2026-W42 batch, or a confirmed Halloween programme.",
+    "briefReasons": [
+      "Only one strong event is in the window; the rest share a tag but not a reason to sit next to each other."
+    ],
+    "alternatives": [],
+    "evidenceGaps": [],
+    "selectedEventRefs": [],
+    "coverage": {
+      "requestedTenantKeys": [
+        "iowacity"
+      ],
+      "examinedTenantKeys": [
+        "iowacity"
+      ],
+      "pagesExamined": 3,
+      "candidatesConsidered": 4,
+      "truncated": false,
+      "sourceFailures": []
+    }
+  },
+  "proposal": null
+}

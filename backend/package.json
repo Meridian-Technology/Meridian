@@ -43,6 +43,9 @@
   "name": "study-compass",
   "version": "1.0.0",
   "main": "app.js",
+  "engines": {
+    "node": "20.x"
+  },
   "scripts": {
     "test": "npm run test:coverage",
     "report:weekly": "node --preserve-symlinks scripts/sendWeeklyReport.js",

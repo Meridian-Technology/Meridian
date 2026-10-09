@@ -56,7 +56,68 @@
       "format": "date-time"
     },
     "computeJobKind": {
-      "enum": ["city-source-discovery", "city-curation-refresh", "carousel-export"]
+      "enum": [
+        "city-source-discovery",
+        "city-curation-refresh",
+        "carousel-export",
+        "carousel-compose"
+      ]
+    },
+    "objectId": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{24}$"
+    },
+    "magazineFormat": {
+      "enum": ["city-picks", "sorry-you-missed-it"]
+    },
+    "policyVersion": {
+      "type": "string",
+      "minLength": 5,
+      "maxLength": 128,
+      "pattern": "^pol:[a-zA-Z0-9._-]+$"
+    },
+    "feedbackVersion": {
+      "type": "string",
+      "minLength": 4,
+      "maxLength": 128,
+      "pattern": "^fb:[a-zA-Z0-9._-]+$"
+    },
+    "auditVersion": {
+      "type": "string",
+      "minLength": 5,
+      "maxLength": 128,
+      "pattern": "^aud:[a-zA-Z0-9._-]+$"
+    },
+    "ianaTimezone": {
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 64,
+      "pattern": "^[A-Za-z][A-Za-z0-9+_-]*(?:/[A-Za-z0-9+_-]+){0,2}$"
+    },
+    "sourceTenantKeys": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 32,
+      "items": { "$ref": "#/$defs/cityKey" }
+    },
+    "publicationWindow": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["earliest", "latest", "timezone"],
+      "properties": {
+        "earliest": { "$ref": "#/$defs/isoDateTime" },
+        "latest": { "$ref": "#/$defs/isoDateTime" },
+        "timezone": { "$ref": "#/$defs/ianaTimezone" }
+      }
+    },
+    "editorialDisposition": {
+      "enum": ["ready-for-review", "wait", "needs-editor"]
+    },
+    "editorialStage": {
+      "enum": ["assessment", "composition", "review"]
+    },
+    "coverAssetProvider": {
+      "enum": ["event-poster", "unsplash"]
     },
     "executionOutcome": {
       "enum": ["completed", "failed", "cancelled"]

@@ -1,6 +1,7 @@
 const {
   CONTRACT_VERSION,
   COMPUTE_JOB_KINDS,
+  isComputeJobKindEnabled,
   validateJobRequest,
   validateExecutionResult,
 } = require('../utilities/pivotAdminComputeJobContract');
@@ -123,6 +124,11 @@ function validateAdminJobRequest(requestInput) {
   }
   if (!COMPUTE_JOB_KINDS.includes(request.kind)) {
     throw serviceError(`Unsupported compute job kind: ${request.kind}`, 'UNSUPPORTED_COMPUTE_JOB_KIND');
+  }
+  // A kind the contract can describe is not automatically a kind an admin can
+  // queue. Feature-flagged kinds stay unavailable until an operator enables them.
+  if (!isComputeJobKindEnabled(request.kind)) {
+    throw serviceError(`Compute job kind is not enabled: ${request.kind}`, 'COMPUTE_JOB_KIND_DISABLED');
   }
   return request;
 }

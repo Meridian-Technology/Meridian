@@ -5,7 +5,8 @@
   "oneOf": [
     { "$ref": "#/$defs/discoveryContext" },
     { "$ref": "#/$defs/refreshContext" },
-    { "$ref": "#/$defs/carouselContext" }
+    { "$ref": "#/$defs/carouselContext" },
+    { "$ref": "#/$defs/composeContext" }
   ],
   "$defs": {
     "tenantSummary": {
@@ -121,6 +122,543 @@
           "type": "array",
           "maxItems": 8,
           "items": { "enum": ["luma", "partiful"] }
+        }
+      }
+    },
+    "editorialAccount": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["accountId", "displayName", "format", "ownerTenantKey", "sourceTenantKeys", "timezone"],
+      "properties": {
+        "accountId": { "type": "string", "pattern": "^[0-9a-f]{24}$" },
+        "handle": { "oneOf": [{ "type": "string", "maxLength": 40 }, { "type": "null" }] },
+        "displayName": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "format": { "enum": ["city-picks", "sorry-you-missed-it"] },
+        "ownerTenantKey": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]{0,62}$" },
+        "sourceTenantKeys": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 32,
+          "items": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]{0,62}$" }
+        },
+        "timezone": { "type": "string", "minLength": 3, "maxLength": 64, "pattern": "^[A-Za-z][A-Za-z0-9+_-]*(?:/[A-Za-z0-9+_-]+){0,2}$" }
+      }
+    },
+    "editorialPolicySettings": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "minEvents": { "type": "integer", "minimum": 2, "maximum": 10 },
+        "maxEvents": { "type": "integer", "minimum": 2, "maximum": 10 },
+        "twoEventExceptionEnabled": { "type": "boolean" },
+        "horizonDays": { "type": "integer", "minimum": 1, "maximum": 14 },
+        "retrospectiveDays": { "type": "integer", "minimum": 1, "maximum": 14 },
+        "allowSingleCityRetrospective": { "type": "boolean" },
+        "sameDayAllowed": { "type": "boolean" },
+        "weeklyTargetEnabled": { "type": "boolean" },
+        "targetCadenceDays": { "type": "integer", "minimum": 1, "maximum": 60 },
+        "minSpacingDays": { "type": "integer", "minimum": 0, "maximum": 60 },
+        "silenceAlertDays": { "type": "integer", "minimum": 1, "maximum": 120 },
+        "preferredPublicationSlot": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["weekday", "hour", "minute"],
+          "properties": {
+            "weekday": { "type": "integer", "minimum": 0, "maximum": 6 },
+            "hour": { "type": "integer", "minimum": 0, "maximum": 23 },
+            "minute": { "type": "integer", "minimum": 0, "maximum": 59 }
+          }
+        },
+        "offHoursWindow": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["startHour", "endHour"],
+          "properties": {
+            "startHour": { "type": "integer", "minimum": 0, "maximum": 23 },
+            "endHour": { "type": "integer", "minimum": 0, "maximum": 23 }
+          }
+        },
+        "coverAssetProviders": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 2,
+          "items": { "enum": ["event-poster", "unsplash"] }
+        },
+        "eventSlideAssetProviders": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 2,
+          "items": { "enum": ["event-poster", "unsplash"] }
+        },
+        "coverVariationPreference": { "enum": ["prefer-different", "none"] },
+        "allowCrossMagazineReuse": { "type": "boolean" },
+        "withinAccountEventCooldownDays": { "type": "integer", "minimum": 0, "maximum": 365 },
+        "closingSlideEnabled": { "type": "boolean" },
+        "browsingEnabled": { "type": "boolean" },
+        "manualPostingOnly": { "type": "boolean" },
+        "schedulingEnabled": { "type": "boolean" },
+        "paidFallbackEnabled": { "type": "boolean" },
+        "maxRepairPasses": { "type": "integer", "minimum": 0, "maximum": 5 },
+        "maxSchemaRepairAttempts": { "type": "integer", "minimum": 0, "maximum": 5 },
+        "maxAttempts": { "type": "integer", "minimum": 1, "maximum": 10 },
+        "captionPolicy": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "maxCharacters": { "type": "integer", "minimum": 40, "maximum": 2200 },
+            "maxHashtags": { "type": "integer", "minimum": 0, "maximum": 30 },
+            "maxEmoji": { "type": "integer", "minimum": 0, "maximum": 10 },
+            "requireCallToAction": { "type": "boolean" }
+          }
+        },
+        "reviewOwner": { "oneOf": [{ "type": "string", "maxLength": 256 }, { "type": "null" }] },
+        "notes": { "type": "array", "maxItems": 20, "items": { "type": "string", "maxLength": 500 } }
+      }
+    },
+    "editorialPolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["policyVersion", "confirmed", "proposed"],
+      "properties": {
+        "policyVersion": { "type": "string", "minLength": 5, "maxLength": 128, "pattern": "^pol:[a-zA-Z0-9._-]+$" },
+        "confirmed": { "$ref": "#/$defs/editorialPolicySettings" },
+        "proposed": { "$ref": "#/$defs/editorialPolicySettings" },
+        "openChoices": {
+          "type": "array",
+          "maxItems": 20,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["key", "question", "defaultApplied"],
+            "properties": {
+              "key": { "type": "string", "minLength": 1, "maxLength": 64 },
+              "question": { "type": "string", "minLength": 1, "maxLength": 500 },
+              "defaultApplied": { "type": "string", "maxLength": 200 },
+              "options": {
+                "type": "array",
+                "maxItems": 8,
+                "items": { "type": "string", "maxLength": 200 }
+              }
+            }
+          }
+        }
+      }
+    },
+    "editorialWindows": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["generatedAt", "proposedPublicationWindow", "upcoming", "past"],
+      "properties": {
+        "generatedAt": { "type": "string", "format": "date-time" },
+        "proposedPublicationWindow": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["earliest", "latest", "timezone"],
+          "properties": {
+            "earliest": { "type": "string", "format": "date-time" },
+            "latest": { "type": "string", "format": "date-time" },
+            "timezone": { "type": "string", "minLength": 3, "maxLength": 64, "pattern": "^[A-Za-z][A-Za-z0-9+_-]*(?:/[A-Za-z0-9+_-]+){0,2}$" }
+          }
+        },
+        "upcoming": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["from", "to"],
+          "properties": {
+            "from": { "type": "string", "format": "date-time" },
+            "to": { "type": "string", "format": "date-time" }
+          }
+        },
+        "past": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["from", "to"],
+          "properties": {
+            "from": { "type": "string", "format": "date-time" },
+            "to": { "type": "string", "format": "date-time" }
+          }
+        },
+        "occasions": {
+          "type": "array",
+          "maxItems": 20,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["key", "label", "date", "source"],
+            "properties": {
+              "key": { "type": "string", "maxLength": 64 },
+              "label": { "type": "string", "maxLength": 200 },
+              "date": { "type": "string", "maxLength": 32 },
+              "source": { "type": "string", "maxLength": 200 }
+            }
+          }
+        }
+      }
+    },
+    "editorialFeedbackPacket": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["feedbackVersion", "auditVersion", "notes", "editExamples"],
+      "properties": {
+        "feedbackVersion": { "type": "string", "minLength": 4, "maxLength": 128, "pattern": "^fb:[a-zA-Z0-9._-]+$" },
+        "auditVersion": { "type": "string", "minLength": 5, "maxLength": 128, "pattern": "^aud:[a-zA-Z0-9._-]+$" },
+        "lastConsumedFeedbackVersion": {
+          "oneOf": [
+            { "type": "string", "minLength": 4, "maxLength": 128, "pattern": "^fb:[a-zA-Z0-9._-]+$" },
+            { "type": "null" }
+          ]
+        },
+        "notes": {
+          "type": "array",
+          "maxItems": 50,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["noteId", "category", "scope", "text", "author", "createdAt", "reusablePreference"],
+            "properties": {
+              "noteId": { "type": "string", "pattern": "^[0-9a-f]{24}$" },
+              "category": {
+                "enum": ["selection", "factual", "voice", "visual", "layout", "caption", "cadence"]
+              },
+              "scope": { "enum": ["issue", "slide", "event", "image", "headline", "caption"] },
+              "text": { "type": "string", "minLength": 1, "maxLength": 2000 },
+              "author": { "type": "string", "maxLength": 256 },
+              "createdAt": { "type": "string", "format": "date-time" },
+              "issueId": { "oneOf": [{ "type": "string", "pattern": "^[0-9a-f]{24}$" }, { "type": "null" }] },
+              "issueRevision": { "oneOf": [{ "type": "integer", "minimum": 1 }, { "type": "null" }] },
+              "disposition": { "enum": ["approve", "reject", "change-requested"] },
+              "reusablePreference": { "type": "boolean" }
+            }
+          }
+        },
+        "editExamples": {
+          "type": "array",
+          "maxItems": 50,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["editId", "field", "issueId", "sourceRevision", "targetRevision", "before", "after", "actor", "editedAt"],
+            "properties": {
+              "editId": { "type": "string", "pattern": "^[0-9a-f]{24}$" },
+              "field": {
+                "enum": ["selection", "order", "headline", "subtitle", "eventCopy", "preset", "asset", "crop", "caption"]
+              },
+              "issueId": { "type": "string", "pattern": "^[0-9a-f]{24}$" },
+              "sourceRevision": { "type": "integer", "minimum": 1 },
+              "targetRevision": { "type": "integer", "minimum": 1 },
+              "before": { "oneOf": [{ "type": "string", "maxLength": 2000 }, { "type": "null" }] },
+              "after": { "oneOf": [{ "type": "string", "maxLength": 2000 }, { "type": "null" }] },
+              "actor": { "type": "string", "maxLength": 256 },
+              "editedAt": { "type": "string", "format": "date-time" }
+            }
+          }
+        },
+        "truncated": { "type": "boolean" },
+        "fullAuditPointer": { "type": "string", "maxLength": 256 }
+      }
+    },
+    "editorialTemplateCatalog": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["coverFamilies", "eventPresets", "copyBudgets"],
+      "properties": {
+        "coverFamilies": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 12,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "variations"],
+            "properties": {
+              "id": { "type": "string", "minLength": 1, "maxLength": 64, "pattern": "^[a-z0-9][a-z0-9-]*$" },
+              "variations": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 12,
+                "items": { "type": "integer", "minimum": 1, "maximum": 12 }
+              }
+            }
+          }
+        },
+        "eventPresets": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 12,
+          "items": { "type": "string", "minLength": 1, "maxLength": 64, "pattern": "^[a-z0-9][a-z0-9-]*$" }
+        },
+        "closingPresets": {
+          "type": "array",
+          "maxItems": 12,
+          "items": { "type": "string", "minLength": 1, "maxLength": 64, "pattern": "^[a-z0-9][a-z0-9-]*$" }
+        },
+        "copyBudgets": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["headlineChars", "subtitleChars", "blurbChars", "captionChars"],
+          "properties": {
+            "headlineChars": { "type": "integer", "minimum": 1, "maximum": 400 },
+            "subtitleChars": { "type": "integer", "minimum": 1, "maximum": 400 },
+            "blurbChars": { "type": "integer", "minimum": 1, "maximum": 1200 },
+            "captionChars": { "type": "integer", "minimum": 1, "maximum": 2200 }
+          }
+        }
+      }
+    },
+    "editorialEventCandidate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sourceTenantKey", "eventId", "recordVersion", "name", "startTime", "timezone", "cancelled"],
+      "properties": {
+        "sourceTenantKey": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]{0,62}$" },
+        "eventId": { "type": "string", "pattern": "^[0-9a-f]{24}$" },
+        "recordVersion": { "type": "string", "pattern": "^rv:[a-zA-Z0-9._-]+$" },
+        "name": { "type": "string", "minLength": 1, "maxLength": 500 },
+        "description": { "oneOf": [{ "type": "string", "maxLength": 5000 }, { "type": "null" }] },
+        "startTime": { "type": "string", "format": "date-time" },
+        "endTime": { "oneOf": [{ "type": "string", "format": "date-time" }, { "type": "null" }] },
+        "timezone": { "type": "string", "minLength": 3, "maxLength": 64, "pattern": "^[A-Za-z][A-Za-z0-9+_-]*(?:/[A-Za-z0-9+_-]+){0,2}$" },
+        "localWhenLabel": { "oneOf": [{ "type": "string", "maxLength": 200 }, { "type": "null" }] },
+        "ongoing": { "type": "boolean" },
+        "location": { "oneOf": [{ "type": "string", "maxLength": 500 }, { "type": "null" }] },
+        "hostName": { "oneOf": [{ "type": "string", "maxLength": 300 }, { "type": "null" }] },
+        "organizerId": { "oneOf": [{ "type": "string", "pattern": "^[0-9a-f]{24}$" }, { "type": "null" }] },
+        "sourceUrl": { "oneOf": [{ "type": "string", "format": "uri", "pattern": "^https://", "maxLength": 2048 }, { "type": "null" }] },
+        "posterAssetRef": { "oneOf": [{ "type": "string", "maxLength": 256, "pattern": "^event-poster:[a-z0-9-]+:[0-9a-f]{24}$" }, { "type": "null" }] },
+        "tags": { "type": "array", "maxItems": 16, "items": { "type": "string", "maxLength": 64 } },
+        "batchWeek": { "oneOf": [{ "type": "string", "pattern": "^[0-9]{4}-W[0-9]{2}$" }, { "type": "null" }] },
+        "featured": { "type": "boolean" },
+        "editorialTier": {
+          "oneOf": [
+            { "enum": ["demote", "promote", "strong_promote", "must_show", "hidden"] },
+            { "type": "null" }
+          ]
+        },
+        "editorialNote": { "oneOf": [{ "type": "string", "maxLength": 500 }, { "type": "null" }] },
+        "cancelled": { "type": "boolean" },
+        "freshness": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "firstSeenAt": { "oneOf": [{ "type": "string", "format": "date-time" }, { "type": "null" }] },
+            "lastSeenAt": { "oneOf": [{ "type": "string", "format": "date-time" }, { "type": "null" }] }
+          }
+        },
+        "interest": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "rankScore": { "oneOf": [{ "type": "integer", "minimum": 0, "maximum": 100000 }, { "type": "null" }] },
+            "saves": { "oneOf": [{ "type": "integer", "minimum": 0, "maximum": 1000000 }, { "type": "null" }] },
+            "available": { "type": "boolean" }
+          }
+        },
+        "evidenceRefs": {
+          "type": "array",
+          "maxItems": 12,
+          "items": { "type": "string", "maxLength": 256, "pattern": "^ev:[a-zA-Z0-9._:-]+$" }
+        },
+        "unavailableFields": {
+          "type": "array",
+          "maxItems": 24,
+          "items": { "type": "string", "maxLength": 64 }
+        }
+      }
+    },
+    "editorialCoverage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["requestedTenantKeys", "examinedTenantKeys", "pagesExamined", "candidatesReturned", "truncated", "sourceFailures"],
+      "properties": {
+        "requestedTenantKeys": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 32,
+          "items": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]{0,62}$" }
+        },
+        "examinedTenantKeys": {
+          "type": "array",
+          "maxItems": 32,
+          "items": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]{0,62}$" }
+        },
+        "pagesExamined": { "type": "integer", "minimum": 0, "maximum": 1000 },
+        "candidatesReturned": { "type": "integer", "minimum": 0, "maximum": 10000 },
+        "candidatesAvailable": { "oneOf": [{ "type": "integer", "minimum": 0, "maximum": 1000000 }, { "type": "null" }] },
+        "truncated": { "type": "boolean" },
+        "freshestRecordAt": { "oneOf": [{ "type": "string", "format": "date-time" }, { "type": "null" }] },
+        "sourceFailures": {
+          "type": "array",
+          "maxItems": 32,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["tenantKey", "code", "message"],
+            "properties": {
+              "tenantKey": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]{0,62}$" },
+              "code": { "type": "string", "maxLength": 64 },
+              "message": { "type": "string", "maxLength": 500 }
+            }
+          }
+        }
+      }
+    },
+    "editorialPostedIssue": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["issueId", "postedAt", "postedRevision", "coverFamily", "coverVariation", "eventRefs"],
+      "properties": {
+        "issueId": { "type": "string", "pattern": "^[0-9a-f]{24}$" },
+        "postedAt": { "type": "string", "format": "date-time" },
+        "postedRevision": { "type": "integer", "minimum": 1 },
+        "theme": { "oneOf": [{ "type": "string", "maxLength": 300 }, { "type": "null" }] },
+        "headline": { "oneOf": [{ "type": "string", "maxLength": 300 }, { "type": "null" }] },
+        "subtitle": { "oneOf": [{ "type": "string", "maxLength": 300 }, { "type": "null" }] },
+        "coverFamily": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "coverVariation": { "type": "integer", "minimum": 1, "maximum": 12 },
+        "eventPresets": { "type": "array", "maxItems": 20, "items": { "type": "string", "maxLength": 64 } },
+        "coverAssetRef": { "oneOf": [{ "type": "string", "maxLength": 256 }, { "type": "null" }] },
+        "socialCaption": { "oneOf": [{ "type": "string", "maxLength": 2200 }, { "type": "null" }] },
+        "instagramUrl": { "oneOf": [{ "type": "string", "format": "uri", "pattern": "^https://", "maxLength": 2048 }, { "type": "null" }] },
+        "eventRefs": {
+          "type": "array",
+          "maxItems": 20,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["sourceTenantKey", "eventId"],
+            "properties": {
+              "sourceTenantKey": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]{0,62}$" },
+              "eventId": { "type": "string", "pattern": "^[0-9a-f]{24}$" }
+            }
+          }
+        }
+      }
+    },
+    "editorialReservation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["issueId", "state", "reservedAt", "eventRefs"],
+      "properties": {
+        "issueId": { "type": "string", "pattern": "^[0-9a-f]{24}$" },
+        "state": { "enum": ["unapproved-draft", "approved", "manual-draft"] },
+        "reservedAt": { "type": "string", "format": "date-time" },
+        "expiresAt": { "oneOf": [{ "type": "string", "format": "date-time" }, { "type": "null" }] },
+        "eventRefs": {
+          "type": "array",
+          "maxItems": 20,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["sourceTenantKey", "eventId"],
+            "properties": {
+              "sourceTenantKey": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]{0,62}$" },
+              "eventId": { "type": "string", "pattern": "^[0-9a-f]{24}$" }
+            }
+          }
+        }
+      }
+    },
+    "editorialReadTool": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "description"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1, "maxLength": 64, "pattern": "^[a-z0-9][a-z0-9_-]*$" },
+        "description": { "type": "string", "minLength": 1, "maxLength": 500 },
+        "paginated": { "type": "boolean" }
+      }
+    },
+    "composeContext": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "contractVersion",
+        "jobId",
+        "scheduleOccurrenceId",
+        "kind",
+        "cityKey",
+        "tenantKey",
+        "implementationRevision",
+        "contextVersion",
+        "snapshotAt",
+        "attemptId",
+        "account",
+        "policy",
+        "windows",
+        "feedback",
+        "templateCatalog",
+        "candidates",
+        "coverage",
+        "postHistory",
+        "reservations"
+      ],
+      "properties": {
+        "contractVersion": { "const": "1" },
+        "jobId": { "type": "string", "minLength": 8, "maxLength": 128, "pattern": "^[a-zA-Z0-9:_-]+$" },
+        "scheduleOccurrenceId": {
+          "oneOf": [
+            { "type": "string", "pattern": "^sched:[a-z0-9-]+@[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:.-]+Z$" },
+            { "type": "null" }
+          ]
+        },
+        "kind": { "const": "carousel-compose" },
+        "cityKey": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]{0,62}$" },
+        "tenantKey": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]{0,62}$" },
+        "implementationRevision": { "type": "string", "pattern": "^[a-zA-Z0-9@._+-]+$", "maxLength": 128 },
+        "contextVersion": { "type": "string", "pattern": "^ctx:[a-zA-Z0-9._-]+$" },
+        "snapshotAt": { "type": "string", "format": "date-time" },
+        "attemptId": { "type": "string", "pattern": "^[0-9a-f]{24}$" },
+        "stage": { "enum": ["assessment", "composition", "review"] },
+        "account": { "$ref": "#/$defs/editorialAccount" },
+        "policy": { "$ref": "#/$defs/editorialPolicy" },
+        "windows": { "$ref": "#/$defs/editorialWindows" },
+        "feedback": { "$ref": "#/$defs/editorialFeedbackPacket" },
+        "templateCatalog": { "$ref": "#/$defs/editorialTemplateCatalog" },
+        "assetPolicy": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["coverProviders", "eventSlideProviders"],
+          "properties": {
+            "coverProviders": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 2,
+              "items": { "enum": ["event-poster", "unsplash"] }
+            },
+            "eventSlideProviders": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 2,
+              "items": { "enum": ["event-poster", "unsplash"] }
+            },
+            "allowGeneratedImagery": { "const": false }
+          }
+        },
+        "candidates": {
+          "type": "array",
+          "maxItems": 300,
+          "items": { "$ref": "#/$defs/editorialEventCandidate" }
+        },
+        "coverage": { "$ref": "#/$defs/editorialCoverage" },
+        "postHistory": {
+          "type": "array",
+          "maxItems": 50,
+          "items": { "$ref": "#/$defs/editorialPostedIssue" }
+        },
+        "reservations": {
+          "type": "array",
+          "maxItems": 50,
+          "items": { "$ref": "#/$defs/editorialReservation" }
+        },
+        "readTools": {
+          "type": "array",
+          "maxItems": 16,
+          "items": { "$ref": "#/$defs/editorialReadTool" }
+        },
+        "unavailablePanelSignals": {
+          "type": "array",
+          "maxItems": 32,
+          "items": { "type": "string", "maxLength": 128 }
         }
       }
     },

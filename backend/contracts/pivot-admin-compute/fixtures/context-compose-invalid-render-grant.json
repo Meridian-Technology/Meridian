@@ -1,0 +1,536 @@
+{
+  "contractVersion": "1",
+  "jobId": "job:compose-iowacity-0009",
+  "scheduleOccurrenceId": null,
+  "kind": "carousel-compose",
+  "cityKey": "iowacity",
+  "tenantKey": "iowacity",
+  "implementationRevision": "relay-worker@fixture",
+  "contextVersion": "ctx:compose.iowacity.v1",
+  "snapshotAt": "2026-10-05T07:00:00.000Z",
+  "attemptId": "653000000000000000000301",
+  "stage": "assessment",
+  "account": {
+    "accountId": "653000000000000000000101",
+    "handle": "@just.go.ic",
+    "displayName": "Just Go Curation — Iowa City",
+    "format": "city-picks",
+    "ownerTenantKey": "iowacity",
+    "sourceTenantKeys": [
+      "iowacity"
+    ],
+    "timezone": "America/Chicago"
+  },
+  "policy": {
+    "policyVersion": "pol:carousel.1d84be630097772629705f9b1b81768a",
+    "confirmed": {
+      "minEvents": 3,
+      "maxEvents": 5,
+      "twoEventExceptionEnabled": false,
+      "horizonDays": 14,
+      "retrospectiveDays": 7,
+      "allowSingleCityRetrospective": true,
+      "sameDayAllowed": true,
+      "weeklyTargetEnabled": true,
+      "targetCadenceDays": 7,
+      "minSpacingDays": 5,
+      "silenceAlertDays": 14,
+      "preferredPublicationSlot": {
+        "weekday": 1,
+        "hour": 18,
+        "minute": 0
+      },
+      "offHoursWindow": {
+        "startHour": 1,
+        "endHour": 5
+      },
+      "coverAssetProviders": [
+        "event-poster",
+        "unsplash"
+      ],
+      "eventSlideAssetProviders": [
+        "event-poster"
+      ],
+      "coverVariationPreference": "prefer-different",
+      "allowCrossMagazineReuse": true,
+      "withinAccountEventCooldownDays": 30,
+      "closingSlideEnabled": false,
+      "browsingEnabled": false,
+      "manualPostingOnly": true,
+      "schedulingEnabled": false,
+      "paidFallbackEnabled": false,
+      "maxRepairPasses": 2,
+      "maxSchemaRepairAttempts": 2,
+      "maxAttempts": 3,
+      "captionPolicy": {
+        "maxCharacters": 1200,
+        "maxHashtags": 5,
+        "maxEmoji": 3,
+        "requireCallToAction": true
+      },
+      "reviewOwner": null,
+      "notes": []
+    },
+    "proposed": {
+      "retrospectiveDays": 7,
+      "allowSingleCityRetrospective": true,
+      "twoEventExceptionEnabled": false,
+      "silenceAlertDays": 14,
+      "minSpacingDays": 5,
+      "preferredPublicationSlot": {
+        "weekday": 1,
+        "hour": 18,
+        "minute": 0
+      },
+      "offHoursWindow": {
+        "startHour": 1,
+        "endHour": 5
+      },
+      "withinAccountEventCooldownDays": 30,
+      "eventSlideAssetProviders": [
+        "event-poster"
+      ],
+      "browsingEnabled": false,
+      "captionPolicy": {
+        "maxCharacters": 1200,
+        "maxHashtags": 5,
+        "maxEmoji": 3,
+        "requireCallToAction": true
+      },
+      "reviewOwner": null
+    },
+    "openChoices": [
+      {
+        "key": "retrospectiveWindow",
+        "question": "How far back may Sorry You Missed It reach, and may it extend to fourteen days?",
+        "defaultApplied": "rolling 7 days, expandable to 14",
+        "options": [
+          "7 days",
+          "up to 14 days"
+        ]
+      },
+      {
+        "key": "singleCityRetrospective",
+        "question": "May the strongest retrospective angle come from a single city in the global catalog?",
+        "defaultApplied": "allowed",
+        "options": [
+          "allowed",
+          "multi-city only"
+        ]
+      },
+      {
+        "key": "twoEventException",
+        "question": "May an exceptional two-event issue run with a written explanation?",
+        "defaultApplied": "disabled; three events minimum",
+        "options": [
+          "disabled",
+          "allowed with explanation"
+        ]
+      },
+      {
+        "key": "silenceAlert",
+        "question": "After how many days without a post should an editorial alert be raised?",
+        "defaultApplied": "14 days, alert only; never a quality relaxation"
+      },
+      {
+        "key": "authorizedBrowsing",
+        "question": "May the agent use authorized organizer/web/social lookups for enrichment and cancellation checks?",
+        "defaultApplied": "disabled; catalog and authorized asset data only",
+        "options": [
+          "disabled",
+          "enabled with recorded sources"
+        ]
+      },
+      {
+        "key": "captionConventions",
+        "question": "What hashtag, emoji, length and call-to-action conventions should captions follow?",
+        "defaultApplied": "restrained: <=1200 chars, <=5 hashtags, <=3 emoji, short CTA"
+      },
+      {
+        "key": "eventSlideAssets",
+        "question": "May event slides substitute a non-poster image when the poster is weak?",
+        "defaultApplied": "existing event posters only",
+        "options": [
+          "posters only",
+          "posters or Unsplash"
+        ]
+      },
+      {
+        "key": "offHoursWindow",
+        "question": "Which local off-hours window and timezone should each account run in?",
+        "defaultApplied": "01:00-05:00 account local time"
+      },
+      {
+        "key": "reviewOwner",
+        "question": "Who reviews generated unapproved drafts for this account?",
+        "defaultApplied": "unassigned"
+      },
+      {
+        "key": "withinAccountCooldown",
+        "question": "How long before the same event may appear again on this account?",
+        "defaultApplied": "30 days"
+      }
+    ]
+  },
+  "windows": {
+    "generatedAt": "2026-10-05T07:00:00.000Z",
+    "proposedPublicationWindow": {
+      "earliest": "2026-10-05T23:00:00.000Z",
+      "latest": "2026-10-06T23:00:00.000Z",
+      "timezone": "America/Chicago"
+    },
+    "upcoming": {
+      "from": "2026-10-05T23:00:00.000Z",
+      "to": "2026-10-20T23:00:00.000Z"
+    },
+    "past": {
+      "from": "2026-09-28T23:00:00.000Z",
+      "to": "2026-10-05T23:00:00.000Z"
+    },
+    "occasions": [
+      {
+        "key": "halloween",
+        "label": "Halloween",
+        "date": "2026-10-31",
+        "source": "verified-calendar"
+      }
+    ]
+  },
+  "feedback": {
+    "feedbackVersion": "fb:iowacity.v12",
+    "auditVersion": "aud:iowacity.v44",
+    "lastConsumedFeedbackVersion": "fb:iowacity.v11",
+    "notes": [
+      {
+        "noteId": "653000000000000000000401",
+        "category": "voice",
+        "scope": "headline",
+        "text": "Cover hooks have been landing; keep the subtitle doing the explaining.",
+        "author": "editor@justgo.lol",
+        "createdAt": "2026-10-01T15:20:00.000Z",
+        "issueId": "653000000000000000000501",
+        "issueRevision": 7,
+        "disposition": "approve",
+        "reusablePreference": true
+      }
+    ],
+    "editExamples": [
+      {
+        "editId": "653000000000000000000601",
+        "field": "caption",
+        "issueId": "653000000000000000000501",
+        "sourceRevision": 6,
+        "targetRevision": 7,
+        "before": "five things to do this week in iowa city!!!",
+        "after": "five things worth leaving the house for this week",
+        "actor": "editor@justgo.lol",
+        "editedAt": "2026-10-01T15:22:00.000Z"
+      }
+    ],
+    "truncated": false,
+    "fullAuditPointer": "read-tool:editorial_audit"
+  },
+  "templateCatalog": {
+    "coverFamilies": [
+      {
+        "id": "loose-letters",
+        "variations": [
+          1,
+          2,
+          3
+        ]
+      },
+      {
+        "id": "open-invitation",
+        "variations": [
+          1,
+          2,
+          3
+        ]
+      },
+      {
+        "id": "kept-somewhere",
+        "variations": [
+          1,
+          2,
+          3
+        ]
+      }
+    ],
+    "eventPresets": [
+      "photo-note",
+      "on-the-bill",
+      "in-the-room"
+    ],
+    "closingPresets": [
+      "paper-close",
+      "orange-close"
+    ],
+    "copyBudgets": {
+      "headlineChars": 70,
+      "subtitleChars": 120,
+      "blurbChars": 320,
+      "captionChars": 1200
+    }
+  },
+  "assetPolicy": {
+    "coverProviders": [
+      "event-poster",
+      "unsplash"
+    ],
+    "eventSlideProviders": [
+      "event-poster"
+    ],
+    "allowGeneratedImagery": false
+  },
+  "candidates": [
+    {
+      "sourceTenantKey": "iowacity",
+      "eventId": "653000000000000000020001",
+      "recordVersion": "rv:iowacity.event.1.v3",
+      "name": "Chinamaxxing: An Artist Talk",
+      "description": "An artistic deep dive into chinamaxxing, with a performance and artist talks.",
+      "startTime": "2026-10-08T00:00:00.000Z",
+      "endTime": "2026-10-08T03:00:00.000Z",
+      "timezone": "America/Chicago",
+      "localWhenLabel": "Wed Oct 7, 7pm",
+      "ongoing": false,
+      "location": "Public Space One",
+      "hostName": "Public Space One",
+      "organizerId": null,
+      "sourceUrl": "https://publicspaceone.example/chinamaxxing",
+      "posterAssetRef": "event-poster:iowacity:653000000000000000020001",
+      "tags": [
+        "art",
+        "talk"
+      ],
+      "batchWeek": "2026-W41",
+      "featured": true,
+      "editorialTier": "promote",
+      "editorialNote": "Strong local draw",
+      "cancelled": false,
+      "freshness": {
+        "firstSeenAt": "2026-09-28T12:00:00.000Z",
+        "lastSeenAt": "2026-10-05T06:00:00.000Z"
+      },
+      "interest": {
+        "rankScore": 820,
+        "saves": 41,
+        "available": true
+      },
+      "evidenceRefs": [
+        "ev:iowacity.event.1.listing"
+      ],
+      "unavailableFields": []
+    },
+    {
+      "sourceTenantKey": "iowacity",
+      "eventId": "653000000000000000020002",
+      "recordVersion": "rv:iowacity.event.2.v3",
+      "name": "Basement Noise Night",
+      "description": "Four short sets in a basement with a very good PA.",
+      "startTime": "2026-10-10T01:00:00.000Z",
+      "endTime": null,
+      "timezone": "America/Chicago",
+      "localWhenLabel": "Fri Oct 9, 8pm",
+      "ongoing": false,
+      "location": "Trumpet Blossom",
+      "hostName": "Trumpet Blossom",
+      "organizerId": null,
+      "sourceUrl": "https://trumpetblossom.example/noise",
+      "posterAssetRef": "event-poster:iowacity:653000000000000000020002",
+      "tags": [
+        "music"
+      ],
+      "batchWeek": "2026-W41",
+      "featured": false,
+      "editorialTier": null,
+      "editorialNote": null,
+      "cancelled": false,
+      "freshness": {
+        "firstSeenAt": "2026-09-28T12:00:00.000Z",
+        "lastSeenAt": "2026-10-05T06:00:00.000Z"
+      },
+      "interest": {
+        "rankScore": 540,
+        "saves": null,
+        "available": true
+      },
+      "evidenceRefs": [
+        "ev:iowacity.event.2.listing"
+      ],
+      "unavailableFields": [
+        "interest.saves"
+      ]
+    },
+    {
+      "sourceTenantKey": "iowacity",
+      "eventId": "653000000000000000020003",
+      "recordVersion": "rv:iowacity.event.3.v3",
+      "name": "Risograph Open Studio",
+      "description": "Bring a drawing, leave with a print.",
+      "startTime": "2026-10-11T18:00:00.000Z",
+      "endTime": null,
+      "timezone": "America/Chicago",
+      "localWhenLabel": "Sun Oct 11, 1pm",
+      "ongoing": false,
+      "location": "Iowa City Press Co-op",
+      "hostName": "Press Co-op",
+      "organizerId": null,
+      "sourceUrl": "https://presscoop.example/riso",
+      "posterAssetRef": "event-poster:iowacity:653000000000000000020003",
+      "tags": [
+        "art",
+        "workshop"
+      ],
+      "batchWeek": "2026-W41",
+      "featured": false,
+      "editorialTier": null,
+      "editorialNote": null,
+      "cancelled": false,
+      "freshness": {
+        "firstSeenAt": "2026-09-28T12:00:00.000Z",
+        "lastSeenAt": "2026-10-05T06:00:00.000Z"
+      },
+      "interest": {
+        "rankScore": null,
+        "saves": null,
+        "available": false
+      },
+      "evidenceRefs": [
+        "ev:iowacity.event.3.listing"
+      ],
+      "unavailableFields": []
+    },
+    {
+      "sourceTenantKey": "iowacity",
+      "eventId": "653000000000000000020004",
+      "recordVersion": "rv:iowacity.event.4.v3",
+      "name": "Late Film: Paper Moon",
+      "description": "A 35mm print, one night only.",
+      "startTime": "2026-10-19T02:00:00.000Z",
+      "endTime": null,
+      "timezone": "America/Chicago",
+      "localWhenLabel": "Sat Oct 17, 9pm",
+      "ongoing": false,
+      "location": "FilmScene",
+      "hostName": "FilmScene",
+      "organizerId": null,
+      "sourceUrl": "https://filmscene.example/paper-moon",
+      "posterAssetRef": "event-poster:iowacity:653000000000000000020004",
+      "tags": [
+        "film"
+      ],
+      "batchWeek": "2026-W41",
+      "featured": false,
+      "editorialTier": null,
+      "editorialNote": null,
+      "cancelled": false,
+      "freshness": {
+        "firstSeenAt": "2026-09-28T12:00:00.000Z",
+        "lastSeenAt": "2026-10-05T06:00:00.000Z"
+      },
+      "interest": {
+        "rankScore": null,
+        "saves": null,
+        "available": false
+      },
+      "evidenceRefs": [
+        "ev:iowacity.event.4.listing"
+      ],
+      "unavailableFields": []
+    }
+  ],
+  "coverage": {
+    "requestedTenantKeys": [
+      "iowacity"
+    ],
+    "examinedTenantKeys": [
+      "iowacity"
+    ],
+    "pagesExamined": 3,
+    "candidatesReturned": 4,
+    "candidatesAvailable": 4,
+    "truncated": false,
+    "freshestRecordAt": "2026-10-05T06:00:00.000Z",
+    "sourceFailures": []
+  },
+  "postHistory": [
+    {
+      "issueId": "653000000000000000000501",
+      "postedAt": "2026-09-29T23:00:00.000Z",
+      "postedRevision": 7,
+      "theme": "late september openings",
+      "headline": "nothing better to do",
+      "subtitle": "a guide to gallery openings in iowa city",
+      "coverFamily": "loose-letters",
+      "coverVariation": 2,
+      "eventPresets": [
+        "photo-note",
+        "on-the-bill",
+        "photo-note"
+      ],
+      "coverAssetRef": "event-poster:iowacity:653000000000000000019001",
+      "socialCaption": "three openings and one very long walk between them.",
+      "instagramUrl": "https://www.instagram.com/p/fixture-post-001/",
+      "eventRefs": [
+        {
+          "sourceTenantKey": "iowacity",
+          "eventId": "653000000000000000019001"
+        },
+        {
+          "sourceTenantKey": "iowacity",
+          "eventId": "653000000000000000019002"
+        },
+        {
+          "sourceTenantKey": "iowacity",
+          "eventId": "653000000000000000019003"
+        }
+      ]
+    }
+  ],
+  "reservations": [
+    {
+      "issueId": "653000000000000000000502",
+      "state": "manual-draft",
+      "reservedAt": "2026-10-04T18:00:00.000Z",
+      "expiresAt": null,
+      "eventRefs": [
+        {
+          "sourceTenantKey": "iowacity",
+          "eventId": "653000000000000000020004"
+        }
+      ]
+    }
+  ],
+  "readTools": [
+    {
+      "name": "editorial_events",
+      "description": "Paginated account-authorized event catalog reads.",
+      "paginated": true
+    },
+    {
+      "name": "editorial_history",
+      "description": "Admin-confirmed posted issue history for this account.",
+      "paginated": true
+    },
+    {
+      "name": "editorial_audit",
+      "description": "Full semantic edit and feedback detail for a referenced issue.",
+      "paginated": true
+    },
+    {
+      "name": "editorial_assets",
+      "description": "Permitted event poster and Unsplash asset retrieval.",
+      "paginated": true
+    }
+  ],
+  "unavailablePanelSignals": [
+    "drop.shortlistRank",
+    "curation.vectorSimilarity"
+  ],
+  "renderToken": "fixture-render-grant-not-a-real-credential-0009",
+  "artifactUploadGrant": {
+    "grantId": "grant:compose-fixture-009"
+  }
+}

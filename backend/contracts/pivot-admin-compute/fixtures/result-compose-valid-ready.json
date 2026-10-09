@@ -1,0 +1,192 @@
+{
+  "contractVersion": "1",
+  "jobId": "job:compose-iowacity-0001",
+  "scheduleOccurrenceId": null,
+  "kind": "carousel-compose",
+  "cityKey": "iowacity",
+  "tenantKey": "iowacity",
+  "accountId": "653000000000000000000101",
+  "attemptId": "653000000000000000000301",
+  "implementationRevision": "relay-worker@fixture",
+  "basedOnContextVersion": "ctx:compose.iowacity.v1",
+  "completedAt": "2026-10-05T07:12:00.000Z",
+  "outcome": "completed",
+  "idempotencyKey": "idem:compose-iowacity-0001",
+  "decision": {
+    "disposition": "ready-for-review",
+    "stageReached": "review",
+    "basedOnPolicyVersion": "pol:carousel.1d84be630097772629705f9b1b81768a",
+    "basedOnFeedbackVersion": "fb:iowacity.v12",
+    "proposedPublicationAt": "2026-10-05T23:00:00.000Z",
+    "reconsiderAt": null,
+    "reconsiderTrigger": null,
+    "briefReasons": [
+      "Three events share a making-things-by-hand angle rather than a tag, and all three are still actionable at the proposed publication time."
+    ],
+    "alternatives": [
+      {
+        "theme": "halloween warm-ups",
+        "reason": "Only one confirmed event this far out; the occasion is three weeks away.",
+        "eventRefs": []
+      }
+    ],
+    "evidenceGaps": [
+      "Risograph open studio capacity is not stated on the listing."
+    ],
+    "selectedEventRefs": [
+      {
+        "sourceTenantKey": "iowacity",
+        "eventId": "653000000000000000020001",
+        "basedOnRecordVersion": "rv:iowacity.event.1.v3",
+        "evidenceRefs": [
+          "ev:iowacity.event.1.listing"
+        ]
+      },
+      {
+        "sourceTenantKey": "iowacity",
+        "eventId": "653000000000000000020002",
+        "basedOnRecordVersion": "rv:iowacity.event.2.v3",
+        "evidenceRefs": [
+          "ev:iowacity.event.2.listing"
+        ]
+      },
+      {
+        "sourceTenantKey": "iowacity",
+        "eventId": "653000000000000000020003",
+        "basedOnRecordVersion": "rv:iowacity.event.3.v3",
+        "evidenceRefs": [
+          "ev:iowacity.event.3.listing"
+        ]
+      }
+    ],
+    "coverage": {
+      "requestedTenantKeys": [
+        "iowacity"
+      ],
+      "examinedTenantKeys": [
+        "iowacity"
+      ],
+      "pagesExamined": 3,
+      "candidatesConsidered": 4,
+      "truncated": false,
+      "sourceFailures": []
+    }
+  },
+  "proposal": {
+    "proposalIdempotencyKey": "idem:compose-proposal-iowacity-0001",
+    "theme": "made by hand this week",
+    "editorialAngle": "Three events where someone is making the thing in front of you.",
+    "cover": {
+      "headline": "you could have made that",
+      "subtitle": "a guide to hands-on art nights in iowa city, oct 7-11",
+      "family": "open-invitation",
+      "variation": 1,
+      "asset": {
+        "provider": "event-poster",
+        "assetRef": "event-poster:iowacity:653000000000000000020001",
+        "credit": null,
+        "creditUrl": null,
+        "crop": {
+          "focalX": 0.54,
+          "focalY": 0.46,
+          "zoom": 1
+        }
+      },
+      "repeatReason": null,
+      "alternativeHeadlines": [
+        {
+          "headline": "press your luck",
+          "subtitle": "three nights of making things in iowa city"
+        },
+        {
+          "headline": "hands busy",
+          "subtitle": "art you can take part in, oct 7-11"
+        }
+      ]
+    },
+    "eventSlides": [
+      {
+        "eventRef": {
+          "sourceTenantKey": "iowacity",
+          "eventId": "653000000000000000020001",
+          "basedOnRecordVersion": "rv:iowacity.event.1.v3",
+          "evidenceRefs": [
+            "ev:iowacity.event.1.listing"
+          ]
+        },
+        "blurb": "An artistic deep dive into chinamaxxing and what it means when the culture going viral is your own. Expect a performance and artist talks.",
+        "presetId": "photo-note",
+        "asset": {
+          "provider": "event-poster",
+          "assetRef": "event-poster:iowacity:653000000000000000020001",
+          "credit": null,
+          "creditUrl": null,
+          "crop": {
+            "focalX": 0.5,
+            "focalY": 0.5
+          }
+        }
+      },
+      {
+        "eventRef": {
+          "sourceTenantKey": "iowacity",
+          "eventId": "653000000000000000020002",
+          "basedOnRecordVersion": "rv:iowacity.event.2.v3",
+          "evidenceRefs": [
+            "ev:iowacity.event.2.listing"
+          ]
+        },
+        "blurb": "Four short sets in a basement with a very good PA. Doors at eight, no openers running late.",
+        "presetId": "on-the-bill",
+        "asset": {
+          "provider": "event-poster",
+          "assetRef": "event-poster:iowacity:653000000000000000020002",
+          "credit": null,
+          "creditUrl": null,
+          "crop": {
+            "focalX": 0.5,
+            "focalY": 0.42
+          }
+        }
+      },
+      {
+        "eventRef": {
+          "sourceTenantKey": "iowacity",
+          "eventId": "653000000000000000020003",
+          "basedOnRecordVersion": "rv:iowacity.event.3.v3",
+          "evidenceRefs": [
+            "ev:iowacity.event.3.listing"
+          ]
+        },
+        "blurb": "Bring a drawing, leave with a print. The co-op supplies the ink and the person who knows how the machine works.",
+        "presetId": "in-the-room",
+        "asset": {
+          "provider": "event-poster",
+          "assetRef": "event-poster:iowacity:653000000000000000020003",
+          "credit": null,
+          "creditUrl": null,
+          "crop": {
+            "focalX": 0.48,
+            "focalY": 0.5
+          }
+        }
+      }
+    ],
+    "socialCaption": "three nights where someone is making the thing in front of you. bring a drawing to the last one. #iowacity",
+    "closingSlide": null,
+    "review": {
+      "disposition": "ready-for-review",
+      "inspectedSlides": 4,
+      "repairPasses": 1,
+      "contactSheetInspected": true,
+      "factualFindings": [],
+      "visualFindings": [
+        {
+          "code": "POSTER_TEXT_DENSE",
+          "message": "Second slide poster carries small print; crop moved off the text block.",
+          "slideNumber": 3
+        }
+      ]
+    }
+  }
+}
