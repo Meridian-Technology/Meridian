@@ -20,6 +20,7 @@ const {
   createManualUploadReviewJob,
 } = require('./pivotComputeJobStore');
 const { notifyComputeWorkerWake } = require('./pivotComputeWakeService');
+const { scheduleDevelopmentComputeJob } = require('./pivotComputeDevRunner');
 const { logPivot } = require('../utilities/pivotLogger');
 const {
   buildExportPrefix,
@@ -223,11 +224,17 @@ async function bindCarouselExportRevision(req, request) {
   };
 }
 
+function wakeOrScheduleLocal(job, notifyWake, scheduleLocal) {
+  if (scheduleLocal(job)) return Promise.resolve({ status: 'local' });
+  return wakePendingComputeJob(job, notifyWake);
+}
+
 async function createAdminComputeJob(req, {
   request: requestInput,
   actor = null,
   now = new Date(),
   notifyWake = notifyComputeWorkerWake,
+  scheduleLocal = scheduleDevelopmentComputeJob,
 } = {}) {
   const request = await bindCarouselExportRevision(req, validateAdminJobRequest(requestInput));
   const payload = jobRequestToCreateInput(request, actor);
@@ -235,7 +242,7 @@ async function createAdminComputeJob(req, {
     ...payload,
     requestedAt: payload.requestedAt || now.toISOString(),
   });
-  const wake = await wakePendingComputeJob(job, notifyWake);
+  const wake = await wakeOrScheduleLocal(job, notifyWake, scheduleLocal);
   return { job: serializeAdminJob(job), created, wake };
 }
 
@@ -337,14 +344,15 @@ async function retryAdminComputeJob(req, {
   contextVersion = null,
   now = new Date(),
   notifyWake = notifyComputeWorkerWake,
+  scheduleLocal = scheduleDevelopmentComputeJob,
 } = {}) {
   const job = await findJobByExternalId(req, externalJobId);
   if (!job) {
     throw serviceError('Compute job not found', 'COMPUTE_JOB_NOT_FOUND', 404);
   }
   if (job.status === 'pending') {
-    await wakePendingComputeJob(job, notifyWake);
-    return { job: serializeAdminJob(job), duplicate: true };
+    const wake = await wakeOrScheduleLocal(job, notifyWake, scheduleLocal);
+    return { job: serializeAdminJob(job), duplicate: true, wake };
   }
   if (!canTransitionComputeJob(job.status, 'pending')) {
     throw serviceError(
@@ -358,8 +366,8 @@ async function retryAdminComputeJob(req, {
     contextVersion: trimString(contextVersion) || null,
     now,
   });
-  await wakePendingComputeJob(retried, notifyWake);
-  return { job: serializeAdminJob(retried), duplicate: false };
+  const wake = await wakeOrScheduleLocal(retried, notifyWake, scheduleLocal);
+  return { job: serializeAdminJob(retried), duplicate: false, wake };
 }
 
 async function createAdminCarouselArtifactDownload(req, {

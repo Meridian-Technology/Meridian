@@ -4,6 +4,7 @@ import { useFetch, authenticatedRequest } from '../../../hooks/useFetch';
 import { useNotification } from '../../../NotificationContext';
 import PivotTagMultiSelect from '../PivotLab/PivotTagMultiSelect';
 import { buildAdminCreateJobRequest } from './pivotComputeJobActions';
+import { describeComputeJobWake } from './pivotComputeJobsFormat';
 import PivotComputeJobRunStatus, { useTenantComputeJob } from './PivotComputeJobRunStatus';
 import PivotSourceIntelligence from './PivotSourceIntelligence';
 import './PivotTenantSourcesPanel.scss';
@@ -214,12 +215,13 @@ function PivotTenantSourcesPanel({
 
     setOptionsOpen(false);
     discoveryCompute.trackCreated(data);
-    const wakeAccepted = data?.wake?.status === 'accepted';
     addNotification({
       title: data?.created ? 'Discovery job created' : 'Discovery job already queued',
-      message: wakeAccepted
-        ? 'The job is stored and the Mini accepted the wake request. This panel will confirm when execution starts.'
-        : 'The job is stored in the durable queue. The Mini will collect it on its next poll.',
+      message: describeComputeJobWake(data?.wake, {
+        local: 'The job is running on this machine. This panel will confirm when it finishes.',
+        accepted: 'The job is stored and the Mini accepted the wake request. This panel will confirm when execution starts.',
+        queued: 'The job is stored in the durable queue. The Mini will collect it on its next poll.',
+      }),
       type: 'success',
     });
   }, [addNotification, discoveryCompute, options, tenantKey]);

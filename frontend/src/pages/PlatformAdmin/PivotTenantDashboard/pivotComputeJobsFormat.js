@@ -145,6 +145,14 @@ export function formatFailure(failure, { maxLength = 240 } = {}) {
   return `${combined.slice(0, maxLength - 1)}…`;
 }
 
+export const DEVELOPMENT_COMPUTE_WORKER_ID = 'dev-local';
+
+export function describeComputeJobWake(wake, messages) {
+  if (wake?.status === 'local') return messages.local;
+  if (wake?.status === 'accepted') return messages.accepted;
+  return messages.queued;
+}
+
 export function resolveWorkerId(job) {
   if (!job || typeof job !== 'object') return '—';
   if (job.lease?.workerId) return job.lease.workerId;

@@ -4,6 +4,7 @@ import { useFetch } from '../../../hooks/useFetch';
 import { ComputeJobDetailActions } from './ComputeJobActions';
 import {
   ACTIVE_COMPUTE_JOB_STATUSES,
+  DEVELOPMENT_COMPUTE_WORKER_ID,
   formatComputeJobKind,
   formatTimestamp,
   resolveWorkerId,
@@ -135,6 +136,7 @@ export function useTenantComputeJob({ tenantKey, kind, onFinished }) {
 
 function wakeDetail(wake) {
   if (!wake) return 'Wake delivery was not observed in this browser session.';
+  if (wake.status === 'local') return 'This machine runs the scrape in process. The Mini is not woken.';
   if (wake.status === 'accepted') return 'The Mini accepted the wake request.';
   if (wake.status === 'disabled') return 'Direct wake is not configured; the Mini will collect the durable job on its next poll.';
   if (wake.status === 'failed') return 'Direct wake did not reach the Mini; the job remains queued and safe to collect on its next poll.';
@@ -153,6 +155,7 @@ export function PivotComputeJobRunStatus({
 
   const status = job.status || 'pending';
   const worker = resolveWorkerId(job);
+  const local = wake?.status === 'local' || worker === DEVELOPMENT_COMPUTE_WORKER_ID;
   const claimed = CLAIMED_STATUSES.has(status) || Number(job.attemptCount) > 0 || Boolean(job.startedAt);
   const running = RUN_STATUSES.has(status) || Boolean(job.startedAt);
   const finished = FINISHED_STATUSES.has(status);
@@ -160,11 +163,13 @@ export function PivotComputeJobRunStatus({
   const wakeAccepted = wake?.status === 'accepted';
   const wakeSettled = Boolean(wake);
   const resultReady = status === 'review-required';
-  const executionTitle = status === 'running'
-    ? 'Running on the Mini'
-    : running
-      ? 'Ran on the Mini'
-      : 'Waiting to run';
+  const executionTitle = local
+    ? (status === 'running' ? 'Running here' : running ? 'Ran here' : 'Waiting to run')
+    : status === 'running'
+      ? 'Running on the Mini'
+      : running
+        ? 'Ran on the Mini'
+        : 'Waiting to run';
   const claimedDetail = worker !== '—'
     ? `Worker ${worker} owns this attempt.`
     : job.startedAt
@@ -175,7 +180,7 @@ export function PivotComputeJobRunStatus({
     <div className={`pivot-compute-run ${failed ? 'is-error' : ''} ${className}`.trim()} role="status">
       <div className="pivot-compute-run__head">
         <div>
-          <span className="pivot-compute-run__eyebrow">Mini compute job</span>
+          <span className="pivot-compute-run__eyebrow">{local ? 'Local compute job' : 'Mini compute job'}</span>
           <h3>{formatComputeJobKind(job.kind)}</h3>
         </div>
         <span className="pivot-lab__pill">{status.replace(/-/g, ' ')}</span>
@@ -187,13 +192,13 @@ export function PivotComputeJobRunStatus({
           detail={`Stored in the durable queue ${formatTimestamp(job.requestedAt || job.createdAt)}.`}
         />
         <StatusStep
-          state={stepState(wakeAccepted || claimed, !claimed && !wakeSettled, wake?.status === 'failed' && !claimed)}
-          title={wakeAccepted ? 'Mini woken' : claimed ? 'Mini available' : 'Mini wake'}
+          state={stepState(local || wakeAccepted || claimed, !claimed && !wakeSettled, wake?.status === 'failed' && !claimed)}
+          title={local ? 'Local runner' : wakeAccepted ? 'Mini woken' : claimed ? 'Mini available' : 'Mini wake'}
           detail={wakeDetail(wake)}
         />
         <StatusStep
           state={stepState(claimed, !claimed && !failed, failed && !claimed)}
-          title={claimed ? 'Mini collected the job' : 'Waiting for a Mini'}
+          title={claimed ? (local ? 'Claimed on this machine' : 'Mini collected the job') : (local ? 'Waiting for this machine' : 'Waiting for a Mini')}
           detail={claimedDetail}
         />
         <StatusStep
