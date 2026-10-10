@@ -35,28 +35,109 @@ function serializeCheckpoint(row) {
   };
 }
 
-async function recordHeadSnapshot(req, saved, meta = {}) {
-  if (!saved?.document || (saved.schemaVersion || 1) !== 2) return null;
+/**
+ * Writes the history row for a revision that has not been accepted yet.
+ *
+ * Ordering matters: the content is durable *before* the head moves, so a crash
+ * can never leave an acknowledged save with no record of what was saved. The
+ * row is not history until it is committed — readers skip pending rows — and
+ * reconciliation resolves anything left behind.
+ */
+async function beginHeadSnapshot(req, { doc, targetRevision, meta = {} }) {
+  if (!doc?.document || (doc.schemaVersion || 1) !== 2) return null;
   const { PivotCarouselRevision } = getGlobalModels(req, 'PivotCarouselRevision');
-  const row = await PivotCarouselRevision.create({
-    issueId: saved._id,
-    accountId: saved.accountId,
-    headRevision: saved.revision,
+  return PivotCarouselRevision.create({
+    issueId: doc._id,
+    accountId: doc.accountId,
+    headRevision: targetRevision,
     kind: 'save',
+    status: 'pending',
     schemaVersion: 2,
-    document: saved.document,
-    curation: saved.curation || null,
-    sources: saved.sources || [],
+    document: doc.document,
+    socialCaption: doc.socialCaption ?? '',
+    captionRevision: doc.captionRevision || 1,
+    curation: doc.curation || null,
+    sources: doc.sources || [],
     restoredFrom: meta.restoredFrom || null,
     createdBy: actorId(req),
   });
-  await pruneSaveSnapshots(req, saved._id, saved.revision);
+}
+
+async function commitHeadSnapshot(req, pending, currentRevision) {
+  if (!pending) return null;
+  const { PivotCarouselRevision } = getGlobalModels(req, 'PivotCarouselRevision');
+  const row = await PivotCarouselRevision.findOneAndUpdate(
+    { _id: pending._id, status: 'pending' },
+    { $set: { status: 'committed' } },
+    { new: true },
+  );
+  await pruneSaveSnapshots(req, pending.issueId, currentRevision);
   return row;
+}
+
+/** The head write never landed, so its history row describes nothing. */
+async function abandonHeadSnapshot(req, pending) {
+  if (!pending) return null;
+  const { PivotCarouselRevision } = getGlobalModels(req, 'PivotCarouselRevision');
+  await PivotCarouselRevision.deleteOne({ _id: pending._id, status: 'pending' });
+  return null;
+}
+
+/**
+ * Resolve history rows for an issue that was interrupted between its head
+ * write and its commit.
+ *
+ * Revisions advance by exactly one, so a pending row whose headRevision has
+ * already been reached means the head write succeeded and the row is real
+ * history. A pending row ahead of the head means the compare-and-swap lost,
+ * and the row describes a save that never happened.
+ */
+async function reconcileIssueSnapshots(req, issueId) {
+  const { PivotCarouselDeck, PivotCarouselRevision } = getGlobalModels(
+    req,
+    'PivotCarouselDeck',
+    'PivotCarouselRevision',
+  );
+  const head = await PivotCarouselDeck.findById(issueId).select('revision pendingSnapshot').lean();
+  if (!head) return { committed: 0, discarded: 0 };
+  const pendingRows = await PivotCarouselRevision.find({ issueId, status: 'pending' })
+    .select('_id headRevision')
+    .lean();
+
+  const commit = pendingRows.filter((row) => row.headRevision <= (head.revision || 1)).map((row) => row._id);
+  const discard = pendingRows.filter((row) => row.headRevision > (head.revision || 1)).map((row) => row._id);
+
+  if (commit.length) {
+    await PivotCarouselRevision.updateMany(
+      { _id: { $in: commit }, status: 'pending' },
+      { $set: { status: 'committed' } },
+    );
+  }
+  if (discard.length) {
+    await PivotCarouselRevision.deleteMany({ _id: { $in: discard }, status: 'pending' });
+  }
+  if (head.pendingSnapshot) {
+    await PivotCarouselDeck.updateOne({ _id: issueId }, { $set: { pendingSnapshot: null } });
+  }
+  if (commit.length) await pruneSaveSnapshots(req, issueId, head.revision || 1);
+  return { committed: commit.length, discarded: discard.length };
+}
+
+/** Issues whose last content write did not get to commit its history row. */
+async function findUnreconciledIssues(req, { limit = 50 } = {}) {
+  const { PivotCarouselDeck } = getGlobalModels(req, 'PivotCarouselDeck');
+  return PivotCarouselDeck.find({ 'pendingSnapshot.requestedAt': { $type: 'date' } })
+    .sort({ 'pendingSnapshot.requestedAt': 1 })
+    .limit(limit)
+    .select('_id accountId revision pendingSnapshot')
+    .lean();
 }
 
 async function pruneSaveSnapshots(req, issueId, currentRevision) {
   const { PivotCarouselRevision } = getGlobalModels(req, 'PivotCarouselRevision');
-  const saves = await PivotCarouselRevision.find({ issueId, kind: 'save' })
+  // Only committed autosaves are candidates. Protected baselines and pending
+  // rows are not reachable from here at all.
+  const saves = await PivotCarouselRevision.find({ issueId, kind: 'save', status: 'committed' })
     .sort({ createdAt: -1, _id: -1 })
     .select('_id headRevision')
     .lean();
@@ -68,9 +149,45 @@ async function pruneSaveSnapshots(req, issueId, currentRevision) {
   });
   const drop = saves.filter((row) => !keep.has(String(row._id))).map((row) => row._id);
   if (drop.length) {
-    await PivotCarouselRevision.deleteMany({ _id: { $in: drop }, kind: 'save' });
+    await PivotCarouselRevision.deleteMany({ _id: { $in: drop }, kind: 'save', status: 'committed' });
   }
   return { kept: keep.size, removed: drop.length };
+}
+
+/**
+ * An immutable editorial baseline: what the agent generated, what an admin
+ * approved, or what actually went out. These are never pruned and never
+ * updated, so a later edit cannot rewrite them.
+ */
+async function recordProtectedBaseline(req, doc, kind, extra = {}) {
+  const { PivotCarouselRevision } = getGlobalModels(req, 'PivotCarouselRevision');
+  const isEditable = Boolean(doc.document) && (doc.schemaVersion || 1) === 2;
+  return PivotCarouselRevision.create({
+    issueId: doc._id,
+    accountId: doc.accountId,
+    headRevision: doc.revision || 1,
+    kind,
+    status: 'committed',
+    schemaVersion: doc.schemaVersion || 1,
+    document: isEditable ? doc.document : null,
+    ...(isEditable ? {} : { slides: JSON.parse(JSON.stringify(doc.slides || [])) }),
+    socialCaption: doc.socialCaption ?? '',
+    captionRevision: doc.captionRevision || 1,
+    curation: doc.curation || null,
+    sources: doc.sources || [],
+    createdBy: actorId(req),
+    ...extra,
+  });
+}
+
+async function findProtectedBaseline(req, issueId, kind, headRevision = null) {
+  const { PivotCarouselRevision } = getGlobalModels(req, 'PivotCarouselRevision');
+  return PivotCarouselRevision.findOne({
+    issueId,
+    kind,
+    status: 'committed',
+    ...(headRevision == null ? {} : { headRevision }),
+  }).sort({ createdAt: -1 }).lean();
 }
 
 async function pinExportRevision(req, deck, sourceRevision) {
@@ -188,7 +305,13 @@ async function restoreCheckpoint(req, accountId, issueId, checkpointId, body = {
 
 module.exports = {
   RETENTION,
-  recordHeadSnapshot,
+  beginHeadSnapshot,
+  commitHeadSnapshot,
+  abandonHeadSnapshot,
+  reconcileIssueSnapshots,
+  findUnreconciledIssues,
+  recordProtectedBaseline,
+  findProtectedBaseline,
   pinExportRevision,
   findExportPin,
   findExportPinById,
