@@ -33,6 +33,9 @@ const {
   archiveCarouselIssue,
   restoreCarouselIssue,
   duplicateCarouselIssue,
+  approveCarouselIssue,
+  rejectCarouselIssue,
+  markCarouselIssuePosted,
   createEditableCopy,
 } = require('../services/pivotCarouselIssueService');
 const {
@@ -914,6 +917,54 @@ router.post(
     } catch (err) {
       logPivotRouteError('POST carousel issue duplicate', err, req);
       return res.status(500).json({ success: false, message: 'Unable to duplicate the issue.' });
+    }
+  },
+);
+
+/* ------------------------------------------- generated issue review */
+
+router.post(
+  '/carousel-accounts/:accountId/issues/:issueId/approve',
+  verifyToken,
+  requirePlatformAdmin,
+  async (req, res) => {
+    try {
+      return sendDeckResult(res, await approveCarouselIssue(req, req.params.accountId, req.params.issueId, req.body));
+    } catch (err) {
+      logPivotRouteError('POST carousel issue approve', err, req);
+      return res.status(500).json({ success: false, message: 'Unable to approve the issue.' });
+    }
+  },
+);
+
+router.post(
+  '/carousel-accounts/:accountId/issues/:issueId/reject',
+  verifyToken,
+  requirePlatformAdmin,
+  async (req, res) => {
+    try {
+      return sendDeckResult(res, await rejectCarouselIssue(req, req.params.accountId, req.params.issueId, req.body));
+    } catch (err) {
+      logPivotRouteError('POST carousel issue reject', err, req);
+      return res.status(500).json({ success: false, message: 'Unable to reject the issue.' });
+    }
+  },
+);
+
+/**
+ * Records a post an admin made by hand. Nothing in this system publishes to
+ * Instagram; this is the only place a posted record is created.
+ */
+router.post(
+  '/carousel-accounts/:accountId/issues/:issueId/mark-posted',
+  verifyToken,
+  requirePlatformAdmin,
+  async (req, res) => {
+    try {
+      return sendDeckResult(res, await markCarouselIssuePosted(req, req.params.accountId, req.params.issueId, req.body));
+    } catch (err) {
+      logPivotRouteError('POST carousel issue mark-posted', err, req);
+      return res.status(500).json({ success: false, message: 'Unable to record the post.' });
     }
   },
 );
