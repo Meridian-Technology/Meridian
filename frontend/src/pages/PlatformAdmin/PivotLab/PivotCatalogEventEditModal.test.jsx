@@ -1,6 +1,8 @@
 import React from 'react';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
-import PivotCatalogEventEditModal from './PivotCatalogEventEditModal';
+import PivotCatalogEventEditModal, {
+  catalogEditDraftToOverrides,
+} from './PivotCatalogEventEditModal';
 
 jest.mock('../../../components/Popup/Popup', () => ({ isOpen, children }) =>
   (isOpen ? <div>{children}</div> : null));
@@ -53,6 +55,7 @@ describe('PivotCatalogEventEditModal import mode', () => {
       .toBeInTheDocument();
     expect(screen.queryByText('Ingest status')).not.toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: 'Enrichment' })).not.toBeInTheDocument();
+    expect(screen.getByLabelText('Price')).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'Stage event' }));
 
@@ -63,6 +66,96 @@ describe('PivotCatalogEventEditModal import mode', () => {
       organizerName: 'Night Moves',
       tags: ['nightlife'],
     }));
+  });
+
+  it('shows the scraped ticket price and sends an edited label when staging', async () => {
+    const onSave = jest.fn().mockResolvedValue(true);
+    render(
+      <PivotCatalogEventEditModal
+        open
+        event={{
+          ...event,
+          price: '$15 suggested',
+          parsed: {
+            price: { raw: '$15 suggested', min: 15, currency: 'USD', suggested: true, band: 'low' },
+          },
+        }}
+        onClose={jest.fn()}
+        catalogTags={[{ slug: 'nightlife', label: 'Nightlife' }]}
+        cityLabel="Brooklyn"
+        batchWeek="2026-W39"
+        onSave={onSave}
+        saving={false}
+        mode="import"
+        title="Review Luma / Partiful event"
+        saveLabel="Stage event"
+      />,
+    );
+
+    const price = screen.getByLabelText('Price');
+    expect(price).toHaveValue('$15 suggested');
+    expect(screen.getByText(/Scraped as 15 USD · suggested · low band/)).toBeInTheDocument();
+
+    fireEvent.change(price, { target: { value: 'Free' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Stage event' }));
+
+    await waitFor(() => expect(onSave).toHaveBeenCalled());
+    expect(onSave.mock.calls[0][0].price).toBe('Free');
+    expect(catalogEditDraftToOverrides(onSave.mock.calls[0][0]).details).toBeUndefined();
+  });
+
+  it('shows named ticket options and keeps them when the price label is unchanged', async () => {
+    const onSave = jest.fn().mockResolvedValue(true);
+    const details = {
+      version: 1,
+      admission: 'paid',
+      ticketProvider: 'Luma',
+      priceRange: {
+        min: { amountMinor: 2000, currency: 'USD' },
+        max: { amountMinor: 3000, currency: 'USD' },
+      },
+      tiers: [
+        { id: 'ga', name: 'General', kind: 'general', price: { amountMinor: 2000, currency: 'USD' } },
+        {
+          id: 'sup',
+          name: 'Supporter',
+          kind: 'other',
+          price: { amountMinor: 3000, currency: 'USD' },
+          status: 'sold_out',
+        },
+      ],
+    };
+    render(
+      <PivotCatalogEventEditModal
+        open
+        event={{
+          ...event,
+          price: 'General · $20 · Supporter · $30',
+          details,
+        }}
+        onClose={jest.fn()}
+        catalogTags={[{ slug: 'nightlife', label: 'Nightlife' }]}
+        cityLabel="Brooklyn"
+        batchWeek="2026-W39"
+        onSave={onSave}
+        saving={false}
+        mode="import"
+        title="Review Luma / Partiful event"
+        saveLabel="Stage event"
+      />,
+    );
+
+    expect(screen.getByRole('region', { name: 'Ticket options' })).toBeInTheDocument();
+    expect(screen.getByText('General')).toBeInTheDocument();
+    expect(screen.getByText('$20')).toBeInTheDocument();
+    expect(screen.getByText('Supporter')).toBeInTheDocument();
+    expect(screen.getByText('$30')).toBeInTheDocument();
+    expect(screen.getByText('Sold out')).toBeInTheDocument();
+    expect(screen.getByText('Luma')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Stage event' }));
+    await waitFor(() => expect(onSave).toHaveBeenCalled());
+    expect(catalogEditDraftToOverrides(onSave.mock.calls[0][0]).details).toEqual(details);
   });
 });
 

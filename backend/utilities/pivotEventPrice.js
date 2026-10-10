@@ -8,6 +8,9 @@ const ZERO_DECIMAL_CURRENCIES = new Set([
  * Guest-facing price label shared by Luma, Partiful, and ordinary sites.
  * Luma stores fiat in cents. Partiful and schema.org offers use major units
  * (dollars, euros). The label is what `parsePrice` turns into `parsed.price`.
+ *
+ * The mobile event screen does not read that label. It reads `event.details`
+ * (contract v1): admission, a cent price range, and named tiers.
  */
 
 function finiteNumber(value) {
@@ -73,6 +76,17 @@ function labelFromQuotes(quotes) {
   return labels.filter(Boolean).join(' · ') || null;
 }
 
+function tierName(tier) {
+  const name = typeof tier?.name === 'string' ? tier.name.trim() : '';
+  return name || null;
+}
+
+function withTierName(name, priceLabel) {
+  if (!priceLabel) return null;
+  if (!name) return priceLabel;
+  return `${name} · ${priceLabel}`;
+}
+
 function lumaTierQuote(tier) {
   if (!tier || typeof tier !== 'object') return null;
   const type = String(tier.type || '').toLowerCase();
@@ -113,8 +127,19 @@ function visibleLumaTiers(types) {
   return publicTiers.length ? publicTiers : usable;
 }
 
+function lumaTierLabel(tier) {
+  const quote = lumaTierQuote(tier);
+  if (!quote) return null;
+  return withTierName(tierName(tier), labelFromBounds(quote));
+}
+
+/**
+ * The event page lists each public ticket. Keep that list. Discover cards only
+ * send `ticket_info`, which is already Luma's own min/max summary.
+ */
 function priceFromLumaTicketTypes(types) {
-  return labelFromQuotes(visibleLumaTiers(types).map(lumaTierQuote));
+  const labels = visibleLumaTiers(types).map(lumaTierLabel).filter(Boolean);
+  return labels.length ? labels.join(' · ') : null;
 }
 
 function lumaInfoMoney(value, fallbackCurrency) {
@@ -233,13 +258,19 @@ function priceFromPartifulTicketTypes(types) {
   const named = types.filter((ticket) => ticket && typeof ticket === 'object' && (ticket.name || ticket.id));
   const enabled = named.filter((ticket) => ticket.disabled !== true);
   const usable = enabled.length ? enabled : named;
-  return labelFromQuotes(usable.map((ticket) => {
+  const labels = usable.map((ticket) => {
     const amount = partifulGuestAmount(ticket);
     const currency = ticket.currency || ticket.currencyCode || 'USD';
     // An empty guest price is Partiful's default for a free ticket.
     const major = amount == null ? 0 : amount;
-    return { currency, min: major, max: major, suggested: false };
-  }));
+    return withTierName(tierName(ticket), labelFromBounds({
+      currency,
+      min: major,
+      max: major,
+      suggested: false,
+    }));
+  }).filter(Boolean);
+  return labels.length ? labels.join(' · ') : null;
 }
 
 function priceFromPartifulChipIn(ticketing) {
@@ -381,6 +412,355 @@ function priceTextFromListing(...parts) {
   return null;
 }
 
+const ADMISSIONS = new Set(['free', 'rsvp', 'paid', 'donation', 'pay_at_door']);
+const TIER_KINDS = new Set([
+  'general', 'early_bird', 'vip', 'student', 'group', 'table', 'door', 'donation', 'free', 'other',
+]);
+const SALES_STATUSES = new Set([
+  'on_sale', 'few_left', 'sold_out', 'waitlist', 'not_yet_on_sale', 'sales_ended',
+]);
+
+function ticketProviderName(source) {
+  const value = String(source || '').trim().toLowerCase();
+  if (value === 'luma') return 'Luma';
+  if (value === 'partiful') return 'Partiful';
+  return null;
+}
+
+function moneyFromMajor(amount, currency) {
+  if (amount == null || !Number.isFinite(amount) || amount < 0) return null;
+  const code = String(currency || 'USD').toUpperCase();
+  if (!/^[A-Z]{3}$/.test(code)) return null;
+  const minor = ZERO_DECIMAL_CURRENCIES.has(code.toLowerCase())
+    ? Math.round(amount)
+    : Math.round(roundMajor(amount) * 100);
+  if (!Number.isInteger(minor) || minor < 0 || minor > 100000000) return null;
+  return { amountMinor: minor, currency: code };
+}
+
+function normalizeMoney(value) {
+  if (!value || typeof value !== 'object') return null;
+  const code = typeof value.currency === 'string' ? value.currency.trim().toUpperCase() : '';
+  if (!Number.isInteger(value.amountMinor) || value.amountMinor < 0 || value.amountMinor > 100000000) {
+    return null;
+  }
+  if (!/^[A-Z]{3}$/.test(code)) return null;
+  return { amountMinor: value.amountMinor, currency: code };
+}
+
+function tierKindFromName(name, { free = false, donation = false } = {}) {
+  if (donation) return 'donation';
+  if (free) return 'free';
+  const text = String(name || '').toLowerCase();
+  if (/\bvip\b/.test(text)) return 'vip';
+  if (/early[\s-]?bird/.test(text)) return 'early_bird';
+  if (/student/.test(text)) return 'student';
+  if (/\btable\b/.test(text)) return 'table';
+  if (/\bgroup\b/.test(text)) return 'group';
+  if (/\bdoor\b/.test(text)) return 'door';
+  if (/donat|chip[\s-]?in|sliding|pay what you can|\bpwyw\b/.test(text)) return 'donation';
+  if (/\b(general|ga|standard|admission|regular|ticket|rsvp)\b/.test(text)) return 'general';
+  return 'other';
+}
+
+function tierId(rawId, name, index) {
+  if (typeof rawId === 'string' && /^[A-Za-z0-9_-]{1,80}$/.test(rawId)) return rawId;
+  const slug = String(name || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '')
+    .slice(0, 60);
+  return `${slug || 'tier'}-${index}`;
+}
+
+function normalizeTier(tier, index) {
+  if (!tier || typeof tier !== 'object') return null;
+  const name = typeof tier.name === 'string' ? tier.name.trim() : '';
+  if (!name) return null;
+  const price = normalizeMoney(tier.price);
+  const maxPrice = normalizeMoney(tier.maxPrice);
+  const status = SALES_STATUSES.has(tier.status) ? tier.status : null;
+  const requirement = typeof tier.requirement === 'string' && tier.requirement.trim()
+    ? tier.requirement.trim().slice(0, 120)
+    : null;
+  return {
+    id: tierId(tier.id, name, index),
+    name: name.slice(0, 80),
+    kind: TIER_KINDS.has(tier.kind) ? tier.kind : 'other',
+    ...(price ? { price } : {}),
+    ...(maxPrice
+      && (!price || maxPrice.currency === price.currency)
+      && maxPrice.amountMinor >= (price ? price.amountMinor : 0)
+      ? { maxPrice }
+      : {}),
+    ...(status ? { status } : {}),
+    ...(requirement ? { requirement } : {}),
+  };
+}
+
+function priceRangeFromTiers(tiers) {
+  const sample = tiers.find((tier) => tier.price || tier.maxPrice);
+  const currency = sample?.price?.currency || sample?.maxPrice?.currency;
+  if (!currency) return null;
+  const amounts = [];
+  for (const tier of tiers) {
+    const price = tier.price?.currency === currency ? tier.price.amountMinor : null;
+    const maxPrice = tier.maxPrice?.currency === currency ? tier.maxPrice.amountMinor : null;
+    if (price == null && maxPrice == null) {
+      amounts.push(0);
+      continue;
+    }
+    if (price != null) amounts.push(price);
+    if (maxPrice != null) {
+      if (price == null) amounts.push(0);
+      amounts.push(maxPrice);
+    }
+  }
+  if (!amounts.length) return null;
+  const min = Math.min(...amounts);
+  const max = Math.max(...amounts);
+  if (min === 0 && max === 0) return null;
+  return {
+    min: { amountMinor: min, currency },
+    ...(max > min ? { max: { amountMinor: max, currency } } : {}),
+  };
+}
+
+function admissionFromTiers(tiers, ticketProvider) {
+  const priced = tiers.some((tier) =>
+    (tier.price && tier.price.amountMinor > 0) || (tier.maxPrice && tier.maxPrice.amountMinor > 0));
+  if (!priced) return ticketProvider ? 'rsvp' : 'free';
+  if (tiers.every((tier) => tier.kind === 'donation')) return 'donation';
+  return 'paid';
+}
+
+function finishDetails(tiers, ticketProvider) {
+  const usable = tiers.filter(Boolean).slice(0, 12);
+  if (!usable.length) return null;
+  const provider = ticketProviderName(ticketProvider);
+  const priced = usable.some((tier) =>
+    (tier.price && tier.price.amountMinor > 0) || (tier.maxPrice && tier.maxPrice.amountMinor > 0));
+  const notable = usable.some((tier) => tier.status || tier.requirement);
+  // A plain free RSVP stays admission-only, so the screen keeps its register
+  // button. A sold-out or members-only free tier is still worth showing.
+  if (!priced && !notable) {
+    return normalizeEventDetails({
+      version: 1,
+      admission: provider ? 'rsvp' : 'free',
+      ...(provider ? { ticketProvider: provider } : {}),
+    });
+  }
+  const priceRange = priceRangeFromTiers(usable);
+  return normalizeEventDetails({
+    version: 1,
+    admission: admissionFromTiers(usable, provider),
+    ...(provider ? { ticketProvider: provider } : {}),
+    ...(priceRange ? { priceRange } : {}),
+    tiers: usable,
+  });
+}
+
+function normalizeEventDetails(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  if (value.version != null && value.version !== 1) return null;
+  const tiers = Array.isArray(value.tiers)
+    ? value.tiers.map(normalizeTier).filter(Boolean).slice(0, 12)
+    : [];
+  const admission = ADMISSIONS.has(value.admission) ? value.admission : null;
+  const min = normalizeMoney(value.priceRange?.min);
+  const max = normalizeMoney(value.priceRange?.max);
+  const explicitRange = min
+    ? (max && max.currency === min.currency && max.amountMinor >= min.amountMinor
+      ? { min, max }
+      : { min })
+    : null;
+  const priceRange = explicitRange || priceRangeFromTiers(tiers);
+  const ticketProvider = ticketProviderName(value.ticketProvider)
+    || (typeof value.ticketProvider === 'string' && value.ticketProvider.trim()
+      ? value.ticketProvider.trim().slice(0, 40)
+      : null);
+  if (!admission && !priceRange && !tiers.length) return null;
+  return {
+    version: 1,
+    ...(admission ? { admission } : {}),
+    ...(ticketProvider ? { ticketProvider } : {}),
+    ...(priceRange ? { priceRange } : {}),
+    ...(tiers.length ? { tiers } : {}),
+  };
+}
+
+function tierFromQuote(name, quote, index, extra = {}) {
+  if (!quote) return null;
+  const free = quote.min === 0 && quote.max === 0 && !quote.suggested;
+  const sliding = quote.suggested || quote.min !== quote.max;
+  let price = null;
+  let maxPrice = null;
+  if (sliding) {
+    if (quote.min > 0) price = moneyFromMajor(quote.min, quote.currency);
+    if (quote.max > quote.min) maxPrice = moneyFromMajor(quote.max, quote.currency);
+    else if (quote.suggested && quote.max > 0) price = moneyFromMajor(quote.max, quote.currency);
+  } else if (quote.min > 0) {
+    price = moneyFromMajor(quote.min, quote.currency);
+  }
+  return normalizeTier({
+    id: extra.id,
+    name,
+    kind: tierKindFromName(name, { free, donation: quote.suggested }),
+    price,
+    maxPrice,
+    status: extra.status,
+    requirement: extra.requirement,
+  }, index);
+}
+
+function detailsFromParsed(parsed, { admission, ticketProvider } = {}) {
+  if (!parsed && !admission) return null;
+  const provider = ticketProviderName(ticketProvider);
+  let resolved = ADMISSIONS.has(admission) ? admission : null;
+  if (!resolved && parsed) {
+    if (parsed.isFree) resolved = provider ? 'rsvp' : 'free';
+    else if (parsed.suggested) resolved = 'donation';
+    else if (parsed.min == null || parsed.max == null) resolved = null;
+    else resolved = 'paid';
+  }
+  let priceRange = null;
+  if (parsed && parsed.min != null && parsed.max != null && !(parsed.min === 0 && parsed.max === 0)) {
+    const min = moneyFromMajor(parsed.min, parsed.currency);
+    const max = parsed.max > parsed.min ? moneyFromMajor(parsed.max, parsed.currency) : null;
+    if (min) priceRange = max ? { min, max } : { min };
+  }
+  return normalizeEventDetails({
+    version: 1,
+    ...(resolved ? { admission: resolved } : {}),
+    ...(provider ? { ticketProvider: provider } : {}),
+    ...(priceRange ? { priceRange } : {}),
+  });
+}
+
+function eventDetailsFromPriceText(text, options = {}) {
+  const raw = typeof text === 'string' ? text.trim() : '';
+  if (!raw) return null;
+  const ticketProvider = options.ticketProvider;
+
+  if (/\b(at the door|door price|pay at the door|pay at door)\b/i.test(raw)) {
+    return detailsFromParsed(parsePrice(raw), { admission: 'pay_at_door', ticketProvider });
+  }
+
+  const tokens = raw.split(/\s·\s/).map((token) => token.trim()).filter(Boolean);
+  if (tokens.length >= 2 && tokens.length % 2 === 0) {
+    const pairs = [];
+    let paired = true;
+    for (let index = 0; index < tokens.length; index += 2) {
+      const name = tokens[index];
+      const price = parsePrice(tokens[index + 1]);
+      const nameIsPrice = parsePrice(name);
+      if (!name || !price || nameIsPrice || tokens[index + 1].length > 40) {
+        paired = false;
+        break;
+      }
+      pairs.push({ name, price });
+    }
+    if (paired) {
+      const tiers = pairs.map((pair, index) => tierFromQuote(pair.name, {
+        currency: pair.price.currency,
+        min: pair.price.min,
+        max: pair.price.max,
+        suggested: pair.price.suggested,
+      }, index)).filter(Boolean);
+      const finished = finishDetails(tiers, ticketProvider);
+      if (finished) return finished;
+    }
+  }
+
+  return detailsFromParsed(parsePrice(raw), { ticketProvider });
+}
+
+function lumaTierDetails(tier, index) {
+  const quote = lumaTierQuote(tier);
+  if (!quote) return null;
+  const free = quote.min === 0 && quote.max === 0 && !quote.suggested;
+  const name = tierName(tier) || (free ? 'RSVP' : 'Ticket');
+  return tierFromQuote(name, quote, index, {
+    id: tier.api_id || tier.id,
+    status: tier.is_disabled === true || tier.disabled === true ? 'sold_out' : undefined,
+    requirement: tier.membership_restriction ? 'Members only' : undefined,
+  });
+}
+
+function eventDetailsFromOffers(offers, ticketProvider) {
+  const named = [];
+  offerNodes(offers).forEach((offer, index) => {
+    const name = tierName(offer);
+    const quote = offerQuote(offer);
+    if (!name || !quote) return;
+    const tier = tierFromQuote(name, quote, named.length);
+    if (tier) named.push(tier);
+  });
+  if (named.length) return finishDetails(named, ticketProvider);
+  return eventDetailsFromPriceText(priceFromJsonLdOffers(offers), { ticketProvider });
+}
+
+/**
+ * Ticket options in the mobile details shape. Named Luma tiers stay tiers.
+ * A discover `ticket_info` summary stays a price range, because Luma does
+ * not send tier names on that card.
+ */
+function eventDetailsFromLuma(source) {
+  if (!source || typeof source !== 'object') return null;
+  const types = source.ticket_types || source.ticketTypes || source.event?.ticket_types;
+  const tiers = visibleLumaTiers(types).map(lumaTierDetails).filter(Boolean);
+  if (tiers.length) return finishDetails(tiers, 'Luma');
+
+  const info = source.ticket_info || source.ticketInfo || source.event?.ticket_info;
+  const fromInfo = eventDetailsFromPriceText(priceFromLumaTicketInfo(info), { ticketProvider: 'Luma' });
+  if (fromInfo) return fromInfo;
+  return eventDetailsFromOffers(source.offers, 'Luma');
+}
+
+function partifulTierDetails(ticket, index) {
+  const amount = partifulGuestAmount(ticket);
+  const major = amount == null ? 0 : amount;
+  const name = tierName(ticket) || (major === 0 ? 'RSVP' : 'Ticket');
+  return tierFromQuote(name, {
+    currency: ticket.currency || ticket.currencyCode || 'USD',
+    min: major,
+    max: major,
+    suggested: false,
+  }, index, {
+    id: ticket.id,
+    status: ticket.disabled === true ? 'sold_out' : undefined,
+  });
+}
+
+function eventDetailsFromPartiful(event, pageProps = {}) {
+  if (!event || typeof event !== 'object') {
+    return eventDetailsFromOffers(pageProps?.offersJsonLd, 'Partiful');
+  }
+
+  const ticketing = event.ticketing;
+  const standard = ticketing && String(ticketing.type || '').toLowerCase() === 'standard';
+  const named = partifulTicketLists(event, pageProps)
+    .filter((ticket) => ticket && typeof ticket === 'object' && (ticket.name || ticket.id));
+  const enabled = named.filter((ticket) => ticket.disabled !== true);
+  const tiers = (enabled.length ? enabled : named).map(partifulTierDetails).filter(Boolean);
+  if ((standard || tiers.length) && tiers.length) return finishDetails(tiers, 'Partiful');
+
+  const fromChipIn = eventDetailsFromPriceText(priceFromPartifulChipIn(ticketing), {
+    ticketProvider: 'Partiful',
+  });
+  if (fromChipIn) return fromChipIn;
+
+  return eventDetailsFromOffers(pageProps?.offersJsonLd, 'Partiful')
+    || eventDetailsFromOffers(event.offers, 'Partiful')
+    || eventDetailsFromPriceText(priceFromPartifulCost(event.cost), { ticketProvider: 'Partiful' });
+}
+
+function eventDetailsForFeed(pivot) {
+  if (!pivot || typeof pivot !== 'object') return null;
+  return normalizeEventDetails(pivot.details)
+    || eventDetailsFromPriceText(pivot.parsed?.price?.raw, { ticketProvider: pivot.source });
+}
+
 module.exports = {
   formatMajor,
   majorFromLumaCents,
@@ -390,4 +770,9 @@ module.exports = {
   priceLabelFromPartiful,
   priceFromJsonLdOffers,
   priceTextFromListing,
+  normalizeEventDetails,
+  eventDetailsFromLuma,
+  eventDetailsFromPartiful,
+  eventDetailsFromPriceText,
+  eventDetailsForFeed,
 };

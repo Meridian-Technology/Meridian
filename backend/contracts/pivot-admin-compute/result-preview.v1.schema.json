@@ -87,6 +87,7 @@
             ]
           },
           "message": { "oneOf": [{ "type": "string", "maxLength": 1000 }, { "type": "null" }] },
+          "price": { "oneOf": [{ "type": "string", "maxLength": 300 }, { "type": "null" }] },
           "applyBlocked": { "type": "boolean" },
           "missingFields": {
             "type": "array",

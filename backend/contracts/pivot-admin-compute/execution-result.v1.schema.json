@@ -125,6 +125,57 @@
         "linkedSourceHost": { "oneOf": [{ "type": "string", "maxLength": 253 }, { "type": "null" }] }
       }
     },
+    "pivotMoney": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["amountMinor", "currency"],
+      "properties": {
+        "amountMinor": { "type": "integer", "minimum": 0, "maximum": 100000000 },
+        "currency": { "type": "string", "pattern": "^[A-Z]{3}$" }
+      }
+    },
+    "ticketTier": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name", "kind"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "name": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "kind": {
+          "enum": ["general", "early_bird", "vip", "student", "group", "table", "door", "donation", "free", "other"]
+        },
+        "price": { "$ref": "#/$defs/pivotMoney" },
+        "maxPrice": { "$ref": "#/$defs/pivotMoney" },
+        "status": {
+          "enum": ["on_sale", "few_left", "sold_out", "waitlist", "not_yet_on_sale", "sales_ended"]
+        },
+        "requirement": { "type": "string", "maxLength": 120 }
+      }
+    },
+    "eventDetails": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version"],
+      "properties": {
+        "version": { "const": 1 },
+        "admission": { "enum": ["free", "rsvp", "paid", "donation", "pay_at_door"] },
+        "ticketProvider": { "type": "string", "maxLength": 40 },
+        "priceRange": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["min"],
+          "properties": {
+            "min": { "$ref": "#/$defs/pivotMoney" },
+            "max": { "$ref": "#/$defs/pivotMoney" }
+          }
+        },
+        "tiers": {
+          "type": "array",
+          "maxItems": 12,
+          "items": { "$ref": "#/$defs/ticketTier" }
+        }
+      }
+    },
     "eventDraft": {
       "type": "object",
       "additionalProperties": false,
@@ -139,7 +190,9 @@
         "end_time": { "oneOf": [{ "type": "string", "format": "date-time" }, { "type": "null" }] },
         "sourceUrl": { "type": "string", "format": "uri", "pattern": "^https://", "maxLength": 2048 },
         "hostName": { "oneOf": [{ "type": "string", "maxLength": 300 }, { "type": "null" }] },
+        "price": { "oneOf": [{ "type": "string", "maxLength": 300 }, { "type": "null" }] },
         "hostProfileUrl": { "oneOf": [{ "type": "string", "format": "uri", "pattern": "^https://", "maxLength": 2048 }, { "type": "null" }] },
+        "details": { "$ref": "#/$defs/eventDetails" },
         "scrapeEvidence": {
           "type": "object", "additionalProperties": false,
           "required": ["imageCandidates", "appliedRuleIds"],

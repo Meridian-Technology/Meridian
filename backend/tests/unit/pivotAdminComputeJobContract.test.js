@@ -133,6 +133,37 @@ describe('Pivot admin compute job contracts v1 (Phase 1, Step 1.2)', () => {
       });
     });
 
+    it('carries ticket details that match the mobile event contract', () => {
+      const proposal = buildEventProposalFromEntry({ draft: {
+        name: 'Open Mic',
+        sourceUrl: 'https://luma.com/open-mic',
+        start_time: '2026-09-26T20:00:00Z',
+        price: 'General · $20 · Supporter · $30',
+        details: {
+          version: 1,
+          admission: 'paid',
+          ticketProvider: 'Luma',
+          tiers: [
+            { id: 'ga', name: 'General', kind: 'general', price: { amountMinor: 2000, currency: 'USD' } },
+            { id: 'sup', name: 'Supporter', kind: 'other', price: { amountMinor: 3000, currency: 'USD' } },
+          ],
+        },
+      } }, { provider: 'luma', defaultTags: ['music'] });
+      expect(proposal.draft.price).toBe('General · $20 · Supporter · $30');
+      expect(proposal.draft.details.tiers).toHaveLength(2);
+      expect(proposal.draft.details.priceRange).toEqual({
+        min: { amountMinor: 2000, currency: 'USD' },
+        max: { amountMinor: 3000, currency: 'USD' },
+      });
+
+      const result = loadFixture('result-refresh-valid-completed.json');
+      const fixtureProposal = result.proposals.jobOutcomes?.[0]?.events?.[0]
+        || result.proposals.events?.[0];
+      fixtureProposal.draft.price = proposal.draft.price;
+      fixtureProposal.draft.details = proposal.draft.details;
+      expect(validateExecutionResult(result)).toEqual({ valid: true });
+    });
+
     it('rejects unsupported carousel artifacts and oversized or incomplete manifests', () => {
       const unsupported = loadFixture('result-carousel-valid-completed.json');
       unsupported.artifacts[0].mimeType = 'image/jpeg';
@@ -277,6 +308,10 @@ describe('Pivot admin compute job contracts v1 (Phase 1, Step 1.2)', () => {
   describe('result application preview', () => {
     it('accepts a valid preview with create rows and applyAllowed=true', () => {
       expect(validateResultPreview(loadFixture('result-preview-valid.json'))).toEqual({ valid: true });
+      const priced = loadFixture('result-preview-valid.json');
+      const eventRow = priced.rows.find((row) => row.entityType === 'event');
+      eventRow.price = 'General · $20 · Supporter · $30';
+      expect(validateResultPreview(priced)).toEqual({ valid: true });
     });
 
     it('marks stale previews as not applyable', () => {

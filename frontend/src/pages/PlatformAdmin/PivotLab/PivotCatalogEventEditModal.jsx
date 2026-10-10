@@ -61,6 +61,101 @@ export function hasEnrichmentDraftContent(draftEnrichment) {
   );
 }
 
+const ADMISSION_LABELS = Object.freeze({
+  free: 'Free',
+  rsvp: 'Free · RSVP',
+  paid: 'Paid',
+  donation: 'Pay what you can',
+  pay_at_door: 'Pay at the door',
+});
+
+const MONEY_SYMBOLS = Object.freeze({
+  USD: '$',
+  EUR: '€',
+  GBP: '£',
+  JPY: '¥',
+});
+
+const ZERO_DECIMAL_CURRENCIES = new Set(['JPY', 'KRW']);
+
+function formatReviewMoney(money) {
+  if (!money || !Number.isInteger(money.amountMinor) || money.amountMinor < 0) return null;
+  const currency = String(money.currency || '').toUpperCase();
+  if (!/^[A-Z]{3}$/.test(currency)) return null;
+  const zeroDecimal = ZERO_DECIMAL_CURRENCIES.has(currency);
+  const major = zeroDecimal ? money.amountMinor : money.amountMinor / 100;
+  const amount = zeroDecimal || money.amountMinor % 100 === 0
+    ? String(Math.round(major))
+    : major.toFixed(2);
+  const symbol = MONEY_SYMBOLS[currency];
+  return symbol ? `${symbol}${amount}` : `${amount} ${currency}`;
+}
+
+export function formatReviewTierPrice(tier) {
+  if (!tier || typeof tier !== 'object') return 'Free';
+  const price = formatReviewMoney(tier.price);
+  const max = formatReviewMoney(tier.maxPrice);
+  if ((!tier.price || tier.price.amountMinor === 0) && max) return `Free–${max}`;
+  if (price && max && tier.maxPrice.amountMinor !== tier.price.amountMinor) return `${price}–${max}`;
+  return price || max || 'Free';
+}
+
+export function formatReviewPriceRange(details) {
+  const range = details?.priceRange;
+  if (!range?.min) return null;
+  const min = formatReviewMoney(range.min);
+  const max = formatReviewMoney(range.max);
+  if (!min) return null;
+  if (!max || range.max.amountMinor === range.min.amountMinor) {
+    return range.min.amountMinor === 0 ? 'Free' : min;
+  }
+  return `${range.min.amountMinor === 0 ? 'Free' : min}–${max}`;
+}
+
+export function ticketDetailsFromEvent(event) {
+  const details = event?.details;
+  if (!details || typeof details !== 'object' || Array.isArray(details) || details.version !== 1) {
+    return null;
+  }
+  const tiers = Array.isArray(details.tiers)
+    ? details.tiers.filter((tier) => tier && typeof tier.name === 'string' && tier.name.trim())
+    : [];
+  if (!details.admission && !details.priceRange && !tiers.length) return null;
+  return {
+    version: 1,
+    ...(details.admission ? { admission: details.admission } : {}),
+    ...(details.ticketProvider ? { ticketProvider: details.ticketProvider } : {}),
+    ...(details.priceRange ? { priceRange: details.priceRange } : {}),
+    ...(tiers.length ? { tiers } : {}),
+  };
+}
+
+function ticketKindLabel(kind) {
+  if (!kind || kind === 'general' || kind === 'other' || kind === 'free') return null;
+  return kind.replace(/_/g, ' ');
+}
+
+function scrapedPriceHint(price) {
+  if (!price || typeof price !== 'object') {
+    return 'Ticket price from the listing. Leave blank if the page did not list one.';
+  }
+  const parts = [];
+  const listedTiers = typeof price.raw === 'string' && price.raw.includes(' · ');
+  if (price.isFree) parts.push('free');
+  if (!listedTiers && (price.min != null || price.max != null)) {
+    const amount = price.min != null && price.max != null && price.min !== price.max
+      ? `${price.min}–${price.max}`
+      : `${price.min ?? price.max}`;
+    parts.push(price.currency ? `${amount} ${String(price.currency).toUpperCase()}` : amount);
+  }
+  if (price.suggested) parts.push('suggested');
+  if (price.band) parts.push(`${price.band} band`);
+  if (!parts.length) {
+    return 'Ticket price from the listing. Leave blank if the page did not list one.';
+  }
+  return `Scraped as ${parts.join(' · ')}. Edit the label if the listing was misread.`;
+}
+
 function isoToDatetimeLocal(iso) {
   if (!iso) return '';
   const parsed = new Date(iso);
@@ -86,12 +181,21 @@ export function catalogEventToEditDraft(event) {
 
   const timeSlots = catalogTimeSlotsToDraftSlots(event.timeSlots);
   const hasShowtimes = timeSlots.length > 0;
+  const parsedPrice = event.parsed?.price || event.parsedPrice || null;
+  const price = event.price || parsedPrice?.raw || '';
+  const ticketDetails = ticketDetailsFromEvent(event);
 
   return {
     name: event.name || '',
     organizerName: event.organizerName || '',
     location: event.location || '',
     description: event.description || '',
+    price,
+    scrapedPrice: price,
+    ticketDetails,
+    priceHint: ticketDetails
+      ? 'These are the ticket options the app will show. Edit the price label if the listing was misread.'
+      : scrapedPriceHint(parsedPrice),
     imageUrl: event.image || '',
     sourceUrl: event.sourceUrl || event.externalLink || '',
     scheduleMode: hasShowtimes ? 'showtimes' : 'single',
@@ -130,10 +234,47 @@ export function catalogEditDraftToOverrides(draft) {
     featured: draft.featured === true,
     clipDrop: draft.clipDrop === true,
     tags: Array.isArray(draft.tags) ? draft.tags : [],
+    ...(draft.price?.trim() ? { price: draft.price.trim() } : {}),
+    ...((draft.price || '').trim() === (draft.scrapedPrice || '').trim() && draft.ticketDetails
+      ? { details: draft.ticketDetails }
+      : {}),
     ...(useShowtimes ? { timeSlots: normalizedSlots } : { timeSlots: [] }),
     ...(draft.movie ? { movie: draft.movie } : {}),
     enrichment: draftEnrichmentToPayload(draft.enrichment),
   };
+}
+
+function TicketOptions({ details }) {
+  const tiers = Array.isArray(details?.tiers) ? details.tiers : [];
+  const range = formatReviewPriceRange(details);
+  const admission = ADMISSION_LABELS[details?.admission] || null;
+  return (
+    <div className="pivot-catalog-edit__tickets" role="region" aria-label="Ticket options">
+      {admission || details?.ticketProvider || (!tiers.length && range) ? (
+        <p className="pivot-catalog-edit__ticket-summary">
+          {admission ? <span>{admission}</span> : null}
+          {details?.ticketProvider ? <span>{details.ticketProvider}</span> : null}
+          {!tiers.length && range ? <strong>{range}</strong> : null}
+        </p>
+      ) : null}
+      {tiers.length ? (
+        <ul>
+          {tiers.map((tier) => {
+            const kind = ticketKindLabel(tier.kind);
+            return (
+              <li key={tier.id || tier.name}>
+                <span>{tier.name}</span>
+                {kind ? <em>{kind}</em> : null}
+                {tier.status === 'sold_out' ? <em>Sold out</em> : null}
+                {tier.requirement ? <em>{tier.requirement}</em> : null}
+                <strong>{formatReviewTierPrice(tier)}</strong>
+              </li>
+            );
+          })}
+        </ul>
+      ) : null}
+    </div>
+  );
 }
 
 function validateCatalogEditDraft(draft) {
@@ -435,6 +576,21 @@ function PivotCatalogEventEditModal({
                   />
                 </label>
               </div>
+              <label className="pivot-manual-import__field pivot-manual-import__field--wide">
+                <span className="pivot-manual-import__label">Price</span>
+                {(draft.price || '').trim() === (draft.scrapedPrice || '').trim() && draft.ticketDetails ? (
+                  <TicketOptions details={draft.ticketDetails} />
+                ) : null}
+                <input
+                  className="linear-input pivot-manual-import__input"
+                  aria-label="Price"
+                  value={draft.price || ''}
+                  onChange={(e) => patchDraft({ price: e.target.value })}
+                  placeholder="Free, $20, or $10–$40 suggested"
+                  autoComplete="off"
+                />
+                <span className="pivot-manual-import__hint">{draft.priceHint}</span>
+              </label>
               <label className="pivot-manual-import__field pivot-manual-import__field--wide">
                 <span className="pivot-manual-import__label">Description</span>
                 <textarea

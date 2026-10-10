@@ -838,6 +838,12 @@ function enrichIngestDraft(draft, options = {}) {
       .join('\n');
     const price = parsePrice(draft.price) || parsePrice(blob);
     const age = parseAgeRestriction(draft.ageRestriction) || parseAgeRestriction(blob);
+    // Lazy require: pivotEventPrice imports this module.
+    const { eventDetailsFromPriceText, normalizeEventDetails } = require('./pivotEventPrice');
+    const details = normalizeEventDetails(draft.details)
+      || eventDetailsFromPriceText(typeof draft.price === 'string' ? draft.price : price?.raw, {
+        ticketProvider: draft.source,
+      });
     const categoryHints = extractCategoryHints(
       draft.name,
       draft.description,
@@ -866,6 +872,7 @@ function enrichIngestDraft(draft, options = {}) {
       start_time: start.iso || draft.start_time || null,
       end_time: end.iso || draft.end_time || null,
       ...(parsed ? { parsed } : {}),
+      ...(details ? { details } : {}),
     };
   } catch {
     return draft;

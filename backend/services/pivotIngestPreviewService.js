@@ -11,6 +11,8 @@ const { enrichIngestDraft } = require('../utilities/pivotFieldParsingUtils');
 const {
   priceLabelFromLuma,
   priceLabelFromPartiful,
+  eventDetailsFromLuma,
+  eventDetailsFromPartiful,
 } = require('../utilities/pivotEventPrice');
 const {
   isInvalidHostName,
@@ -408,6 +410,7 @@ function parseJsonLdEvent(nodes, provider = 'manual') {
     hostImageUrl: null,
     hostIdentities: identitiesFromJsonLdOrganizer(eventNode.organizer, provider),
     price: priceLabelFromLuma(eventNode),
+    details: eventDetailsFromLuma(eventNode),
   };
 }
 
@@ -648,6 +651,7 @@ function buildPartifulExploreDraft(event, options = {}) {
     source: 'partiful',
     sourceTags: extractPartifulSourceTags(event),
     price: priceLabelFromPartiful(event, options.pageProps),
+    details: eventDetailsFromPartiful(event, options.pageProps),
   };
 
   const enriched = enrichIngestDraft(draft, fieldParseOptions(options));
@@ -828,6 +832,7 @@ function buildLumaDiscoverDraft(eventNode, options = {}) {
     sourceUrl,
     source: 'luma',
     price: priceLabelFromLuma(eventNode),
+    details: eventDetailsFromLuma(eventNode),
   };
 
   const enriched = enrichIngestDraft(draft, fieldParseOptions(options));
@@ -919,6 +924,12 @@ function imageFromLumaDiscoverEvent(event) {
     sanitizeEventPosterImage(event?.social_image_url) ||
     null
   );
+}
+
+function imageFromLumaDetail(payload) {
+  if (!payload || typeof payload !== 'object') return null;
+  const event = payload.event && typeof payload.event === 'object' ? payload.event : payload;
+  return imageFromLumaDiscoverEvent(event);
 }
 
 /**
@@ -1024,6 +1035,7 @@ function buildLumaDiscoverDraftFromNextData(entry, options = {}) {
     sourceUrl,
     source: 'luma',
     price: priceLabelFromLuma(entry),
+    details: eventDetailsFromLuma(entry),
   };
 
   const enriched = enrichIngestDraft(draft, fieldParseOptions(options));
@@ -1320,7 +1332,11 @@ async function enrichPartifulBatchDrafts(entries, options = {}) {
     }
     if (draft.price && !entry.draft.price) {
       entry.draft = enrichIngestDraft(
-        { ...entry.draft, price: draft.price },
+        {
+          ...entry.draft,
+          price: draft.price,
+          details: draft.details || entry.draft.details,
+        },
         fieldParseOptions(options),
       );
     }
@@ -1368,19 +1384,21 @@ async function fetchLumaEventApi(apiId) {
 
 async function fetchLumaEventDescription(entry) {
   let price = null;
+  let details = null;
   if (entry?.lumaEventApiId) {
     const fetched = await fetchLumaEventApi(entry.lumaEventApiId);
     if (!fetched.error) {
       price = priceLabelFromLuma(fetched.payload);
+      details = eventDetailsFromLuma(fetched.payload);
       const fromApi = descriptionFromLumaDetail(fetched.payload);
-      if (fromApi) return { description: fromApi, price };
+      if (fromApi) return { description: fromApi, price, details };
     }
   }
 
-  if (!entry?.sourceUrl) return price ? { description: null, price } : null;
+  if (!entry?.sourceUrl) return price ? { description: null, price, details } : null;
 
   const page = await fetchEventPage(entry.sourceUrl);
-  if (page.error || !page.html) return price ? { description: null, price } : null;
+  if (page.error || !page.html) return price ? { description: null, price, details } : null;
 
   const detail = lumaDetailFromNextData(page.html);
   const drafted = buildDraft({
@@ -1391,6 +1409,7 @@ async function fetchLumaEventDescription(entry) {
   return {
     description: descriptionFromLumaDetail(detail) || drafted.draft?.description || null,
     price: price || priceLabelFromLuma(detail) || drafted.draft?.price || null,
+    details: details || eventDetailsFromLuma(detail) || drafted.draft?.details || null,
   };
 }
 
@@ -1410,6 +1429,7 @@ async function enrichLumaBatchDrafts(entries, options = {}) {
 
     if (fetched.description) entry.draft.description = fetched.description;
     if (fetched.price && !entry.draft.price) entry.draft.price = fetched.price;
+    if (fetched.details && !entry.draft.details) entry.draft.details = fetched.details;
     entry.draft = enrichIngestDraft(entry.draft, fieldParseOptions(options));
     entry.warnings = draftWarnings(entry.draft);
   });
@@ -1456,7 +1476,12 @@ function buildDraft({ html, provider, sourceUrl, timezone, now }) {
       openGraph.description,
     ),
     image: sanitizeEventPosterImage(
-      firstNonEmpty(partifulPageDraft?.image, openGraph.image, jsonLdEvent.image),
+      firstNonEmpty(
+        imageFromLumaDetail(lumaDetail),
+        partifulPageDraft?.image,
+        openGraph.image,
+        jsonLdEvent.image,
+      ),
     ),
     start_time: firstNonEmpty(partifulPageDraft?.start_time, jsonLdEvent.start_time),
     end_time: firstNonEmpty(partifulPageDraft?.end_time, jsonLdEvent.end_time),
@@ -1484,6 +1509,7 @@ function buildDraft({ html, provider, sourceUrl, timezone, now }) {
     source: provider,
     sourceTags: partifulPageDraft?.sourceTags || [],
     price: firstNonEmpty(partifulPageDraft?.price, priceLabelFromLuma(lumaDetail), jsonLdEvent.price),
+    details: partifulPageDraft?.details || eventDetailsFromLuma(lumaDetail) || jsonLdEvent.details || null,
     parsed: partifulPageDraft?.parsed || null,
   };
 

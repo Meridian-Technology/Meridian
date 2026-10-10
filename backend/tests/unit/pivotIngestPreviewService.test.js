@@ -187,6 +187,40 @@ describe('pivotIngestPreviewService buildDraft', () => {
     expect(draft.description).toBe('Bring a poem and stay for the second set.');
   });
 
+  it('uses the Luma cover photo instead of the embed image', () => {
+    const html = `<!DOCTYPE html>
+<html>
+<head>
+  <meta property="og:title" content="Open Mic Night" />
+  <meta property="og:image" content="https://images.lumacdn.com/social/open-mic-embed.jpg" />
+  <script id="__NEXT_DATA__" type="application/json">${JSON.stringify({
+    props: {
+      pageProps: {
+        initialData: {
+          data: {
+            event: {
+              name: 'Open Mic Night',
+              cover_url: 'https://images.lumacdn.com/uploads/open-mic-cover.jpg',
+              social_image_url: 'https://images.lumacdn.com/social/open-mic-embed.jpg',
+            },
+          },
+        },
+      },
+    },
+  })}</script>
+</head>
+<body></body>
+</html>`;
+
+    const { draft } = buildDraft({
+      html,
+      provider: 'luma',
+      sourceUrl: 'https://lu.ma/open-mic-night',
+    });
+
+    expect(draft.image).toBe('https://images.lumacdn.com/uploads/open-mic-cover.jpg');
+  });
+
   it('adds warnings when fields are missing', () => {
     const { warnings } = buildDraft({
       html: '<html><head><title>Empty</title></head></html>',

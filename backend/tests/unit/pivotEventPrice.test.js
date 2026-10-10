@@ -3,6 +3,9 @@ const {
   priceLabelFromPartiful,
   priceFromJsonLdOffers,
   priceTextFromListing,
+  eventDetailsFromLuma,
+  eventDetailsFromPartiful,
+  eventDetailsFromPriceText,
 } = require('../../utilities/pivotEventPrice');
 const { parsePrice } = require('../../utilities/pivotFieldParsingUtils');
 const {
@@ -66,13 +69,13 @@ describe('event price labels', () => {
           { type: 'free', cents: null, currency: null, is_hidden: false },
           { type: 'fiat-price', cents: 9900, currency: 'usd', is_flexible: false },
         ],
-      })).toBe('Free–$99');
+      })).toBe('Free · $99');
 
       expect(priceLabelFromLuma({
         ticket_types: [
           { type: 'paid', cents: 1500, currency: 'usd', name: 'Standard' },
         ],
-      })).toBe('$15');
+      })).toBe('Standard · $15');
     });
 
     it('skips hidden, disabled, and members-only tiers when a public tier remains', () => {
@@ -81,10 +84,10 @@ describe('event price labels', () => {
           { type: 'fiat-price', cents: 1500, currency: 'usd', is_hidden: true },
           { type: 'fiat-price', cents: 2500, currency: 'usd', is_disabled: true },
           { type: 'fiat-price', cents: 1000, currency: 'usd', membership_restriction: { id: 'mem' } },
-          { type: 'paid', cents: 2000, currency: 'usd' },
-          { type: 'paid', cents: 3000, currency: 'usd' },
+          { type: 'paid', cents: 2000, currency: 'usd', name: 'General' },
+          { type: 'paid', cents: 3000, currency: 'usd', name: 'Supporter' },
         ],
-      })).toBe('$20–$30');
+      })).toBe('General · $20 · Supporter · $30');
     });
 
     it('keeps a sold-out or members-only price when nothing else is on sale', () => {
@@ -119,10 +122,10 @@ describe('event price labels', () => {
       expect(priceLabelFromLuma({
         ticket_info: { price: { cents: 9900, currency: 'usd' }, is_free: false },
         ticket_types: [
-          { type: 'free', is_hidden: false },
-          { type: 'fiat-price', cents: 9900, currency: 'usd' },
+          { type: 'free', is_hidden: false, name: 'RSVP' },
+          { type: 'fiat-price', cents: 9900, currency: 'usd', name: 'Supporter' },
         ],
-      })).toBe('Free–$99');
+      })).toBe('RSVP · Free · Supporter · $99');
     });
   });
 
@@ -153,7 +156,7 @@ describe('event price labels', () => {
           { id: 'vip', name: 'VIP', guestPrice: 60, currencyCode: 'USD', disabled: false },
           { id: 'staff', name: 'Staff', guestPrice: 0, currencyCode: 'USD', disabled: true },
         ],
-      })).toBe('$28–$60');
+      })).toBe('General Admission · $28 · VIP · $60');
     });
 
     it('treats a missing guest price as free and falls back to the host payout', () => {
@@ -163,7 +166,7 @@ describe('event price labels', () => {
           { id: 'ga', name: 'General Admission', currency: 'USD' },
           { id: 'late', name: 'Late', priceExcludingFees: 12, currency: 'EUR' },
         ],
-      })).toBe('Free · €12');
+      })).toBe('General Admission · Free · Late · €12');
     });
 
     it('reads ticket types and offers from the event page props', () => {
@@ -174,7 +177,7 @@ describe('event price labels', () => {
             { id: 'ga', name: 'GA', guestPrice: 18, currencyCode: 'USD' },
           ],
         },
-      )).toBe('$18');
+      )).toBe('GA · $18');
 
       expect(priceLabelFromPartiful(
         { id: 'abc' },
@@ -281,7 +284,7 @@ describe('scraped drafts include price', () => {
     })}</script></html>`;
 
     const draft = parsePartifulSingleEventDraft(html, 'https://partiful.com/e/abc');
-    expect(draft.price).toBe('$12–$20');
+    expect(draft.price).toBe('GA · $12 · Late · $20');
     expect(draft.parsed.price).toMatchObject({ min: 12, max: 20, band: 'mid' });
   });
 
@@ -336,5 +339,151 @@ describe('scraped drafts include price', () => {
     );
     expect(draft.price).toBe('Sign-ups at the door. $10-15.');
     expect(draft.parsed.price).toMatchObject({ min: 10, max: 15, band: 'low' });
+    expect(draft.details).toEqual({
+      version: 1,
+      admission: 'pay_at_door',
+      priceRange: {
+        min: { amountMinor: 1000, currency: 'USD' },
+        max: { amountMinor: 1500, currency: 'USD' },
+      },
+    });
+  });
+});
+
+describe('event details contract', () => {
+  it('turns named Luma tiers into cent-priced ticket rows', () => {
+    expect(eventDetailsFromLuma({
+      ticket_types: [
+        { type: 'paid', cents: 2000, currency: 'usd', name: 'General', api_id: 'tier-ga' },
+        { type: 'paid', cents: 3000, currency: 'usd', name: 'Supporter' },
+      ],
+    })).toEqual({
+      version: 1,
+      admission: 'paid',
+      ticketProvider: 'Luma',
+      priceRange: {
+        min: { amountMinor: 2000, currency: 'USD' },
+        max: { amountMinor: 3000, currency: 'USD' },
+      },
+      tiers: [
+        {
+          id: 'tier-ga',
+          name: 'General',
+          kind: 'general',
+          price: { amountMinor: 2000, currency: 'USD' },
+        },
+        {
+          id: 'supporter-1',
+          name: 'Supporter',
+          kind: 'other',
+          price: { amountMinor: 3000, currency: 'USD' },
+        },
+      ],
+    });
+  });
+
+  it('keeps a discover summary as a range when Luma sent no tier names', () => {
+    expect(eventDetailsFromLuma({
+      ticket_info: {
+        price: { cents: 2000, currency: 'usd' },
+        max_price: { cents: 3000, currency: 'usd' },
+      },
+    })).toEqual({
+      version: 1,
+      admission: 'paid',
+      ticketProvider: 'Luma',
+      priceRange: {
+        min: { amountMinor: 2000, currency: 'USD' },
+        max: { amountMinor: 3000, currency: 'USD' },
+      },
+    });
+  });
+
+  it('maps a flexible Luma tier to a sliding donation and a free event to rsvp', () => {
+    expect(eventDetailsFromLuma({
+      ticket_types: [
+        { type: 'fiat-price', cents: 1000, min_cents: 0, currency: 'usd', is_flexible: true, name: 'Chip in' },
+      ],
+    })).toMatchObject({
+      admission: 'donation',
+      priceRange: {
+        min: { amountMinor: 0, currency: 'USD' },
+        max: { amountMinor: 1000, currency: 'USD' },
+      },
+      tiers: [{
+        name: 'Chip in',
+        kind: 'donation',
+        maxPrice: { amountMinor: 1000, currency: 'USD' },
+      }],
+    });
+
+    expect(eventDetailsFromLuma({
+      ticket_types: [{ type: 'free', cents: null, currency: 'usd' }],
+    })).toEqual({
+      version: 1,
+      admission: 'rsvp',
+      ticketProvider: 'Luma',
+    });
+  });
+
+  it('keeps yen in minor units and marks a sold-out members tier', () => {
+    expect(eventDetailsFromLuma({
+      ticket_types: [
+        { type: 'paid', cents: 250000, currency: 'jpy', name: 'General', is_disabled: true, membership_restriction: { id: 'mem' } },
+      ],
+    })).toMatchObject({
+      tiers: [{
+        name: 'General',
+        status: 'sold_out',
+        requirement: 'Members only',
+        price: { amountMinor: 250000, currency: 'JPY' },
+      }],
+    });
+  });
+
+  it('turns Partiful ticket types and chip-in into the same contract', () => {
+    expect(eventDetailsFromPartiful({
+      ticketing: { type: 'standard' },
+      ticketTypes: [
+        { id: 'ga', name: 'General Admission', guestPrice: 28, currencyCode: 'USD' },
+        { id: 'vip', name: 'VIP', guestPrice: 60, currencyCode: 'USD' },
+      ],
+    })).toMatchObject({
+      admission: 'paid',
+      ticketProvider: 'Partiful',
+      tiers: [
+        { id: 'ga', name: 'General Admission', kind: 'general', price: { amountMinor: 2800, currency: 'USD' } },
+        { id: 'vip', name: 'VIP', kind: 'vip', price: { amountMinor: 6000, currency: 'USD' } },
+      ],
+    });
+
+    expect(eventDetailsFromPartiful({
+      ticketing: { type: 'chip_in', mode: 'optional' },
+    })).toEqual({
+      version: 1,
+      admission: 'donation',
+      ticketProvider: 'Partiful',
+    });
+  });
+
+  it('reads a named price list and does not treat "Free · $99" as one tier named Free', () => {
+    expect(eventDetailsFromPriceText('General · $20 · Supporter · $30')).toMatchObject({
+      admission: 'paid',
+      tiers: [
+        { name: 'General', price: { amountMinor: 2000, currency: 'USD' } },
+        { name: 'Supporter', price: { amountMinor: 3000, currency: 'USD' } },
+      ],
+    });
+
+    const collapsed = eventDetailsFromPriceText('Free · $99', { ticketProvider: 'luma' });
+    expect(collapsed.tiers).toBeUndefined();
+    expect(collapsed).toMatchObject({
+      admission: 'paid',
+      ticketProvider: 'Luma',
+      priceRange: {
+        min: { amountMinor: 0, currency: 'USD' },
+        max: { amountMinor: 9900, currency: 'USD' },
+      },
+    });
   });
 });

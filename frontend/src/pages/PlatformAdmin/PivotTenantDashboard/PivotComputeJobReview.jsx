@@ -92,6 +92,7 @@ function PreviewRowsTable({ rows }) {
             <th scope="col">Key</th>
             <th scope="col">Based on</th>
             <th scope="col">Current</th>
+            <th scope="col">Price</th>
             <th scope="col">Message</th>
             <th scope="col">Evidence</th>
           </tr>
@@ -112,6 +113,7 @@ function PreviewRowsTable({ rows }) {
               <td className="pivot-compute-jobs__mono">{row.key}</td>
               <td className="pivot-compute-jobs__mono">{row.basedOnRecordVersion || '—'}</td>
               <td className="pivot-compute-jobs__mono">{row.currentRecordVersion || '—'}</td>
+              <td>{row.price || '—'}</td>
               <td>
                 {row.message || '—'}
                 {row.missingFields?.length ? (

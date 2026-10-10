@@ -2,6 +2,7 @@ const getGlobalModels = require('./getGlobalModelService');
 const { createCurationJob, updateCurationJob } = require('./pivotCurationJobService');
 const { startCurationBatch } = require('./pivotCurationBatchService');
 const { toIsoWeek } = require('../utilities/pivotIsoWeek');
+const { normalizeEventDetails } = require('../utilities/pivotEventPrice');
 
 function trimString(value) {
   return typeof value === 'string' ? value.trim() : '';
@@ -134,6 +135,8 @@ function buildEventProposalFromEntry(entry, {
       sourceUrl,
       hostName: boundedString(draft.hostName || draft.host?.name, 300),
       hostProfileUrl: safeHttpsUrl(draft.hostProfileUrl || draft.host?.profileUrl),
+      ...(boundedString(draft.price, 300) ? { price: boundedString(draft.price, 300) } : {}),
+      ...(normalizeEventDetails(draft.details) ? { details: normalizeEventDetails(draft.details) } : {}),
       tags,
       ...(draft.scrapeEvidence ? { scrapeEvidence: {
         imageCandidates: [...new Set((draft.scrapeEvidence.imageCandidates || [])

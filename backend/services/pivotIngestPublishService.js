@@ -27,9 +27,14 @@ const {
 const { normalizePivotEnrichment } = require('../utilities/pivotEnrichment');
 const {
   parseEventDateTime,
+  parsePrice,
   enrichIngestDraft,
   normalizeParsedFields,
 } = require('../utilities/pivotFieldParsingUtils');
+const {
+  eventDetailsFromPriceText,
+  normalizeEventDetails,
+} = require('../utilities/pivotEventPrice');
 const {
   logPivot,
   pivotRequestContext,
@@ -200,6 +205,14 @@ function normalizeIngestTimeSlots(rawSlots) {
   }));
 }
 
+function priceOverrideReplaces(overrides, draft) {
+  if (overrides.price === undefined) return false;
+  const next = typeof overrides.price === 'string' ? overrides.price.trim() : '';
+  if (!next) return false;
+  const previous = typeof draft.price === 'string' ? draft.price.trim() : '';
+  return next !== previous;
+}
+
 function mergeDraftWithOverrides(draft = {}, overrides = {}) {
   const timeSlots = normalizeIngestTimeSlots(
     Array.isArray(overrides.timeSlots)
@@ -234,6 +247,10 @@ function mergeDraftWithOverrides(draft = {}, overrides = {}) {
         : undefined,
     source: firstNonEmpty(overrides.source, draft.source),
     sourceUrl: firstNonEmpty(overrides.sourceUrl, draft.sourceUrl),
+    price: firstNonEmpty(overrides.price, draft.price),
+    details: overrides.details !== undefined
+      ? overrides.details
+      : (priceOverrideReplaces(overrides, draft) ? null : (draft.details || null)),
     scrapeEvidence: draft.scrapeEvidence || null,
     tags: Array.isArray(overrides.tags)
       ? overrides.tags
@@ -386,6 +403,7 @@ function buildPivotMetadata(merged, { batchWeek, sourceUrl, importedBy, tags, in
     ...(merged.movie ? { movie: merged.movie } : {}),
     ...(merged.enrichment ? { enrichment: merged.enrichment } : {}),
     ...(merged.parsed ? { parsed: merged.parsed } : {}),
+    ...(normalizeEventDetails(merged.details) ? { details: normalizeEventDetails(merged.details) } : {}),
     ...(merged.scrapeEvidence ? { scrapeEvidence: merged.scrapeEvidence } : {}),
     ...(merged.duplicateRollup ? { duplicateRollup: merged.duplicateRollup } : {}),
     ...(merged.rawLocationText ? { rawLocationText: merged.rawLocationText } : {}),
@@ -1048,6 +1066,17 @@ async function updateIngestEvent(req, options = {}) {
   if (display.profileUrl && !host.profileUrl) host.profileUrl = display.profileUrl;
 
   const pivotPatch = { ...pivot, host };
+  if (trimString(overrides.price)) {
+    const priceText = trimString(overrides.price);
+    pivotPatch.parsed = {
+      ...(pivot.parsed && typeof pivot.parsed === 'object' ? pivot.parsed : {}),
+      price: parsePrice(priceText) || { raw: priceText },
+    };
+    const details = normalizeEventDetails(overrides.details)
+      || eventDetailsFromPriceText(priceText, { ticketProvider: pivot.source });
+    if (details) pivotPatch.details = details;
+    else delete pivotPatch.details;
+  }
   const rawLocationText = rawJustGoLocationText({
     rawLocationText: pivot.rawLocationText,
     richLocation: existing.richLocation,
