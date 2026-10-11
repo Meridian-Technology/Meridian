@@ -1116,6 +1116,13 @@ html.is-curation-chrome-fullscreen {
   }
 }
 
+.pivot-curation-sheet__review-callout-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+}
+
 .pivot-curation-sheet__inspect-kpis {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));

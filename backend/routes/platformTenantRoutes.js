@@ -265,11 +265,12 @@ router.get(
   },
 );
 
+// Not gated on the migration UI flag: ingest blocks publishing on
+// `needs_review` regardless, so curation must be able to resolve it in place.
 router.post(
   '/admin/platform/tenants/:tenantKey/rich-location-migration/reviews/:eventId',
   verifyToken,
   requirePlatformAdmin,
-  requireRichLocationMigrationUi,
   async (req, res) => {
     try {
       const tenant = await migrationTenant(req, res);

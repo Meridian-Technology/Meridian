@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Icon } from '@iconify-icon/react';
 import { PivotOpsStatus } from '../../../components/PivotOps';
 import { formatEventWhen } from '../../../utils/pivotIsoWeek';
+import './PivotLocationReviewInspector.scss';
 
 const MAPS_EMBED_KEY = String(
   process.env.REACT_APP_GOOGLE_MAPS_EMBED_API_KEY || '',
@@ -281,7 +282,7 @@ export default function PivotLocationReviewInspector({ candidate, busy, onReview
           <strong>Choose the location this event should use</strong>
           <span>Choose a ready-made option, or edit the full representation below.</span>
         </div>
-        <div className="pivot-location-migration__actions">
+        <div className="pivot-location-review__actions">
           {suggested ? (
             <button
               type="button"
@@ -331,10 +332,10 @@ export default function PivotLocationReviewInspector({ candidate, busy, onReview
 
       <details className="pivot-location-review__advanced">
         <summary>Advanced: edit rich location JSON</summary>
-        <label className="pivot-location-migration__field">
+        <label className="pivot-location-review__field">
           <span>Rich location representation</span>
           <textarea
-            className="linear-input pivot-location-migration__json"
+            className="linear-input pivot-location-review__json"
             aria-label="Rich location representation"
             rows={12}
             value={representation}

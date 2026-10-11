@@ -1,4 +1,5 @@
 import { PIVOT_TENANT_PAGES } from './pivotTenantPageRoutes';
+import { RICH_LOCATION_MIGRATION_UI_ENABLED } from './richLocationMigrationFlag';
 
 const LOCATION_REVIEW_COPY = {
   ambiguous_provider_matches: [
@@ -57,8 +58,45 @@ export function locationReviewBlock(event) {
   return { reason, title: copy[0], detail: copy[1] };
 }
 
-export function locationReviewHref(tenantKey, batchWeek) {
-  if (!tenantKey) return null;
+function finiteOrNull(value) {
+  if (value == null || value === '') return null;
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
+}
+
+/**
+ * Shape a curation catalog event like a `/rich-location-migration/reviews`
+ * candidate so PivotLocationReviewInspector can resolve it in place.
+ */
+export function locationReviewCandidate(event) {
+  const block = locationReviewBlock(event);
+  if (!block) return null;
+  const review = event.locationReview;
+  return {
+    eventId: String(event._id),
+    name: event.name,
+    startTime: event.start_time || null,
+    image: event.image || null,
+    legacyLocation: event.location || '',
+    rawLocationText: event.rawLocationText || event.richLocation?.originalInput || event.location || '',
+    richLocation: event.richLocation || null,
+    candidateMatches: Array.isArray(review.candidateMatches) ? review.candidateMatches : [],
+    review,
+    whyReview: {
+      reason: block.reason,
+      title: block.title,
+      detail: block.detail,
+      confidence: finiteOrNull(review.confidence),
+      candidateCount: finiteOrNull(review.candidateCount),
+    },
+    batchWeek: event.batchWeek || null,
+    source: event.source || null,
+    sourceUrl: event.sourceUrl || event.externalLink || null,
+  };
+}
+
+export function locationReviewHref(tenantKey, batchWeek, enabled = RICH_LOCATION_MIGRATION_UI_ENABLED) {
+  if (!tenantKey || !enabled) return null;
   const params = new URLSearchParams({
     page: String(PIVOT_TENANT_PAGES.content),
     content: 'locations',

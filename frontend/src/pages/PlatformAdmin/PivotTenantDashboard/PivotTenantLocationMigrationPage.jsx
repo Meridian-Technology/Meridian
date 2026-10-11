@@ -17,10 +17,8 @@ import PivotHistoricLocationHeatmap from './PivotHistoricLocationHeatmap';
 import PivotLocationReviewInspector from './PivotLocationReviewInspector';
 import PivotTenantPage from './PivotTenantPage';
 import usePivotBatchWeekState from './usePivotBatchWeekState';
+import { RICH_LOCATION_MIGRATION_UI_ENABLED } from './richLocationMigrationFlag';
 import './PivotTenantLocationMigrationPage.scss';
-
-const RICH_LOCATION_MIGRATION_UI_ENABLED =
-  process.env.REACT_APP_ENABLE_RICH_LOCATION_MIGRATION_UI === 'true';
 
 const EMPTY_CONTROLS = {
   rollout: 'off',

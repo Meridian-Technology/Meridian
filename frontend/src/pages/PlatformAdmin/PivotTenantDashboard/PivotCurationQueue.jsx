@@ -13,8 +13,16 @@ import { curationPublicEventUrl } from './curationPublicEventUrl';
 import { dragRangeSelection, nextSelection, reconcileCatalogAnchor, sameIdSet } from './curationQueueSelection';
 import useCurationImmersiveScroll from './useCurationImmersiveScroll';
 import { eventMatchesCatalogSearch } from './curationCatalogFilters';
-import { locationReviewBlock, locationReviewHref, coverImageBlock, eventPublishBlock, publishReviewBlock } from './curationPublishFeedback';
+import {
+  locationReviewBlock,
+  locationReviewCandidate,
+  locationReviewHref,
+  coverImageBlock,
+  eventPublishBlock,
+  publishReviewBlock,
+} from './curationPublishFeedback';
 import PivotCurationPortalPopup from './PivotCurationPortalPopup';
+import PivotLocationReviewInspector from './PivotLocationReviewInspector';
 import KeybindTooltip from '../../../components/Interface/KeybindTooltip/KeybindTooltip';
 import './PivotCurationQueue.scss';
 
@@ -498,6 +506,7 @@ function QueueInspector({
   onDelete,
   onToggleFeatured,
   onEditorialChange,
+  onResolveLocation,
   busyKey,
   releaseDisabled,
   releaseBlockReason,
@@ -588,11 +597,25 @@ function QueueInspector({
           <div className="pivot-curation-sheet__review-callout" role="status">
             <strong>{reviewBlock.title}</strong>
             <p>{reviewBlock.detail} Publishing stays blocked until location review is approved.</p>
-            {reviewHref ? (
-              <a className="pivot-curation-sheet__inspect-link" href={reviewHref}>
-                Open location review
-              </a>
-            ) : null}
+            <div className="pivot-curation-sheet__review-callout-actions">
+              {onResolveLocation ? (
+                <button
+                  type="button"
+                  className="linear-btn linear-btn--secondary linear-btn--sm"
+                  onClick={() => onResolveLocation(event)}
+                >
+                  Resolve location
+                </button>
+              ) : null}
+              {reviewHref ? (
+                <a
+                  className="pivot-curation-sheet__inspect-link pivot-curation-sheet__inspect-link--secondary"
+                  href={reviewHref}
+                >
+                  All location reviews
+                </a>
+              ) : null}
+            </div>
           </div>
         ) : null}
         {coverBlock ? (
@@ -786,7 +809,7 @@ function QueueInspector({
   );
 }
 
-function PublishConfirmCard({ events, onConfirm, onCancel, busy, brokenImageIds }) {
+function PublishConfirmCard({ events, onConfirm, onCancel, onResolveLocation, busy, brokenImageIds }) {
   const rows = events.map((event) => ({
     event,
     block: publishReviewBlock(event, { brokenImageIds }),
@@ -833,6 +856,15 @@ function PublishConfirmCard({ events, onConfirm, onCancel, busy, brokenImageIds 
                     .join(' · ') || 'No time or place'}
               </span>
             </div>
+            {onResolveLocation && locationReviewBlock(event) ? (
+              <button
+                type="button"
+                className="linear-btn linear-btn--ghost linear-btn--sm"
+                onClick={() => onResolveLocation(event)}
+              >
+                Resolve
+              </button>
+            ) : null}
           </li>
         ))}
       </ul>
@@ -928,6 +960,7 @@ function PivotCurationQueue({
   onBulkUnfeature,
   onToggleFeatured,
   onEditorialChange,
+  onLocationReview,
   onBulkEditorial,
   selectionPolicy,
   onSelectionPolicyChange,
@@ -948,6 +981,7 @@ function PivotCurationQueue({
   const [dossierEventId, setDossierEventId] = useState(null);
   const [publishConfirmEvents, setPublishConfirmEvents] = useState(null);
   const [weightEventId, setWeightEventId] = useState(null);
+  const [locationEventId, setLocationEventId] = useState(null);
   const [dragSelecting, setDragSelecting] = useState(false);
   const [visibleCount, setVisibleCount] = useState(LAZY_CHUNK);
   const [query, setQuery] = useState('');
@@ -1000,6 +1034,22 @@ function PivotCurationQueue({
   useEffect(() => {
     if (weightEventId && !weightEvent) setWeightEventId(null);
   }, [weightEventId, weightEvent]);
+
+  const locationCandidate = useMemo(() => {
+    if (!locationEventId) return null;
+    const event = catalogEvents.find((item) => String(item._id) === String(locationEventId));
+    return locationReviewCandidate(event);
+  }, [catalogEvents, locationEventId]);
+
+  // Close once the review clears (approved) or the event leaves the list.
+  useEffect(() => {
+    if (locationEventId && !locationCandidate) setLocationEventId(null);
+  }, [locationEventId, locationCandidate]);
+
+  const openLocationReview = useCallback((event) => {
+    setDossierEventId(null);
+    setLocationEventId(event._id);
+  }, []);
 
   const executePublish = useCallback((staged) => {
     if (!staged?.length) return Promise.resolve(false);
@@ -1335,7 +1385,7 @@ function PivotCurationQueue({
       const key = String(nativeEvent.key || '').toLowerCase();
       const withMeta = nativeEvent.metaKey || nativeEvent.ctrlKey;
 
-      if (weightEventId) return;
+      if (weightEventId || locationEventId) return;
 
       if (publishConfirmEvents?.length) {
         if (nativeEvent.key === 'Escape') {
@@ -1509,6 +1559,7 @@ function PivotCurationQueue({
       selectAt,
       selectedIds,
       weightEventId,
+      locationEventId,
       brokenImageIds,
     ],
   );
@@ -1519,6 +1570,13 @@ function PivotCurationQueue({
       if (isTypingTarget(nativeEvent.target)) return;
       const key = String(nativeEvent.key || '');
       if (weightEventId) return;
+      if (locationEventId) {
+        if (key === 'Escape') {
+          nativeEvent.preventDefault();
+          setLocationEventId(null);
+        }
+        return;
+      }
       if (publishConfirmEvents?.length) {
         handleKeyDown(nativeEvent);
         return;
@@ -1544,7 +1602,7 @@ function PivotCurationQueue({
       window.removeEventListener('keydown', onWindowKeyDown);
       window.removeEventListener('keydown', onCaptureMeta, true);
     };
-  }, [chromeFullscreen, dossierEventId, handleKeyDown, publishConfirmEvents, weightEventId]);
+  }, [chromeFullscreen, dossierEventId, handleKeyDown, locationEventId, publishConfirmEvents, weightEventId]);
 
   useEffect(() => {
     const onPointerDown = (nativeEvent) => {
@@ -1622,6 +1680,7 @@ function PivotCurationQueue({
       onDelete={onDelete}
       onToggleFeatured={onToggleFeatured}
       onEditorialChange={onEditorialChange}
+      onResolveLocation={onLocationReview ? openLocationReview : undefined}
       busyKey={busyKey}
       releaseDisabled={releaseDisabled}
       releaseBlockReason={releaseBlockReason}
@@ -1993,6 +2052,24 @@ function PivotCurationQueue({
               brokenImageIds={brokenImageIds}
               onCancel={() => setPublishConfirmEvents(null)}
               onConfirm={(ready) => executePublish(ready)}
+              onResolveLocation={onLocationReview ? (event) => {
+                setPublishConfirmEvents(null);
+                openLocationReview(event);
+              } : undefined}
+            />
+          </PivotCurationPortalPopup>
+        ) : null}
+
+        {locationCandidate ? (
+          <PivotCurationPortalPopup
+            isOpen
+            onClose={() => setLocationEventId(null)}
+            className="pivot-curation-location-popup"
+          >
+            <PivotLocationReviewInspector
+              candidate={locationCandidate}
+              busy={busyKey === `location-${locationCandidate.eventId}`}
+              onReview={onLocationReview}
             />
           </PivotCurationPortalPopup>
         ) : null}

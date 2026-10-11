@@ -92,6 +92,7 @@ function queueProps(overrides = {}) {
     onBulkUnfeature: jest.fn(),
     onToggleFeatured: jest.fn(),
     onEditorialChange: jest.fn(),
+    onLocationReview: jest.fn(),
     onBulkEditorial: jest.fn(),
     ...overrides,
   };
@@ -198,10 +199,9 @@ describe('PivotCurationQueue catalog', () => {
     expect(screen.queryByText('Mission brunch')).not.toBeInTheDocument();
     expect(screen.getByRole('complementary', { name: 'Oakland disco details' })).toBeInTheDocument();
     expect(screen.getByText(/outside the city boundary/i)).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Open location review' })).toHaveAttribute(
-      'href',
-      '/platform-admin/pivot/sf?page=1&content=locations&batchWeek=2026-W38',
-    );
+    expect(screen.getByRole('button', { name: 'Resolve location' })).toBeInTheDocument();
+    // The Locations tab is flag-gated; without it there is nowhere to link to.
+    expect(screen.queryByRole('link', { name: 'All location reviews' })).not.toBeInTheDocument();
     expect(document.querySelector('.popup-overlay')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Publish' })).toBeDisabled();
     expect(screen.getByText('No cover image')).toBeInTheDocument();
@@ -210,6 +210,69 @@ describe('PivotCurationQueue catalog', () => {
     expect(document.querySelector('.popup-overlay')).toBeInTheDocument();
     expect(document.querySelector('.pivot-curation-inspect-popup')).toBeInTheDocument();
     expect(screen.getByRole('complementary', { name: 'Oakland disco dossier' })).toBeInTheDocument();
+  });
+
+  it('resolves a location review in place without leaving curation', () => {
+    mockMatchMedia(false);
+    const onLocationReview = jest.fn();
+    const onStage = jest.fn();
+    const events = catalogEvents();
+    events[0].locationReview = {
+      status: 'needs_review',
+      reason: 'ambiguous_provider_matches',
+      candidateCount: 2,
+      candidateMatches: [
+        { mode: 'physical', venueName: 'Oakland Arena', formattedAddress: '7000 Coliseum Way' },
+        { mode: 'physical', venueName: 'Fox Oakland', formattedAddress: '1807 Telegraph Ave' },
+      ],
+    };
+    const { rerender } = renderQueue({ events, onLocationReview, onStage });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Resolve location' }));
+    const popup = document.querySelector('.pivot-curation-location-popup');
+    expect(popup).toBeInTheDocument();
+    expect(within(popup).getByText('Google found multiple plausible places')).toBeInTheDocument();
+
+    // Queue shortcuts stay quiet while the resolver is open.
+    fireEvent.keyDown(window, { key: 's' });
+    expect(onStage).not.toHaveBeenCalled();
+
+    fireEvent.click(within(popup).getByRole('button', { name: /Fox Oakland/ }));
+    fireEvent.click(within(popup).getByRole('button', { name: 'Use Google' }));
+    expect(onLocationReview).toHaveBeenCalledWith(
+      '1',
+      'select_match',
+      expect.objectContaining({ venueName: 'Fox Oakland' }),
+    );
+
+    // Once the refreshed event no longer needs review, the resolver closes.
+    const resolved = catalogEvents();
+    resolved[0].locationReview = { status: 'approved' };
+    rerender(<PivotCurationQueue {...queueProps({ events: resolved, onLocationReview })} />);
+    expect(document.querySelector('.pivot-curation-location-popup')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Resolve location' })).not.toBeInTheDocument();
+  });
+
+  it('opens the location resolver from a blocked publish review and closes it with Escape', async () => {
+    mockMatchMedia(false);
+    const onLocationReview = jest.fn();
+    renderQueue({ onLocationReview });
+
+    fireEvent.keyDown(window, { key: 'p' });
+    expect(await screen.findByRole('heading', { name: 'This event is not ready' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Resolve' }));
+    expect(screen.queryByRole('heading', { name: 'This event is not ready' })).not.toBeInTheDocument();
+    expect(document.querySelector('.pivot-curation-location-popup')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Mark location TBD' }));
+    expect(onLocationReview).toHaveBeenCalledWith(
+      '1',
+      'correct_representation',
+      expect.objectContaining({ mode: 'tbd' }),
+    );
+
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(document.querySelector('.pivot-curation-location-popup')).not.toBeInTheDocument();
   });
 
   it('opens true fullscreen over the dashboard and exits with Escape', () => {

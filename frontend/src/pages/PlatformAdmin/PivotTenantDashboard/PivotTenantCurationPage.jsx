@@ -1412,6 +1412,43 @@ function PivotTenantCurationPage({
     [addNotification, patchEventOverrides, refreshAll],
   );
 
+  const handleLocationReview = useCallback(
+    async (eventId, action, richLocation) => {
+      if (action === 'invalid_json') {
+        addNotification({
+          title: 'Invalid location JSON',
+          message: 'The rich location must be valid JSON.',
+          type: 'error',
+        });
+        return;
+      }
+      setBusyKey(`location-${eventId}`);
+      const { data, error } = await authenticatedRequest(
+        `/admin/platform/tenants/${tenantKey}/rich-location-migration/reviews/${eventId}`,
+        {
+          method: 'POST',
+          data: { action, ...(richLocation !== undefined ? { richLocation } : {}) },
+        },
+      );
+      setBusyKey(null);
+      if (error || !data?.success) {
+        addNotification({
+          title: 'Could not save location',
+          message: data?.message || error || 'Request failed',
+          type: 'error',
+        });
+        return;
+      }
+      refreshAll();
+      addNotification({
+        title: action === 'reject_match' ? 'Google match dismissed' : 'Location resolved',
+        message: data.data?.candidate?.name || '',
+        type: 'success',
+      });
+    },
+    [addNotification, refreshAll, tenantKey],
+  );
+
   const handleBulkEditorial = useCallback(
     async (tier) => {
       if (!selectedEvents.length) return;
@@ -2813,6 +2850,7 @@ function PivotTenantCurationPage({
             onBulkUnfeature={handleBulkUnfeature}
             onToggleFeatured={handleToggleFeatured}
             onEditorialChange={handleEditorialChange}
+            onLocationReview={handleLocationReview}
             onBulkEditorial={handleBulkEditorial}
             selectionPolicy={selectionPolicy}
             onSelectionPolicyChange={handleSelectionPolicyChange}
