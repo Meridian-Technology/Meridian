@@ -1,6 +1,9 @@
 module.exports = {
   testEnvironment: 'node',
   roots: ['<rootDir>/tests'],
+  // Keep haste maps writable when verification and judge runs use different
+  // sandboxes; Jest's shared macOS temporary cache may be read-only to one run.
+  cacheDirectory: '<rootDir>/node_modules/.cache/jest',
   clearMocks: true,
   transform: {},
   testTimeout: 30000,

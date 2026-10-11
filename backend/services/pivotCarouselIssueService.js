@@ -11,10 +11,7 @@ const getGlobalModels = require('./getGlobalModelService');
 const { getTenantByKey } = require('./tenantConfigService');
 const { isPivotTenant } = require('../utilities/pivotDropSchedule');
 const { FORMATS } = require('../schemas/pivotCarouselAccount');
-const {
-  MAX_SOCIAL_CAPTION_LENGTH,
-  MAX_POST_HISTORY,
-} = require('../schemas/pivotCarouselDeck');
+const { MAX_SOCIAL_CAPTION_LENGTH } = require('../schemas/pivotCarouselDeck');
 const { slideTypeFor } = require('../constants/zineSlideTypes');
 const {
   LIMITS: ISSUE_LIMITS,
@@ -113,7 +110,6 @@ function serializePosting(posting) {
   if (!posting) return null;
   return {
     revision: posting.revision,
-    captionRevision: posting.captionRevision,
     postedAt: posting.postedAt,
     postedBy: posting.postedBy || null,
     recordedAt: posting.recordedAt,
@@ -143,30 +139,15 @@ function serializeIssue(doc) {
     origin,
     // Only a generated issue has a review state. A manual issue reads as null
     // so the editor cannot show "Unapproved draft" over someone's own work.
-    reviewState: origin === 'agent-generated' ? (row.reviewState || 'unapproved-draft') : null,
+    reviewState: origin === 'agent-generated' ? (row.reviewState || 'unapproved') : null,
     socialCaption: row.socialCaption || '',
-    captionRevision: row.captionRevision || 1,
-    generation: row.generation
-      ? {
-        jobId: row.generation.jobId || null,
-        attemptId: row.generation.attemptId || null,
-        contextVersion: row.generation.contextVersion || null,
-        policyVersion: row.generation.policyVersion || null,
-        feedbackVersion: row.generation.feedbackVersion || null,
-        implementationRevision: row.generation.implementationRevision || null,
-        generatedAt: row.generation.generatedAt || null,
-        baselineRevisionId: row.generation.baselineRevisionId
-          ? String(row.generation.baselineRevisionId)
-          : null,
-      }
-      : null,
+    editorialVersion: row.editorialVersion || 0,
+    feedbackNotes: (row.feedbackNotes || []).map(require('./pivotCarouselEditorialFeedbackService').serializeFeedbackRecord),
     approval: row.approval
       ? {
         revision: row.approval.revision,
-        captionRevision: row.approval.captionRevision,
         approvedAt: row.approval.approvedAt,
         approvedBy: row.approval.approvedBy || null,
-        note: row.approval.note || null,
       }
       : null,
     posting: serializePosting(row.posting),
@@ -273,7 +254,7 @@ async function listCarouselIssues(req, accountId, query = {}) {
   };
 }
 
-async function createCarouselIssue(req, accountId, body = {}) {
+async function createIssue(req, accountId, body, origin) {
   const loaded = await loadAccount(req, accountId);
   if (loaded.error) return loaded;
   const name = text(body.name, 80);
@@ -319,16 +300,19 @@ async function createCarouselIssue(req, accountId, body = {}) {
     document,
     curation: body.curation || null,
     sources: body.sources || [],
-    // This route creates human issues. Generated drafts arrive through the
-    // compute apply path, which is the only caller allowed to set an origin.
-    origin: 'manual',
-    reviewState: null,
+    // Admin routes create human issues. Generated drafts arrive through the
+    // compute apply path, which supplies its origin internally.
+    origin,
+    reviewState: origin === 'agent-generated' ? 'unapproved' : null,
     socialCaption,
-    captionRevision: 1,
     createdBy: actorId(req),
     updatedBy: actorId(req),
   });
   return { data: { issue: serializeIssue(doc) } };
+}
+
+async function createCarouselIssue(req, accountId, body = {}) {
+  return createIssue(req, accountId, body, 'manual');
 }
 
 async function getCarouselIssue(req, accountId, issueId) {
@@ -363,17 +347,13 @@ function normalizeCaption(value) {
 async function writeIssue(req, accountId, issueId, body, mutate, snapshotMeta = null) {
   const loaded = await getCarouselIssue(req, accountId, issueId);
   if (loaded.error) return loaded;
-  const revisions = require('./pivotCarouselRevisionService');
   const { PivotCarouselDeck } = getGlobalModels(req, 'PivotCarouselDeck');
-  let doc = await PivotCarouselDeck.findOne({ _id: issueId, accountId });
-  if (doc.pendingSnapshot) {
-    // A previous write was interrupted between its head update and its history
-    // commit. Settle that before layering another revision on top.
-    await revisions.reconcileIssueSnapshots(req, doc._id);
-    doc = await PivotCarouselDeck.findOne({ _id: issueId, accountId });
-  }
+  const doc = await PivotCarouselDeck.findOne({ _id: issueId, accountId });
   const conflict = checkRevision(doc.revision || 1, body.revision);
   if (conflict) return { ...conflict, issue: serializeIssue(doc) };
+  const editorial = require('./pivotCarouselEditorialFeedbackService');
+  const generated = doc.origin === 'agent-generated';
+  const before = generated ? editorial.editorialFields(doc) : null;
   const account = (await loadAccount(req, accountId)).account;
   const sourceError = await assertSources(req, account, body.sources);
   if (sourceError) return sourceError;
@@ -412,14 +392,11 @@ async function writeIssue(req, accountId, issueId, body, mutate, snapshotMeta = 
   }
   if (body.sources !== undefined) doc.sources = body.sources;
   const nextRevision = (doc.revision || 1) + 1;
-  let captionChanged = false;
   if (body.socialCaption !== undefined) {
     const normalized = normalizeCaption(body.socialCaption);
     if (normalized.error) return normalized;
     if (normalized.caption !== (doc.socialCaption || '')) {
       doc.socialCaption = normalized.caption;
-      doc.captionRevision = nextRevision;
-      captionChanged = true;
     }
   }
   await mutate(doc, loaded);
@@ -429,58 +406,37 @@ async function writeIssue(req, accountId, issueId, body, mutate, snapshotMeta = 
   // A generated issue that moves to a new revision is no longer the thing
   // anybody approved, so it goes back to being an unapproved draft. Approval
   // names one exact revision and is never carried forward to another.
-  const generated = (doc.origin || 'manual') === 'agent-generated';
   if (generated) {
     doc.approval = null;
-    doc.reviewState = 'unapproved-draft';
+    doc.reviewState = 'unapproved';
   }
   await doc.validate();
 
-  // Persist the history row before the head moves. If this throws the save
-  // fails and nothing changed, which is the point: an acknowledged write can
-  // never be missing its record of what was written.
-  let pending = null;
-  try {
-    pending = await revisions.beginHeadSnapshot(req, {
-      doc,
-      targetRevision: nextRevision,
-      meta: snapshotMeta || {},
-    });
-  } catch (err) {
-    console.error('carousel revision snapshot could not be staged', err);
-    return fail(
-      'The issue could not be saved because its history could not be recorded. Your local edits are still available.',
-      503,
-      'HISTORY_UNAVAILABLE',
-    );
-  }
-  if (pending) {
-    doc.pendingSnapshot = {
-      revisionId: pending._id,
-      headRevision: nextRevision,
-      requestedAt: new Date(),
-    };
-  }
-
-  const changes = doc.getChanges();
+  let changes = doc.getChanges();
   if (generated) {
     // Written unconditionally, not just when this copy of the issue happened
     // to be holding an approval. An approval can land between the read above
     // and the swap below, and the compare-and-swap would still match because
     // approving does not move the revision. Clearing it here is what stops an
     // approval from silently covering an edit nobody approved.
-    changes.$set = { ...(changes.$set || {}), approval: null, reviewState: 'unapproved-draft' };
+    changes.$set = { ...(changes.$set || {}), approval: null, reviewState: 'unapproved' };
     if (changes.$unset) {
       delete changes.$unset.approval;
       delete changes.$unset.reviewState;
       if (!Object.keys(changes.$unset).length) delete changes.$unset;
     }
+    const edit = doc.editLog.create({
+      actor: actorId(req), time: new Date(), version: (doc.editorialVersion || 0) + 1,
+      fromRevision: body.revision, toRevision: nextRevision,
+      changes: editorial.editorialChanges(before, editorial.editorialFields(doc)),
+    });
+    await edit.validate();
+    changes = editorial.appendEditorialRecord(changes, 'editLog', edit.toObject());
   }
   const saved = await PivotCarouselDeck.findOneAndUpdate(
     { _id: issueId, accountId, revision: body.revision }, changes, { new: true, runValidators: true },
   );
   if (!saved) {
-    await revisions.abandonHeadSnapshot(req, pending);
     const current = await PivotCarouselDeck.findOne({ _id: issueId, accountId });
     return fail('The issue changed while saving. Your local edits are still available.', 409, 'REVISION_CONFLICT', {
       storedRevision: current?.revision,
@@ -488,15 +444,13 @@ async function writeIssue(req, accountId, issueId, body, mutate, snapshotMeta = 
       issue: current ? serializeIssue(current) : undefined,
     });
   }
-  if (pending) {
-    await revisions.commitHeadSnapshot(req, pending, saved.revision);
-    await PivotCarouselDeck.updateOne(
-      { _id: issueId, 'pendingSnapshot.revisionId': pending._id },
-      { $set: { pendingSnapshot: null } },
-    );
-    saved.pendingSnapshot = null;
+  try {
+    await require('./pivotCarouselRevisionService').recordHeadSnapshot(req, saved, snapshotMeta || {});
+  } catch (err) {
+    // Keep the existing save contract: the head has already committed.
+    console.error('carousel revision snapshot failed', err);
   }
-  return { data: { issue: serializeIssue(saved), captionChanged } };
+  return { data: { issue: serializeIssue(saved) } };
 }
 
 async function renameCarouselIssue(req, accountId, issueId, body = {}) {
@@ -534,41 +488,14 @@ async function restoreCarouselIssue(req, accountId, issueId, body = {}) {
 }
 
 /**
- * Creates the one new unapproved draft a generated proposal becomes.
+ * Creates a new generated issue as an unapproved draft.
  *
  * Deliberately not reachable from the admin routes: an admin creating an issue
  * is creating their own work, and nothing a human types should be able to
  * claim it came from the editorial pipeline.
  */
 async function createGeneratedCarouselIssue(req, accountId, body = {}) {
-  const created = await createCarouselIssue(req, accountId, body);
-  if (created.error) return created;
-  const revisions = require('./pivotCarouselRevisionService');
-  const { PivotCarouselDeck } = getGlobalModels(req, 'PivotCarouselDeck');
-  const doc = await PivotCarouselDeck.findById(created.data.issue.id);
-  doc.origin = 'agent-generated';
-  doc.reviewState = 'unapproved-draft';
-  doc.generation = {
-    jobId: text(body.generation?.jobId, 128) || null,
-    attemptId: text(body.generation?.attemptId, 128) || null,
-    proposalIdempotencyKey: text(body.generation?.proposalIdempotencyKey, 128) || null,
-    contextVersion: text(body.generation?.contextVersion, 128) || null,
-    policyVersion: text(body.generation?.policyVersion, 128) || null,
-    feedbackVersion: text(body.generation?.feedbackVersion, 128) || null,
-    implementationRevision: text(body.generation?.implementationRevision, 128) || null,
-    generatedAt: body.generation?.generatedAt ? new Date(body.generation.generatedAt) : new Date(),
-    baselineRevisionId: null,
-  };
-  await doc.save();
-  // The baseline is what the agent produced, before any human touched it. It
-  // is what "generated versus approved" comparisons are read against later.
-  const baseline = await revisions.recordProtectedBaseline(req, doc, 'generation');
-  doc.generation.baselineRevisionId = baseline._id;
-  await PivotCarouselDeck.updateOne(
-    { _id: doc._id },
-    { $set: { 'generation.baselineRevisionId': baseline._id } },
-  );
-  return { data: { issue: serializeIssue(doc), baselineRevisionId: String(baseline._id) } };
+  return createIssue(req, accountId, body, 'agent-generated');
 }
 
 async function loadIssueForDecision(req, accountId, issueId) {
@@ -596,33 +523,14 @@ async function approveCarouselIssue(req, accountId, issueId, body = {}) {
   }
   const conflict = checkRevision(doc.revision || 1, body.revision);
   if (conflict) return { ...conflict, issue: serializeIssue(doc) };
-  if (body.captionRevision !== undefined && body.captionRevision !== (doc.captionRevision || 1)) {
-    return fail('The caption changed since it was reviewed.', 409, 'REVISION_CONFLICT', {
-      storedRevision: doc.revision,
-      storedCaptionRevision: doc.captionRevision || 1,
-      presentedRevision: body.revision,
-      issue: serializeIssue(doc),
-    });
-  }
-  const note = body.note === undefined ? null : text(body.note, 1000) || null;
-
   if (doc.approval && doc.approval.revision === (doc.revision || 1)) {
     return { data: { issue: serializeIssue(doc), alreadyApproved: true } };
   }
 
-  const revisions = require('./pivotCarouselRevisionService');
-  const baseline = await revisions.recordProtectedBaseline(req, doc, 'approval', {
-    actedAt: new Date(),
-    actedBy: actorId(req),
-    name: note,
-  });
   const approval = {
     revision: doc.revision || 1,
-    captionRevision: doc.captionRevision || 1,
     approvedAt: new Date(),
     approvedBy: actorId(req),
-    note,
-    baselineRevisionId: baseline._id,
   };
   const { PivotCarouselDeck } = getGlobalModels(req, 'PivotCarouselDeck');
   const saved = await PivotCarouselDeck.findOneAndUpdate(
@@ -630,54 +538,21 @@ async function approveCarouselIssue(req, accountId, issueId, body = {}) {
       _id: issueId,
       accountId: loaded.account._id,
       revision: body.revision,
-      captionRevision: doc.captionRevision || 1,
+      origin: 'agent-generated',
+      reviewState: 'unapproved',
+      approval: null,
     },
     { $set: { reviewState: 'approved', approval, updatedBy: actorId(req) } },
-    { new: true },
+    { new: true, runValidators: true },
   );
   if (!saved) {
     const current = await PivotCarouselDeck.findOne({ _id: issueId, accountId: loaded.account._id });
+    // Another approver may have won on the same revision. Preserve that actor
+    // and time rather than overwriting the record on a concurrent request.
+    if (current?.revision === body.revision && current.approval?.revision === body.revision) {
+      return { data: { issue: serializeIssue(current), alreadyApproved: true } };
+    }
     return fail('The issue changed while approving it.', 409, 'REVISION_CONFLICT', {
-      storedRevision: current?.revision,
-      presentedRevision: body.revision,
-      issue: current ? serializeIssue(current) : undefined,
-    });
-  }
-  return { data: { issue: serializeIssue(saved) } };
-}
-
-/**
- * Reject or request changes. This never posts, never deletes, and never
- * silently edits: it returns the issue to being an unapproved draft and, if
- * asked, archives it. Rejecting an issue is not the same as it having been
- * posted and taken down.
- */
-async function rejectCarouselIssue(req, accountId, issueId, body = {}) {
-  const loaded = await loadIssueForDecision(req, accountId, issueId);
-  if (loaded.error) return loaded;
-  const { doc } = loaded;
-  if ((doc.origin || 'manual') !== 'agent-generated') {
-    return fail('Only a generated issue is approved or rejected.', 409, 'NOT_GENERATED_ISSUE');
-  }
-  const conflict = checkRevision(doc.revision || 1, body.revision);
-  if (conflict) return { ...conflict, issue: serializeIssue(doc) };
-
-  const { PivotCarouselDeck } = getGlobalModels(req, 'PivotCarouselDeck');
-  const saved = await PivotCarouselDeck.findOneAndUpdate(
-    { _id: issueId, accountId: loaded.account._id, revision: body.revision },
-    {
-      $set: {
-        reviewState: 'unapproved-draft',
-        approval: null,
-        updatedBy: actorId(req),
-        ...(body.archive === true ? { status: 'archived' } : {}),
-      },
-    },
-    { new: true },
-  );
-  if (!saved) {
-    const current = await PivotCarouselDeck.findOne({ _id: issueId, accountId: loaded.account._id });
-    return fail('The issue changed while rejecting it.', 409, 'REVISION_CONFLICT', {
       storedRevision: current?.revision,
       presentedRevision: body.revision,
       issue: current ? serializeIssue(current) : undefined,
@@ -697,24 +572,22 @@ async function rejectCarouselIssue(req, accountId, issueId, body = {}) {
 async function markCarouselIssuePosted(req, accountId, issueId, body = {}) {
   const loaded = await loadIssueForDecision(req, accountId, issueId);
   if (loaded.error) return loaded;
-  let { doc } = loaded;
+  const { doc } = loaded;
   const generated = (doc.origin || 'manual') === 'agent-generated';
   const conflict = checkRevision(doc.revision || 1, body.revision);
   if (conflict) return { ...conflict, issue: serializeIssue(doc) };
 
-  if (generated && body.approve === true && !(doc.approval && doc.approval.revision === doc.revision)) {
-    const approved = await approveCarouselIssue(req, accountId, issueId, {
-      revision: body.revision,
-      note: body.note,
-    });
-    if (approved.error) return approved;
-    const { PivotCarouselDeck } = getGlobalModels(req, 'PivotCarouselDeck');
-    doc = await PivotCarouselDeck.findOne({ _id: issueId, accountId: loaded.account._id });
+  // A retry still has to name the current revision, but it preserves the first
+  // actor, timestamp, URL and snapshot instead of writing another post.
+  const existing = (doc.postHistory || []).find((entry) => entry.revision === body.revision);
+  if (existing) {
+    return { data: { issue: serializeIssue(doc), alreadyPosted: true } };
   }
+
   // A generated issue is posted from an approved revision, never from one
   // someone merely looked at. Manual issues keep their existing workflow and
   // acquire posted history without ever entering the generated review state.
-  if (generated && !(doc.approval && doc.approval.revision === (doc.revision || 1))) {
+  if (generated && !(doc.reviewState === 'approved' && doc.approval?.revision === body.revision)) {
     return fail(
       'Approve this exact revision before recording it as posted.',
       409,
@@ -738,25 +611,14 @@ async function markCarouselIssuePosted(req, accountId, issueId, body = {}) {
     }
   }
 
-  // One posted record per revision. A retried request returns the record it
-  // already made instead of claiming the issue went out twice.
-  const existing = (doc.postHistory || []).find((entry) => entry.revision === (doc.revision || 1));
-  if (existing) {
-    return { data: { issue: serializeIssue(doc), alreadyPosted: true } };
-  }
-  if ((doc.postHistory || []).length >= MAX_POST_HISTORY) {
-    return fail('This issue already has the maximum number of posted records.', 409, 'POST_HISTORY_FULL');
-  }
-
   const revisions = require('./pivotCarouselRevisionService');
-  const snapshot = await revisions.recordProtectedBaseline(req, doc, 'posted', {
+  const snapshot = await revisions.recordPostedSnapshot(req, doc, {
     actedAt: postedAt,
     actedBy: actorId(req),
     instagramUrl,
   });
   const posting = {
     revision: doc.revision || 1,
-    captionRevision: doc.captionRevision || 1,
     postedAt,
     postedBy: actorId(req),
     recordedAt: new Date(),
@@ -770,13 +632,24 @@ async function markCarouselIssuePosted(req, accountId, issueId, body = {}) {
       accountId: loaded.account._id,
       revision: body.revision,
       'postHistory.revision': { $ne: doc.revision || 1 },
+      // Approval must still cover the head when the write lands, not just
+      // when the request loaded its copy of the issue.
+      ...(generated ? {
+        origin: 'agent-generated',
+        reviewState: 'approved',
+        'approval.revision': body.revision,
+      } : {}),
     },
-    { $set: { posting, updatedBy: actorId(req) }, $push: { postHistory: posting } },
-    { new: true },
+    { $set: { posting, updatedBy: actorId(req), ...(generated ? { reviewState: 'posted' } : {}) }, $push: { postHistory: posting } },
+    { new: true, runValidators: true },
   );
   if (!saved) {
+    // This request's compare-and-swap did not land. Its snapshot is unreferenced
+    // and must not look like another successful post.
+    const { PivotCarouselRevision } = getGlobalModels(req, 'PivotCarouselRevision');
+    await PivotCarouselRevision.deleteOne({ _id: snapshot._id, issueId, kind: 'posted' });
     const current = await PivotCarouselDeck.findOne({ _id: issueId, accountId: loaded.account._id });
-    if (current && (current.postHistory || []).some((entry) => entry.revision === body.revision)) {
+    if (current?.revision === body.revision && (current.postHistory || []).some((entry) => entry.revision === body.revision)) {
       return { data: { issue: serializeIssue(current), alreadyPosted: true } };
     }
     return fail('The issue changed while recording the post.', 409, 'REVISION_CONFLICT', {
@@ -818,12 +691,11 @@ async function duplicateCarouselIssue(req, accountId, issueId) {
     showIssueNumber: source.showIssueNumber,
     issue: source.issue,
     voice: source.voice,
-    // A copy is new human work. It inherits the words, never the provenance,
+    // A copy is new human work. It inherits the words, never
     // the approval or the record that something went out.
     origin: 'manual',
     reviewState: null,
     socialCaption: source.socialCaption || '',
-    captionRevision: 1,
     createdBy: actorId(req),
     updatedBy: actorId(req),
   });
@@ -935,7 +807,6 @@ async function createEditableCopy(req, accountId, issueId) {
     origin: 'manual',
     reviewState: null,
     socialCaption: source.socialCaption || '',
-    captionRevision: 1,
     createdBy: actorId(req),
     updatedBy: actorId(req),
   });
@@ -948,7 +819,6 @@ module.exports = {
   normalizeCaption,
   createGeneratedCarouselIssue,
   approveCarouselIssue,
-  rejectCarouselIssue,
   markCarouselIssuePosted,
   createCarouselAccount,
   getCarouselAccount,

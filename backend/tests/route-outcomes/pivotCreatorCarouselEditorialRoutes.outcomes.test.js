@@ -9,7 +9,8 @@ let currentUser = ADMIN;
 let platformAdmin = true;
 
 jest.mock('../../middlewares/verifyToken', () => ({
-  verifyToken: (req, _res, next) => {
+  verifyToken: (req, res, next) => {
+    if (!currentUser) return res.status(401).json({ success: false, message: 'Authentication required.' });
     req.user = { ...currentUser };
     next();
   },
@@ -56,6 +57,7 @@ describe('pivotAdmin carousel editorial routes outcomes', () => {
   let mongo;
   let app;
   let serviceReq;
+  let writeHooks = [];
 
   beforeAll(async () => {
     mongo = await createMongoMemoryConnection({ withGlobalDb: true });
@@ -78,6 +80,15 @@ describe('pivotAdmin carousel editorial routes outcomes', () => {
     await mongo.reset();
     currentUser = ADMIN;
     platformAdmin = true;
+    writeHooks = [];
+  });
+
+  afterEach(() => {
+    try {
+      for (const hook of writeHooks) expect(hook).toHaveBeenCalled();
+    } finally {
+      jest.restoreAllMocks();
+    }
   });
 
   afterAll(async () => {
@@ -86,6 +97,22 @@ describe('pivotAdmin carousel editorial routes outcomes', () => {
 
   function models() {
     return getGlobalModels(serviceReq, 'PivotCarouselDeck', 'PivotCarouselRevision');
+  }
+
+  // Control the race order while every operation still runs against Mongo.
+  // Consume the hook before the inner request, so its write uses the real method.
+  function interleaveNextWrite(interleave) {
+    const { PivotCarouselDeck } = models();
+    // getGlobalModels supplies a collection name on each lookup, so Mongoose
+    // creates a fresh model constructor. The underlying collection is shared.
+    const collection = PivotCarouselDeck.collection;
+    const write = collection.findOneAndUpdate.bind(collection);
+    const hook = jest.spyOn(collection, 'findOneAndUpdate').mockImplementationOnce(async (...args) => {
+      await interleave();
+      return write(...args);
+    });
+    writeHooks.push(hook);
+    return hook;
   }
 
   async function createAccount(overrides = {}) {
@@ -114,13 +141,6 @@ describe('pivotAdmin carousel editorial routes outcomes', () => {
       name: 'Made by hand',
       document: makeDocument(),
       socialCaption: 'three nights worth leaving the house for',
-      generation: {
-        jobId: 'job:compose-sf-0001',
-        attemptId: '653000000000000000000301',
-        proposalIdempotencyKey: 'idem:compose-proposal-sf-0001',
-        policyVersion: 'pol:carousel.0123456789abcdef0123456789abcdef',
-        feedbackVersion: 'fb:sf.v3',
-      },
       ...overrides,
     });
     expect(created.error).toBeUndefined();
@@ -128,22 +148,39 @@ describe('pivotAdmin carousel editorial routes outcomes', () => {
   }
 
   describe('authorization and scope', () => {
+    it('requires authentication for approval and mark posted', async () => {
+      const account = await createAccount();
+      const issue = await createGenerated(account.id);
+      currentUser = null;
+      for (const action of ['approve', 'mark-posted', 'feedback']) {
+        const response = await request(app)
+          .post(`/admin/pivot/carousel-accounts/${account.id}/issues/${issue.id}/${action}`)
+          .send({ revision: 1 });
+        expect(response.status).toBe(401);
+      }
+      expect((await request(app).get(`/admin/pivot/carousel-accounts/${account.id}/editorial-feedback`)).status).toBe(401);
+      const { PivotCarouselDeck, PivotCarouselRevision } = models();
+      expect((await PivotCarouselDeck.findById(issue.id).lean()).approval).toBeNull();
+      expect(await PivotCarouselRevision.countDocuments({ issueId: issue.id, kind: 'posted' })).toBe(0);
+    });
+
     it('refuses every editorial action without platform admin', async () => {
       const account = await createAccount();
       const issue = await createGenerated(account.id);
       platformAdmin = false;
 
-      for (const path of ['approve', 'reject', 'mark-posted']) {
+      for (const path of ['approve', 'mark-posted', 'feedback']) {
         const response = await request(app)
           .post(`/admin/pivot/carousel-accounts/${account.id}/issues/${issue.id}/${path}`)
           .send({ revision: 1 });
         expect(response.status).toBe(403);
       }
+      expect((await request(app).get(`/admin/pivot/carousel-accounts/${account.id}/editorial-feedback`)).status).toBe(403);
 
       platformAdmin = true;
       const { PivotCarouselDeck } = models();
       const stored = await PivotCarouselDeck.findById(issue.id).lean();
-      expect(stored.reviewState).toBe('unapproved-draft');
+      expect(stored.reviewState).toBe('unapproved');
       expect(stored.posting).toBeNull();
     });
 
@@ -156,14 +193,16 @@ describe('pivotAdmin carousel editorial routes outcomes', () => {
       });
       const issue = await createGenerated(sf.id);
 
-      const response = await request(app)
-        .post(`/admin/pivot/carousel-accounts/${nyc.id}/issues/${issue.id}/approve`)
-        .send({ revision: 1 });
-      expect(response.status).toBe(404);
-      expect(response.body.code).toBe('ISSUE_NOT_FOUND');
+      for (const action of ['approve', 'mark-posted', 'feedback']) {
+        const response = await request(app)
+          .post(`/admin/pivot/carousel-accounts/${nyc.id}/issues/${issue.id}/${action}`)
+          .send({ revision: 1 });
+        expect(response.status).toBe(404);
+        expect(response.body.code).toBe('ISSUE_NOT_FOUND');
+      }
 
       const { PivotCarouselDeck } = models();
-      expect((await PivotCarouselDeck.findById(issue.id).lean()).reviewState).toBe('unapproved-draft');
+      expect((await PivotCarouselDeck.findById(issue.id).lean()).reviewState).toBe('unapproved');
     });
 
     it('refuses an account whose owner tenant is not a Pivot city', async () => {
@@ -180,6 +219,69 @@ describe('pivotAdmin carousel editorial routes outcomes', () => {
     });
   });
 
+  describe('editorial feedback over the wire', () => {
+    it('appends generated edits and issue notes and reads them with an account version', async () => {
+      const account = await createAccount();
+      const issue = await createGenerated(account.id);
+      const base = `/admin/pivot/carousel-accounts/${account.id}`;
+      const edited = await request(app).patch(`${base}/issues/${issue.id}`)
+        .send({ revision: 1, socialCaption: 'Caption after review' });
+      expect(edited.status).toBe(200);
+      expect(edited.body.data.issue.editorialVersion).toBe(1);
+      const noted = await request(app).post(`${base}/issues/${issue.id}/feedback`)
+        .send({ revision: 2, text: '  More specific next time  ', disposition: 'change', author: OUTSIDER.globalUserId });
+      expect(noted.status).toBe(201);
+      expect(noted.body.data.note).toMatchObject({ author: ADMIN.globalUserId, revision: 2, version: 2, text: 'More specific next time', disposition: 'change' });
+      const loaded = await request(app).get(`${base}/issues/${issue.id}`);
+      expect(loaded.body.data.issue.revision).toBe(2);
+      expect(loaded.body.data.issue.reviewState).toBe('unapproved');
+      expect(loaded.body.data.issue.feedbackNotes).toHaveLength(1);
+      const feedback = await request(app).get(`${base}/editorial-feedback`);
+      expect(feedback.status).toBe(200);
+      expect(feedback.body.data.items.map(item => item.kind)).toEqual(['note', 'edit']);
+      expect(feedback.body.data.items[1].changes).toEqual([{
+        field: 'caption', before: issue.socialCaption, after: 'Caption after review',
+      }]);
+      const incremental = await request(app).get(`${base}/editorial-feedback`).query({ sinceVersion: feedback.body.data.version });
+      expect(incremental.status).toBe(200);
+      expect(incremental.body.data.items).toEqual([]);
+    });
+
+    it('rejects invalid or stale feedback without creating notes', async () => {
+      const account = await createAccount();
+      const issue = await createGenerated(account.id);
+      const base = `/admin/pivot/carousel-accounts/${account.id}/issues/${issue.id}`;
+      for (const body of [
+        { revision: 1, text: '', disposition: 'change' },
+        { revision: 1, text: 'Note', disposition: 'delete' },
+      ]) {
+        expect((await request(app).post(`${base}/feedback`).send(body)).status).toBe(422);
+      }
+      expect((await request(app).patch(base).send({ revision: 1, socialCaption: 'Edited' })).status).toBe(200);
+      const stale = await request(app).post(`${base}/feedback`).send({ revision: 1, text: 'Old review', disposition: 'approve' });
+      expect(stale.status).toBe(409);
+      expect(stale.body).toMatchObject({ code: 'REVISION_CONFLICT', storedRevision: 2 });
+      const { PivotCarouselDeck } = models();
+      expect((await PivotCarouselDeck.findById(issue.id).lean()).feedbackNotes).toEqual([]);
+    });
+
+    it('reads only the requested account and refuses another account’s cursor', async () => {
+      const first = await createAccount();
+      const second = await createAccount({ displayName: 'Other SF' });
+      const issue = await createGenerated(first.id);
+      expect((await request(app).post(`/admin/pivot/carousel-accounts/${first.id}/issues/${issue.id}/feedback`)
+        .send({ revision: 1, text: 'Private account feedback', disposition: 'reject' })).status).toBe(201);
+      const feedback = await request(app).get(`/admin/pivot/carousel-accounts/${first.id}/editorial-feedback`);
+      expect(feedback.body.data.items).toHaveLength(1);
+      const isolated = await request(app).get(`/admin/pivot/carousel-accounts/${second.id}/editorial-feedback`);
+      expect(isolated.body.data.items).toEqual([]);
+      const foreign = await request(app).get(`/admin/pivot/carousel-accounts/${second.id}/editorial-feedback`)
+        .query({ sinceVersion: feedback.body.data.version });
+      expect(foreign.status).toBe(400);
+      expect(foreign.body.code).toBe('INVALID_FEEDBACK_VERSION');
+    });
+  });
+
   describe('captions over the wire', () => {
     it('saves, reloads and conflicts on a caption like any other content', async () => {
       const account = await createAccount();
@@ -190,7 +292,6 @@ describe('pivotAdmin carousel editorial routes outcomes', () => {
         .send({ revision: 1, socialCaption: 'three openings and a long walk' });
       expect(saved.status).toBe(200);
       expect(saved.body.data.issue.socialCaption).toBe('three openings and a long walk');
-      expect(saved.body.data.issue.captionRevision).toBe(2);
 
       const reloaded = await request(app)
         .get(`/admin/pivot/carousel-accounts/${account.id}/issues/${issue.id}`);
@@ -225,23 +326,116 @@ describe('pivotAdmin carousel editorial routes outcomes', () => {
     });
   });
 
-  describe('approve, reject and mark posted', () => {
+  describe('approve and mark posted', () => {
     it('approves an exact revision and records what was approved', async () => {
       const account = await createAccount();
       const issue = await createGenerated(account.id);
 
       const response = await request(app)
         .post(`/admin/pivot/carousel-accounts/${account.id}/issues/${issue.id}/approve`)
-        .send({ revision: 1, captionRevision: 1, note: 'ship it' });
+        .send({ revision: 1 });
       expect(response.status).toBe(200);
       expect(response.body.data.issue.reviewState).toBe('approved');
-      expect(response.body.data.issue.approval).toMatchObject({ revision: 1, captionRevision: 1 });
+      expect(response.body.data.issue.approval.revision).toBe(1);
 
-      const { PivotCarouselDeck, PivotCarouselRevision } = models();
+      const { PivotCarouselDeck } = models();
       const stored = await PivotCarouselDeck.findById(issue.id).lean();
       expect(stored.reviewState).toBe('approved');
       expect(stored.approval.approvedBy).toBe(ADMIN.globalUserId);
-      expect(await PivotCarouselRevision.countDocuments({ issueId: issue.id, kind: 'approval' })).toBe(1);
+      expect(stored.approval.approvedAt).toBeInstanceOf(Date);
+      expect(stored.revision).toBe(1);
+      expect(stored.posting).toBeNull();
+    });
+
+    it('requires an integer expected revision for both actions', async () => {
+      const account = await createAccount();
+      const issue = await createGenerated(account.id);
+      for (const action of ['approve', 'mark-posted']) {
+        for (const body of [{}, { revision: null }, { revision: '1' }, { revision: 1.5 }, { revision: 0 }, { revision: 2 }]) {
+          const response = await request(app)
+            .post(`/admin/pivot/carousel-accounts/${account.id}/issues/${issue.id}/${action}`)
+            .send(body);
+          expect(response.status).toBe(409);
+          expect(response.body).toMatchObject({ code: 'REVISION_CONFLICT', storedRevision: 1 });
+        }
+      }
+      const { PivotCarouselDeck, PivotCarouselRevision } = models();
+      const stored = await PivotCarouselDeck.findById(issue.id).lean();
+      expect(stored.approval).toBeNull();
+      expect(stored.posting).toBeNull();
+      expect(await PivotCarouselRevision.countDocuments({ issueId: issue.id, kind: 'posted' })).toBe(0);
+    });
+
+    it('rejects stale approval and mark-posted even when that revision was already posted', async () => {
+      const account = await createAccount();
+      const issue = await createGenerated(account.id);
+      const base = `/admin/pivot/carousel-accounts/${account.id}/issues/${issue.id}`;
+      expect((await request(app).post(`${base}/approve`).send({ revision: 1 })).status).toBe(200);
+      expect((await request(app).post(`${base}/mark-posted`).send({ revision: 1 })).status).toBe(200);
+      expect((await request(app).patch(base).send({ revision: 1, socialCaption: 'changed' })).status).toBe(200);
+      for (const action of ['approve', 'mark-posted']) {
+        const response = await request(app).post(`${base}/${action}`).send({ revision: 1 });
+        expect(response.status).toBe(409);
+        expect(response.body).toMatchObject({ code: 'REVISION_CONFLICT', storedRevision: 2 });
+      }
+      const { PivotCarouselDeck, PivotCarouselRevision } = models();
+      const stored = await PivotCarouselDeck.findById(issue.id).lean();
+      expect(stored.reviewState).toBe('unapproved');
+      expect(stored.approval).toBeNull();
+      expect(stored.postHistory).toHaveLength(1);
+      expect(await PivotCarouselRevision.countDocuments({ issueId: issue.id, kind: 'posted' })).toBe(1);
+    });
+
+    it('refuses an unapproved generated issue even if the request asks to approve while posting', async () => {
+      const account = await createAccount();
+      const issue = await createGenerated(account.id);
+      const response = await request(app)
+        .post(`/admin/pivot/carousel-accounts/${account.id}/issues/${issue.id}/mark-posted`)
+        .send({ revision: 1, approve: true });
+      expect(response.status).toBe(409);
+      expect(response.body.code).toBe('APPROVAL_REQUIRED');
+      const { PivotCarouselDeck, PivotCarouselRevision } = models();
+      const stored = await PivotCarouselDeck.findById(issue.id).lean();
+      expect(stored.approval).toBeNull();
+      expect(stored.posting).toBeNull();
+      expect(await PivotCarouselRevision.countDocuments({ issueId: issue.id, kind: 'posted' })).toBe(0);
+    });
+
+    it('refuses to post when the approval names another revision', async () => {
+      const account = await createAccount();
+      const issue = await createGenerated(account.id);
+      const { PivotCarouselDeck, PivotCarouselRevision } = models();
+      // Represent a stale approval from an older write; the action must check
+      // its exact revision even if the review-state label still says approved.
+      await PivotCarouselDeck.updateOne({ _id: issue.id }, { $set: {
+        revision: 2, reviewState: 'approved', approval: { revision: 1, approvedAt: new Date(), approvedBy: ADMIN.globalUserId },
+      } });
+      const post = await request(app)
+        .post(`/admin/pivot/carousel-accounts/${account.id}/issues/${issue.id}/mark-posted`)
+        .send({ revision: 2 });
+      expect(post.status).toBe(409);
+      expect(post.body.code).toBe('APPROVAL_REQUIRED');
+      expect(await PivotCarouselRevision.countDocuments({ issueId: issue.id, kind: 'posted' })).toBe(0);
+    });
+
+    it('prevents legacy routes from saving generated content outside its revision check', async () => {
+      const account = await createAccount();
+      const issue = await createGenerated(account.id);
+      const base = `/admin/pivot/carousel-accounts/${account.id}/issues/${issue.id}`;
+      expect((await request(app).post(`${base}/approve`).send({ revision: 1 })).status).toBe(200);
+      const legacy = `/admin/pivot/tenants/sf/carousels/${issue.id}`;
+      const save = await request(app).patch(legacy).send({ title: 'bypassed', voice: { entries: { title: 'bypassed' } } });
+      expect(save.status).toBe(409);
+      expect(save.body.code).toBe('GENERATED_ISSUE_REQUIRES_REVISION');
+      const image = await request(app).post(`${legacy}/slides/slide-a/image`).send({ slotIndex: 0 });
+      expect(image.status).toBe(409);
+      expect(image.body.code).toBe('GENERATED_ISSUE_REQUIRES_REVISION');
+      const { PivotCarouselDeck } = models();
+      const stored = await PivotCarouselDeck.findById(issue.id).lean();
+      expect(stored.title).toBe(issue.title);
+      expect(stored.revision).toBe(1);
+      expect(stored.approval.revision).toBe(1);
+      expect(stored.reviewState).toBe('approved');
     });
 
     it('refuses to approve a manual issue', async () => {
@@ -260,7 +454,10 @@ describe('pivotAdmin carousel editorial routes outcomes', () => {
       expect(stored.approval).toBeNull();
     });
 
-    it('returns a generated issue to unapproved draft after an edit', async () => {
+    it.each([
+      ['slides', { document: makeDocument('rewritten slides') }],
+      ['caption', { socialCaption: 'rewritten after approval' }],
+    ])('returns a generated issue to unapproved after a %s save', async (_field, content) => {
       const account = await createAccount();
       const issue = await createGenerated(account.id);
       await request(app)
@@ -269,9 +466,9 @@ describe('pivotAdmin carousel editorial routes outcomes', () => {
 
       const edited = await request(app)
         .patch(`/admin/pivot/carousel-accounts/${account.id}/issues/${issue.id}`)
-        .send({ revision: 1, socialCaption: 'rewritten after approval' });
+        .send({ revision: 1, ...content });
       expect(edited.status).toBe(200);
-      expect(edited.body.data.issue.reviewState).toBe('unapproved-draft');
+      expect(edited.body.data.issue.reviewState).toBe('unapproved');
       expect(edited.body.data.issue.approval).toBeNull();
 
       const posted = await request(app)
@@ -313,6 +510,9 @@ describe('pivotAdmin carousel editorial routes outcomes', () => {
       const snapshot = await PivotCarouselRevision.findById(stored.posting.snapshotRevisionId).lean();
       expect(snapshot.kind).toBe('posted');
       expect(snapshot.socialCaption).toBe('three nights worth leaving the house for');
+      expect(snapshot.document).toEqual(issue.document);
+      expect(stored.reviewState).toBe('posted');
+      expect(stored.revision).toBe(1);
     });
 
     it('lets a manual issue acquire posted history with no review state', async () => {
@@ -326,6 +526,66 @@ describe('pivotAdmin carousel editorial routes outcomes', () => {
       expect(response.body.data.issue.origin).toBe('manual');
       expect(response.body.data.issue.reviewState).toBeNull();
       expect(response.body.data.issue.posting.revision).toBe(1);
+      expect(response.body.data.issue.posting.instagramUrl).toBeNull();
+      expect(response.body.data.issue.posting.postedBy).toBe(ADMIN.globalUserId);
+    });
+
+    it.each([
+      { name: 'empty', slides: [] },
+      { name: 'legacy', slides: [{ type: 'cover', values: { title: 'legacy cover' } }] },
+    ])('captures $name manual slides and caption without requiring approval', async ({ slides }) => {
+      const account = await createAccount();
+      const issue = await createManualIssue(account.id, { document: null, slides, socialCaption: 'legacy caption' });
+      const posted = await request(app)
+        .post(`/admin/pivot/carousel-accounts/${account.id}/issues/${issue.id}/mark-posted`)
+        .send({ revision: 1 });
+      expect(posted.status).toBe(200);
+      expect(posted.body.data.issue.reviewState).toBeNull();
+      const { PivotCarouselDeck, PivotCarouselRevision } = models();
+      const source = await PivotCarouselDeck.findById(issue.id).lean();
+      const snapshot = await PivotCarouselRevision.findById(source.posting.snapshotRevisionId).lean();
+      expect(snapshot.document).toBeNull();
+      expect(snapshot.slides).toEqual(JSON.parse(JSON.stringify(source.slides)));
+      expect(snapshot.socialCaption).toBe('legacy caption');
+    });
+
+    it.each(['manual', 'agent-generated'])('keeps the posted slides and caption after a later %s issue save', async origin => {
+      const account = await createAccount();
+      const issue = origin === 'manual'
+        ? await createManualIssue(account.id, { socialCaption: 'as published' })
+        : await createGenerated(account.id, { socialCaption: 'as published' });
+      const base = `/admin/pivot/carousel-accounts/${account.id}/issues/${issue.id}`;
+      if (origin === 'agent-generated') {
+        expect((await request(app).post(`${base}/approve`).send({ revision: 1 })).status).toBe(200);
+      }
+      const before = new Date();
+      const posted = await request(app).post(`${base}/mark-posted`).send({ revision: 1 });
+      expect(posted.status).toBe(200);
+      const posting = posted.body.data.issue.posting;
+      expect(new Date(posting.postedAt).getTime()).toBeGreaterThanOrEqual(before.getTime());
+      expect(new Date(posting.postedAt).getTime()).toBeLessThanOrEqual(Date.now());
+      const { PivotCarouselDeck, PivotCarouselRevision } = models();
+      const published = await PivotCarouselRevision.findById(posting.snapshotRevisionId).lean();
+      const saved = await request(app).patch(base).send({
+        revision: 1, document: makeDocument('later slide copy'), socialCaption: 'later caption',
+      });
+      expect(saved.status).toBe(200);
+      expect(saved.body.data.issue.reviewState).toBe(origin === 'manual' ? null : 'unapproved');
+      expect(saved.body.data.issue.approval).toBeNull();
+      expect(await PivotCarouselRevision.findById(posting.snapshotRevisionId).lean()).toEqual(published);
+      expect(published.document).toEqual(issue.document);
+      expect(published.socialCaption).toBe('as published');
+      const stored = await PivotCarouselDeck.findById(issue.id).lean();
+      expect(String(stored.posting.snapshotRevisionId)).toBe(posting.snapshotRevisionId);
+      expect(stored.postHistory).toHaveLength(1);
+      // An attempted update to a history row cannot replace captured content.
+      await PivotCarouselRevision.updateOne({ _id: published._id }, { $set: {
+        document: makeDocument('tampered slides'), socialCaption: 'tampered caption', headRevision: 2,
+      } });
+      const still = await PivotCarouselRevision.findById(published._id).lean();
+      expect(still.document).toEqual(published.document);
+      expect(still.socialCaption).toBe(published.socialCaption);
+      expect(still.headRevision).toBe(published.headRevision);
     });
 
     it('treats a duplicate mark-posted request as the post it already recorded', async () => {
@@ -365,26 +625,130 @@ describe('pivotAdmin carousel editorial routes outcomes', () => {
       const { PivotCarouselDeck } = models();
       expect((await PivotCarouselDeck.findById(issue.id).lean()).posting).toBeNull();
     });
-
-    it('rejecting archives without posting and without deleting the draft', async () => {
-      const account = await createAccount();
-      const issue = await createGenerated(account.id);
-
-      const response = await request(app)
-        .post(`/admin/pivot/carousel-accounts/${account.id}/issues/${issue.id}/reject`)
-        .send({ revision: 1, archive: true });
-      expect(response.status).toBe(200);
-      expect(response.body.data.issue.status).toBe('archived');
-      expect(response.body.data.issue.reviewState).toBe('unapproved-draft');
-
-      const { PivotCarouselDeck } = models();
-      const stored = await PivotCarouselDeck.findById(issue.id).lean();
-      expect(stored).toBeTruthy();
-      expect(stored.posting).toBeNull();
-    });
   });
 
   describe('concurrency over the wire', () => {
+    it('clears an approval that lands after the edit has read the issue', async () => {
+      const account = await createAccount();
+      const issue = await createGenerated(account.id);
+      const base = `/admin/pivot/carousel-accounts/${account.id}/issues/${issue.id}`;
+      interleaveNextWrite(async () => {
+        const approved = await request(app).post(`${base}/approve`).send({ revision: 1 });
+        expect(approved.status).toBe(200);
+      });
+      const edit = await request(app).patch(base).send({ revision: 1, document: makeDocument('raced') });
+      expect(edit.status).toBe(200);
+      const { PivotCarouselDeck } = models();
+      const stored = await PivotCarouselDeck.findById(issue.id).lean();
+      expect(stored.revision).toBe(2);
+      expect(stored.reviewState).toBe('unapproved');
+      expect(stored.approval).toBeNull();
+    });
+
+    it('rejects an approval when a caption save lands after its read', async () => {
+      const account = await createAccount();
+      const issue = await createGenerated(account.id);
+      const base = `/admin/pivot/carousel-accounts/${account.id}/issues/${issue.id}`;
+      interleaveNextWrite(async () => {
+        const edit = await request(app).patch(base).send({ revision: 1, socialCaption: 'raced caption' });
+        expect(edit.status).toBe(200);
+      });
+      const approved = await request(app).post(`${base}/approve`).send({ revision: 1 });
+      expect(approved.status).toBe(409);
+      expect(approved.body).toMatchObject({ code: 'REVISION_CONFLICT', storedRevision: 2 });
+      const { PivotCarouselDeck } = models();
+      const stored = await PivotCarouselDeck.findById(issue.id).lean();
+      expect(stored.approval).toBeNull();
+      expect(stored.socialCaption).toBe('raced caption');
+    });
+
+    it('preserves the winning approver when two approvals race', async () => {
+      const account = await createAccount();
+      const issue = await createGenerated(account.id);
+      const base = `/admin/pivot/carousel-accounts/${account.id}/issues/${issue.id}`;
+      let winner;
+      interleaveNextWrite(async () => {
+        currentUser = OUTSIDER;
+        winner = await request(app).post(`${base}/approve`).send({ revision: 1 });
+        expect(winner.status).toBe(200);
+      });
+      const retried = await request(app).post(`${base}/approve`).send({ revision: 1 });
+      expect(retried.status).toBe(200);
+      expect(retried.body.data.alreadyApproved).toBe(true);
+      expect(retried.body.data.issue.approval).toEqual(winner.body.data.issue.approval);
+      const { PivotCarouselDeck } = models();
+      expect((await PivotCarouselDeck.findById(issue.id).lean()).approval.approvedBy).toBe(OUTSIDER.globalUserId);
+    });
+
+    it.each(['manual', 'agent-generated'])('rejects a %s post when an edit wins and removes its unused snapshot', async origin => {
+      const account = await createAccount();
+      const issue = origin === 'manual' ? await createManualIssue(account.id) : await createGenerated(account.id);
+      const base = `/admin/pivot/carousel-accounts/${account.id}/issues/${issue.id}`;
+      if (origin === 'agent-generated') {
+        expect((await request(app).post(`${base}/approve`).send({ revision: 1 })).status).toBe(200);
+      }
+      interleaveNextWrite(async () => {
+        const edit = await request(app).patch(base).send({ revision: 1, document: makeDocument('raced') });
+        expect(edit.status).toBe(200);
+      });
+      const post = await request(app).post(`${base}/mark-posted`).send({ revision: 1 });
+      expect(post.status).toBe(409);
+      expect(post.body).toMatchObject({ code: 'REVISION_CONFLICT', storedRevision: 2 });
+      const { PivotCarouselDeck, PivotCarouselRevision } = models();
+      expect((await PivotCarouselDeck.findById(issue.id).lean()).posting).toBeNull();
+      expect(await PivotCarouselRevision.countDocuments({ issueId: issue.id, kind: 'posted' })).toBe(0);
+    });
+
+    it('checks approval again when the post is written', async () => {
+      const account = await createAccount();
+      const issue = await createGenerated(account.id);
+      const base = `/admin/pivot/carousel-accounts/${account.id}/issues/${issue.id}`;
+      expect((await request(app).post(`${base}/approve`).send({ revision: 1 })).status).toBe(200);
+      const { PivotCarouselDeck, PivotCarouselRevision } = models();
+      interleaveNextWrite(async () => {
+        await PivotCarouselDeck.updateOne({ _id: issue.id }, { $set: { approval: null, reviewState: 'unapproved' } });
+      });
+      const post = await request(app).post(`${base}/mark-posted`).send({ revision: 1 });
+      expect(post.status).toBe(409);
+      expect((await PivotCarouselDeck.findById(issue.id).lean()).posting).toBeNull();
+      expect(await PivotCarouselRevision.countDocuments({ issueId: issue.id, kind: 'posted' })).toBe(0);
+    });
+
+    it('stores one snapshot when two mark-posted requests race', async () => {
+      const account = await createAccount();
+      const issue = await createGenerated(account.id);
+      const base = `/admin/pivot/carousel-accounts/${account.id}/issues/${issue.id}`;
+      expect((await request(app).post(`${base}/approve`).send({ revision: 1 })).status).toBe(200);
+      let winner;
+      interleaveNextWrite(async () => {
+        winner = await request(app).post(`${base}/mark-posted`).send({ revision: 1 });
+        expect(winner.status).toBe(200);
+      });
+      const retry = await request(app).post(`${base}/mark-posted`).send({ revision: 1 });
+      expect(retry.status).toBe(200);
+      expect(retry.body.data.alreadyPosted).toBe(true);
+      expect(retry.body.data.issue.posting).toEqual(winner.body.data.issue.posting);
+      const { PivotCarouselDeck, PivotCarouselRevision } = models();
+      expect((await PivotCarouselDeck.findById(issue.id).lean()).postHistory).toHaveLength(1);
+      expect(await PivotCarouselRevision.countDocuments({ issueId: issue.id, kind: 'posted' })).toBe(1);
+    });
+
+    it('fails a losing post after another post and edit have advanced the revision', async () => {
+      const account = await createAccount();
+      const issue = await createManualIssue(account.id);
+      const base = `/admin/pivot/carousel-accounts/${account.id}/issues/${issue.id}`;
+      interleaveNextWrite(async () => {
+        expect((await request(app).post(`${base}/mark-posted`).send({ revision: 1 })).status).toBe(200);
+        expect((await request(app).patch(base).send({ revision: 1, socialCaption: 'later' })).status).toBe(200);
+      });
+      const post = await request(app).post(`${base}/mark-posted`).send({ revision: 1 });
+      expect(post.status).toBe(409);
+      expect(post.body).toMatchObject({ code: 'REVISION_CONFLICT', storedRevision: 2 });
+      const { PivotCarouselDeck, PivotCarouselRevision } = models();
+      expect((await PivotCarouselDeck.findById(issue.id).lean()).postHistory).toHaveLength(1);
+      expect(await PivotCarouselRevision.countDocuments({ issueId: issue.id, kind: 'posted' })).toBe(1);
+    });
+
     it('an approval and an edit on the same revision never both take effect', async () => {
       const account = await createAccount();
       const issue = await createGenerated(account.id);
@@ -404,7 +768,7 @@ describe('pivotAdmin carousel editorial routes outcomes', () => {
       if (stored.approval) {
         expect(stored.approval.revision).toBe(stored.revision);
       } else {
-        expect(stored.reviewState).toBe('unapproved-draft');
+        expect(stored.reviewState).toBe('unapproved');
       }
       if (edit.status === 200) {
         expect(stored.revision).toBe(2);
@@ -436,8 +800,8 @@ describe('pivotAdmin carousel editorial routes outcomes', () => {
     });
   });
 
-  describe('history durability over the wire', () => {
-    it('keeps a committed history row for every accepted save', async () => {
+  describe('history over the wire', () => {
+    it('keeps a history row for every accepted save', async () => {
       const account = await createAccount();
       const issue = await createManualIssue(account.id);
 
@@ -448,14 +812,12 @@ describe('pivotAdmin carousel editorial routes outcomes', () => {
         expect(response.status).toBe(200);
       }
 
-      const { PivotCarouselDeck, PivotCarouselRevision } = models();
-      expect((await PivotCarouselDeck.findById(issue.id).lean()).pendingSnapshot).toBeNull();
+      const { PivotCarouselRevision } = models();
       const rows = await PivotCarouselRevision.find({ issueId: issue.id, kind: 'save' }).lean();
       expect(rows.map((row) => row.headRevision).sort()).toEqual([2, 3, 4]);
-      expect(rows.every((row) => row.status === 'committed')).toBe(true);
     });
 
-    it('prunes past twenty-five autosaves while protected baselines survive', async () => {
+    it('prunes past twenty-five autosaves while posted snapshots survive', async () => {
       const account = await createAccount();
       const issue = await createGenerated(account.id);
       await request(app)
@@ -476,9 +838,7 @@ describe('pivotAdmin carousel editorial routes outcomes', () => {
       const { PivotCarouselRevision } = models();
       expect(await PivotCarouselRevision.countDocuments({ issueId: issue.id, kind: 'save' }))
         .toBe(RETENTION.autosaveSnapshotsPerIssue);
-      for (const kind of ['generation', 'approval', 'posted']) {
-        expect(await PivotCarouselRevision.countDocuments({ issueId: issue.id, kind })).toBe(1);
-      }
+      expect(await PivotCarouselRevision.countDocuments({ issueId: issue.id, kind: 'posted' })).toBe(1);
       const posted = await PivotCarouselRevision.findOne({ issueId: issue.id, kind: 'posted' }).lean();
       expect(JSON.stringify(posted.document)).toContain('lanterns');
     });

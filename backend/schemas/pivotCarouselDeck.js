@@ -29,35 +29,35 @@ const ORIGINS = Object.freeze(['manual', 'agent-generated']);
  * signed off on this exact revision". Conflating them would make archiving an
  * issue look like approving it.
  */
-const REVIEW_STATES = Object.freeze(['unapproved-draft', 'approved']);
+const REVIEW_STATES = Object.freeze(['unapproved', 'approved', 'posted']);
 
 const MAX_SOCIAL_CAPTION_LENGTH = 2200;
-/** Posting is an admin action that can legitimately happen more than once. */
-const MAX_POST_HISTORY = 20;
+const EDITORIAL_FIELDS = Object.freeze(['events', 'cover-copy', 'event-copy', 'presets', 'images', 'caption']);
+const FEEDBACK_DISPOSITIONS = Object.freeze(['approve', 'reject', 'change']);
 
-const PIVOT_CAROUSEL_DECK_INDEX_NAMES = Object.freeze([
-  'pivot_carousel_deck_account_posted',
-  'pivot_carousel_deck_proposal_idempotency_unique',
-  'pivot_carousel_deck_pending_snapshot',
-]);
+const editorialChangeSchema = new mongoose.Schema({
+  field: { type: String, enum: EDITORIAL_FIELDS, required: true },
+  before: { type: mongoose.Schema.Types.Mixed, required: true },
+  after: { type: mongoose.Schema.Types.Mixed, required: true },
+}, { _id: false });
 
-/** Where a generated issue came from, kept so a draft can explain itself. */
-const generationProvenanceSchema = new mongoose.Schema(
-  {
-    jobId: { type: String, default: null, trim: true, maxlength: 128 },
-    attemptId: { type: String, default: null, trim: true, maxlength: 128 },
-    proposalIdempotencyKey: { type: String, default: null, trim: true, maxlength: 128 },
-    contextVersion: { type: String, default: null, trim: true, maxlength: 128 },
-    policyVersion: { type: String, default: null, trim: true, maxlength: 128 },
-    feedbackVersion: { type: String, default: null, trim: true, maxlength: 128 },
-    implementationRevision: { type: String, default: null, trim: true, maxlength: 128 },
-    generatedAt: { type: Date, default: null },
-    /** The protected revision row holding the issue exactly as it was generated. */
-    baselineRevisionId: { type: mongoose.Schema.Types.ObjectId, default: null },
-  },
-  { _id: false },
-);
+const editorialEditSchema = new mongoose.Schema({
+  actor: { type: String, required: true },
+  time: { type: Date, required: true },
+  version: { type: Number, required: true, min: 1 },
+  fromRevision: { type: Number, required: true, min: 1 },
+  toRevision: { type: Number, required: true, min: 2 },
+  changes: { type: [editorialChangeSchema], default: [] },
+});
 
+const feedbackNoteSchema = new mongoose.Schema({
+  author: { type: String, required: true },
+  time: { type: Date, required: true },
+  version: { type: Number, required: true, min: 1 },
+  revision: { type: Number, required: true, min: 1 },
+  text: { type: String, required: true, trim: true },
+  disposition: { type: String, enum: FEEDBACK_DISPOSITIONS, required: true },
+});
 /**
  * An approval covers one exact revision, slides and caption together. It is
  * cleared whenever that revision stops being current, so it can never describe
@@ -66,11 +66,8 @@ const generationProvenanceSchema = new mongoose.Schema(
 const approvalSchema = new mongoose.Schema(
   {
     revision: { type: Number, required: true, min: 1 },
-    captionRevision: { type: Number, required: true, min: 1 },
     approvedAt: { type: Date, required: true },
     approvedBy: { type: String, default: null, trim: true, maxlength: 256 },
-    note: { type: String, default: null, trim: true, maxlength: 1000 },
-    baselineRevisionId: { type: mongoose.Schema.Types.ObjectId, default: null },
   },
   { _id: false },
 );
@@ -83,26 +80,12 @@ const approvalSchema = new mongoose.Schema(
 const postingSchema = new mongoose.Schema(
   {
     revision: { type: Number, required: true, min: 1 },
-    captionRevision: { type: Number, required: true, min: 1 },
     postedAt: { type: Date, required: true },
     postedBy: { type: String, default: null, trim: true, maxlength: 256 },
     recordedAt: { type: Date, required: true },
     instagramUrl: { type: String, default: null, trim: true, maxlength: 2048 },
     /** The immutable revision row holding exactly what went out. */
     snapshotRevisionId: { type: mongoose.Schema.Types.ObjectId, default: null },
-  },
-  { _id: false },
-);
-
-/**
- * A durable marker that a content write is expecting its history row to be
- * committed. Reconciliation reads it; nothing else does.
- */
-const pendingSnapshotSchema = new mongoose.Schema(
-  {
-    revisionId: { type: mongoose.Schema.Types.ObjectId, required: true },
-    headRevision: { type: Number, required: true, min: 1 },
-    requestedAt: { type: Date, required: true },
   },
   { _id: false },
 );
@@ -239,16 +222,18 @@ const pivotCarouselDeckSchema = new mongoose.Schema(
      */
     origin: { type: String, enum: ORIGINS, default: 'manual' },
     // Null for manual issues: "Unapproved draft" is a generated-only state.
-    reviewState: { type: String, enum: REVIEW_STATES, default: null },
+    reviewState: {
+      type: String,
+      enum: REVIEW_STATES,
+      default() { return this.origin === 'agent-generated' ? 'unapproved' : null; },
+    },
     socialCaption: { type: String, default: '', trim: true, maxlength: MAX_SOCIAL_CAPTION_LENGTH },
-    // The content revision at which the caption last changed. Monotonic,
-    // because it only ever takes the value of a fresh `revision`.
-    captionRevision: { type: Number, default: 1, min: 1 },
-    generation: { type: generationProvenanceSchema, default: null },
     approval: { type: approvalSchema, default: null },
     posting: { type: postingSchema, default: null },
     postHistory: { type: [postingSchema], default: undefined },
-    pendingSnapshot: { type: pendingSnapshotSchema, default: null },
+    editorialVersion: { type: Number, default: 0, min: 0 },
+    editLog: { type: [editorialEditSchema], default: [] },
+    feedbackNotes: { type: [feedbackNoteSchema], default: [] },
   },
   { timestamps: true },
 );
@@ -269,53 +254,31 @@ pivotCarouselDeckSchema.pre('validate', function normalizeFields() {
   if (this.origin !== 'agent-generated' && this.reviewState != null) {
     this.invalidate('reviewState', 'review state is only used by generated issues');
   }
-  if (this.reviewState === 'approved' && !this.approval) {
+  if (this.origin === 'agent-generated' && this.reviewState == null) {
+    this.invalidate('reviewState', 'a generated issue needs a review state');
+  }
+  if (['approved', 'posted'].includes(this.reviewState) && !this.approval) {
     this.invalidate('reviewState', 'an approved issue needs an approval record');
   }
-  if (this.approval && this.reviewState !== 'approved') {
-    this.invalidate('approval', 'an approval record requires the approved review state');
+  if (this.approval && !['approved', 'posted'].includes(this.reviewState)) {
+    this.invalidate('approval', 'an approval record requires an approved or posted review state');
   }
   if (this.approval && this.approval.revision !== (this.revision || 1)) {
     this.invalidate('approval', 'an approval must name the current revision');
   }
-  if (Array.isArray(this.postHistory) && this.postHistory.length > MAX_POST_HISTORY) {
-    this.invalidate('postHistory', `post history exceeds ${MAX_POST_HISTORY} entries`);
+  if (this.reviewState === 'posted' && (!this.posting || this.posting.revision !== this.revision)) {
+    this.invalidate('reviewState', 'a posted issue needs a posting record for its current revision');
   }
 });
 
 pivotCarouselDeckSchema.index({ tenantKey: 1, updatedAt: -1 });
 pivotCarouselDeckSchema.index({ accountId: 1, status: 1, updatedAt: -1 });
 pivotCarouselDeckSchema.index({ tenantKey: 1, status: 1, updatedAt: -1 });
-// Posted history for an account's cadence and diversity reads.
-pivotCarouselDeckSchema.index(
-  { accountId: 1, 'posting.postedAt': -1 },
-  {
-    name: PIVOT_CAROUSEL_DECK_INDEX_NAMES[0],
-    partialFilterExpression: { 'posting.postedAt': { $type: 'date' } },
-  },
-);
-// A generated proposal applies exactly once, however many times it is delivered.
-pivotCarouselDeckSchema.index(
-  { 'generation.proposalIdempotencyKey': 1 },
-  {
-    name: PIVOT_CAROUSEL_DECK_INDEX_NAMES[1],
-    unique: true,
-    partialFilterExpression: { 'generation.proposalIdempotencyKey': { $type: 'string' } },
-  },
-);
-// Reconciliation scans only the few issues that were interrupted mid-save.
-pivotCarouselDeckSchema.index(
-  { 'pendingSnapshot.requestedAt': 1 },
-  {
-    name: PIVOT_CAROUSEL_DECK_INDEX_NAMES[2],
-    partialFilterExpression: { 'pendingSnapshot.requestedAt': { $type: 'date' } },
-  },
-);
 
 module.exports = pivotCarouselDeckSchema;
 module.exports.EDITIONS = EDITIONS;
 module.exports.ORIGINS = ORIGINS;
 module.exports.REVIEW_STATES = REVIEW_STATES;
 module.exports.MAX_SOCIAL_CAPTION_LENGTH = MAX_SOCIAL_CAPTION_LENGTH;
-module.exports.MAX_POST_HISTORY = MAX_POST_HISTORY;
-module.exports.PIVOT_CAROUSEL_DECK_INDEX_NAMES = PIVOT_CAROUSEL_DECK_INDEX_NAMES;
+module.exports.EDITORIAL_FIELDS = EDITORIAL_FIELDS;
+module.exports.FEEDBACK_DISPOSITIONS = FEEDBACK_DISPOSITIONS;

@@ -286,6 +286,13 @@ async function updateCarouselDeck(req, tenantKey, deckId, body = {}) {
   const { PivotCarouselDeck } = getGlobalModels(req, 'PivotCarouselDeck');
   const doc = await PivotCarouselDeck.findOne({ _id: deckId, tenantKey: gate.tenantKey });
   if (!doc) return { error: 'Deck not found.', status: 404, code: 'DECK_NOT_FOUND' };
+  if (doc.origin === 'agent-generated') {
+    return {
+      error: 'Generated issues must be saved through their account with an expected revision.',
+      status: 409,
+      code: 'GENERATED_ISSUE_REQUIRES_REVISION',
+    };
+  }
 
   const notes = [];
 
@@ -354,6 +361,13 @@ async function setSlideImage(req, tenantKey, deckId, slideId, slotIndex, file) {
   const { PivotCarouselDeck } = getGlobalModels(req, 'PivotCarouselDeck');
   const doc = await PivotCarouselDeck.findOne({ _id: deckId, tenantKey: gate.tenantKey });
   if (!doc) return { error: 'Deck not found.', status: 404, code: 'DECK_NOT_FOUND' };
+  if (doc.origin === 'agent-generated') {
+    return {
+      error: 'Generated issues must be saved through their account with an expected revision.',
+      status: 409,
+      code: 'GENERATED_ISSUE_REQUIRES_REVISION',
+    };
+  }
 
   const slide = doc.slides.id(slideId);
   if (!slide) return { error: 'Slide not found.', status: 404, code: 'SLIDE_NOT_FOUND' };

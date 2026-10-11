@@ -34,10 +34,10 @@ const {
   restoreCarouselIssue,
   duplicateCarouselIssue,
   approveCarouselIssue,
-  rejectCarouselIssue,
   markCarouselIssuePosted,
   createEditableCopy,
 } = require('../services/pivotCarouselIssueService');
+const { addCarouselIssueFeedback, listEditorialFeedback } = require('../services/pivotCarouselEditorialFeedbackService');
 const {
   listCheckpoints,
   createCheckpoint,
@@ -923,6 +923,24 @@ router.post(
 
 /* ------------------------------------------- generated issue review */
 
+router.get('/carousel-accounts/:accountId/editorial-feedback', verifyToken, requirePlatformAdmin, async (req, res) => {
+  try {
+    return sendDeckResult(res, await listEditorialFeedback(req, req.params.accountId, req.query.sinceVersion));
+  } catch (err) {
+    logPivotRouteError('GET carousel editorial feedback', err, req);
+    return res.status(500).json({ success: false, message: 'Unable to load editorial feedback.' });
+  }
+});
+
+router.post('/carousel-accounts/:accountId/issues/:issueId/feedback', verifyToken, requirePlatformAdmin, async (req, res) => {
+  try {
+    return sendDeckResult(res, await addCarouselIssueFeedback(req, req.params.accountId, req.params.issueId, req.body), 201);
+  } catch (err) {
+    logPivotRouteError('POST carousel issue feedback', err, req);
+    return res.status(500).json({ success: false, message: 'Unable to save feedback.' });
+  }
+});
+
 router.post(
   '/carousel-accounts/:accountId/issues/:issueId/approve',
   verifyToken,
@@ -933,20 +951,6 @@ router.post(
     } catch (err) {
       logPivotRouteError('POST carousel issue approve', err, req);
       return res.status(500).json({ success: false, message: 'Unable to approve the issue.' });
-    }
-  },
-);
-
-router.post(
-  '/carousel-accounts/:accountId/issues/:issueId/reject',
-  verifyToken,
-  requirePlatformAdmin,
-  async (req, res) => {
-    try {
-      return sendDeckResult(res, await rejectCarouselIssue(req, req.params.accountId, req.params.issueId, req.body));
-    } catch (err) {
-      logPivotRouteError('POST carousel issue reject', err, req);
-      return res.status(500).json({ success: false, message: 'Unable to reject the issue.' });
     }
   },
 );

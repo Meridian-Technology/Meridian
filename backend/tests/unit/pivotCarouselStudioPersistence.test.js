@@ -102,16 +102,18 @@ describe('studio persistence boundaries', () => {
     }));
     const queued = makeDoc({ src: 'https://example.test/photo.png' });
     queued.slides[0].elements.push({ id: 'title', kind: 'text', text: 'queued copy', presence: 'custom', frame: { x: 40, y: 40, width: 400, height: 80 } });
-    const issue = (await createCarouselIssue(req, accountId, { name: 'Pinned', document: queued })).data.issue;
+    const issue = (await createCarouselIssue(req, accountId, { name: 'Pinned', document: queued, socialCaption: 'queued caption' })).data.issue;
     const getGlobalModels = require('../../services/getGlobalModelService');
     const { PivotCarouselDeck, PivotCarouselVoice, PivotCarouselRevision } = getGlobalModels(req, 'PivotCarouselDeck', 'PivotCarouselVoice', 'PivotCarouselRevision');
     const deck = await PivotCarouselDeck.findById(issue.id).lean();
     const source = deckRevision(deck);
     const pin = await pinExportRevision(req, deck, source);
+    expect(pin.data.pin.socialCaption).toBe('queued caption');
     expect(pin.data.pin.document.slides[0].elements[0].asset.key).toMatch(/^pivot-carousel\/accounts\//);
     const edited = JSON.parse(JSON.stringify(queued));
     edited.slides[0].elements[1].text = 'edited later';
-    await updateCarouselIssue(req, accountId, issue.id, { revision: 1, document: edited });
+    await updateCarouselIssue(req, accountId, issue.id, { revision: 1, document: edited, socialCaption: 'edited caption' });
+    expect((await PivotCarouselRevision.findById(pin.data.pin._id).lean()).socialCaption).toBe('queued caption');
     await PivotCarouselVoice.create({ tenantKey: 'sf', entries: { title: 'live voice' } });
     const job = {
       externalJobId: 'job:carousel-sf-pin',
