@@ -229,6 +229,7 @@ router.use(pivotRequestLogger);
 
 router.use('/campaigns', require('./justGoCampaignAdminRoutes'));
 router.use('/tenants/:tenantKey/tags', require('./justGoTagAdminRoutes'));
+router.use('/tenants/:tenantKey/explore-themes', require('./pivotExploreThemeAdminRoutes'));
 
 function sendCopyAdminResult(res, result) {
   if (result.error) {

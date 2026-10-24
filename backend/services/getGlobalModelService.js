@@ -36,6 +36,7 @@ const justGoCampaignSchema = require('../schemas/justGoCampaign');
 const justGoCampaignInviteSchema = require('../schemas/justGoCampaignInvite');
 const justGoAdmissionSchema = require('../schemas/justGoAdmission');
 const justGoTagSchema = require('../schemas/justGoTag');
+const pivotExploreThemeSchema = require('../schemas/pivotExploreTheme');
 const pivotComputeJobSchema = require('../schemas/pivotComputeJob');
 const pivotComputeJobAttemptSchema = require('../schemas/pivotComputeJobAttempt');
 const meridianJobRunSchema = require('../schemas/meridianJobRun');
@@ -63,6 +64,7 @@ const getGlobalModels = (req, ...names) => {
         JustGoCampaignInvite: db.model('JustGoCampaignInvite', justGoCampaignInviteSchema, 'justgo_campaign_invites'),
         JustGoAdmission: db.model('JustGoAdmission', justGoAdmissionSchema, 'justgo_admissions'),
         JustGoTag: db.model('JustGoTag', justGoTagSchema, 'justgo_tags'),
+        PivotExploreTheme: db.model('PivotExploreTheme', pivotExploreThemeSchema, 'pivot_explore_themes'),
         GlobalUser: db.model('GlobalUser', globalUserSchema, 'global_users'),
         PlatformRole: db.model('PlatformRole', platformRoleSchema, 'platform_roles'),
         PlatformAdminInvite: db.model(

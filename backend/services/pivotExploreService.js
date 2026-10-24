@@ -39,6 +39,10 @@ const {
 } = require('./pivotFeedService');
 const { resolveExploreSections } = require('./pivotExploreSectionsService');
 const {
+  findLiveExploreTheme,
+  serializeExploreTheme,
+} = require('./pivotExploreThemeService');
+const {
   loadRichLocationViewerContext,
 } = require('./justGoRichLocationProjectionService');
 const {
@@ -615,6 +619,40 @@ function summarizeExploreFilterRemovals(catalogEvents, filteredEvents, userInten
   };
 }
 
+/**
+ * The city's live theme, with its featured events drawn from the whole
+ * catalog rather than the filtered page, so search and tabs don't drop it.
+ * A theme lookup that fails leaves Explore as it would be without one.
+ */
+async function resolveExploreTheme(req, { now, catalogEvents, excludePassed, serializeContext }) {
+  let liveTheme;
+  try {
+    liveTheme = await findLiveExploreTheme(req, req.school, now);
+  } catch (error) {
+    logPivot('warn', 'explore theme lookup failed', {
+      ...pivotRequestContext(req),
+      error: error.message,
+    });
+    return null;
+  }
+  if (!liveTheme) {
+    return null;
+  }
+  const featuredIds = new Set((liveTheme.eventIds || []).map(String));
+  const featured = catalogEvents.filter((event) => {
+    const id = String(event._id);
+    return (
+      featuredIds.has(id)
+      && !(excludePassed && serializeContext.userIntents.get(id)?.status === 'passed')
+    );
+  });
+  const rows = serializeExploreCatalogEvents(featured, serializeContext);
+  return serializeExploreTheme(
+    liveTheme,
+    new Map(rows.map((row) => [String(row._id), row])),
+  );
+}
+
 async function getPivotExplore(req, options = {}) {
   const previewMode = Boolean(options.previewMode);
   const userId = previewMode ? null : req.user?.userId;
@@ -924,6 +962,17 @@ async function getPivotExplore(req, options = {}) {
     userIntents,
     excludePassed,
   );
+  const theme = await resolveExploreTheme(req, {
+    now,
+    catalogEvents,
+    excludePassed,
+    serializeContext: {
+      socialByEvent,
+      userIntents,
+      socialByEventAndSlot,
+      richLocationViewerContext,
+    },
+  });
 
   let publishedBatchWeeks;
   if (events.length === 0 || total === 0) {
@@ -971,6 +1020,7 @@ async function getPivotExplore(req, options = {}) {
       rails,
       sections,
       sectionsSource,
+      theme,
       intentBadgePriority: [...EXPLORE_INTENT_BADGE_PRIORITY],
       previewMode,
       events: pageEvents,
