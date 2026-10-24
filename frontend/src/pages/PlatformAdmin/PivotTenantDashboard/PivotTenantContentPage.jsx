@@ -4,6 +4,7 @@ import PivotTenantViewTabs from './PivotTenantViewTabs';
 import PivotTenantCurationPage from './PivotTenantCurationPage';
 import PivotTenantCatalogPage from './PivotTenantCatalogPage';
 import PivotTenantClipPage from './PivotTenantClipPage';
+import PivotTenantExploreThemesPage from './PivotTenantExploreThemesPage';
 import PivotTenantLocationMigrationPage, {
   RICH_LOCATION_MIGRATION_UI_ENABLED,
 } from './PivotTenantLocationMigrationPage';
@@ -13,6 +14,7 @@ import PivotTenantLocationMigrationPage, {
  * Sources are one page component (shared week state); Organizers is the city
  * catalog; Locations only exists while the rich-location UI flag is on; App
  * Clip is the clip's deck, wording, and conversion, independent of the week.
+ * Explore themes are dated takeovers of the app's discover page.
  */
 const ALL_CONTENT_VIEWS = Object.freeze([
   { id: 'events', label: 'Events' },
@@ -20,6 +22,7 @@ const ALL_CONTENT_VIEWS = Object.freeze([
   { id: 'organizers', label: 'Organizers' },
   { id: 'locations', label: 'Locations', flag: () => RICH_LOCATION_MIGRATION_UI_ENABLED },
   { id: 'clip', label: 'App Clip' },
+  { id: 'themes', label: 'Explore themes' },
 ]);
 
 export function contentViews() {
@@ -80,6 +83,16 @@ function PivotTenantContentPage({ tenantKey, cityDisplayName, onTenantUpdated })
   if (view === 'clip') {
     return (
       <PivotTenantClipPage
+        tenantKey={tenantKey}
+        cityDisplayName={cityDisplayName}
+        title="Content"
+        nav={nav}
+      />
+    );
+  }
+  if (view === 'themes') {
+    return (
+      <PivotTenantExploreThemesPage
         tenantKey={tenantKey}
         cityDisplayName={cityDisplayName}
         title="Content"

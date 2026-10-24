@@ -1,0 +1,348 @@
+// The app's own colours, so the preview reads like the phone.
+$app-orange: #ff4f1f;
+$app-ink: #1a1714;
+$app-cream: #faf6ef;
+$app-sheet: #f5efe6;
+
+.explore-themes {
+  &__muted {
+    font-size: 13px;
+    color: var(--pivot-ops-ink-muted);
+  }
+
+  &__error {
+    margin: 0;
+    font-size: 13px;
+    color: var(--pivot-ops-danger);
+  }
+
+  &__check {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    color: var(--pivot-ops-ink);
+  }
+}
+
+.pivot-tenant-explore-themes {
+  input[type='text'],
+  input[type='search'],
+  input[type='date'],
+  textarea {
+    min-width: 0;
+    padding: 8px 10px;
+    font: inherit;
+    font-size: 13px;
+    color: var(--pivot-ops-ink);
+    background: var(--pivot-ops-surface);
+    border: 1px solid var(--pivot-ops-border);
+    border-radius: var(--pivot-ops-radius-control);
+
+    &:focus {
+      outline: none;
+      border-color: var(--pivot-ops-accent);
+    }
+  }
+
+  textarea {
+    resize: vertical;
+  }
+}
+
+.explore-themes-list,
+.explore-themes-events {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.explore-themes-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px;
+  border: 1px solid var(--pivot-ops-border);
+  border-radius: var(--pivot-ops-radius-control);
+  background: var(--pivot-ops-surface);
+
+  &__thumb {
+    flex-shrink: 0;
+    width: 44px;
+    height: 64px;
+    object-fit: cover;
+    border-radius: 8px;
+
+    &--plain {
+      background: $app-orange;
+    }
+  }
+
+  &__copy {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+  }
+
+  &__name {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--pivot-ops-ink);
+  }
+
+  &__tagline {
+    overflow: hidden;
+    font-size: 13px;
+    color: var(--pivot-ops-ink-soft);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  &__actions {
+    display: flex;
+    flex-shrink: 0;
+    gap: 6px;
+  }
+}
+
+.explore-themes-editor {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 260px;
+  gap: 32px;
+  align-items: start;
+
+  @media (max-width: 900px) {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  &__form {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    min-width: 0;
+  }
+}
+
+.explore-themes-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+
+  &__label {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--pivot-ops-ink);
+  }
+}
+
+.explore-themes-dates {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+
+  label {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+}
+
+.explore-themes-photo {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+
+  &__thumb {
+    width: 72px;
+    height: 104px;
+    object-fit: cover;
+    border-radius: 10px;
+    border: 1px solid var(--pivot-ops-border);
+
+    &--empty {
+      background: var(--pivot-ops-surface-subtle);
+    }
+  }
+
+  &__actions {
+    display: flex;
+    gap: 6px;
+  }
+}
+
+.explore-themes-search {
+  margin-top: 8px;
+}
+
+.explore-themes-event {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 6px 8px;
+  border: 1px solid var(--pivot-ops-border);
+  border-radius: var(--pivot-ops-radius-control);
+  background: var(--pivot-ops-surface);
+
+  &.is-skipped {
+    opacity: 0.65;
+  }
+
+  &__index {
+    width: 18px;
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+    color: var(--pivot-ops-ink-muted);
+    text-align: right;
+  }
+
+  &__thumb {
+    flex-shrink: 0;
+    width: 40px;
+    height: 40px;
+    object-fit: cover;
+    border-radius: 8px;
+
+    &--empty {
+      background: var(--pivot-ops-surface-subtle);
+    }
+  }
+
+  &__copy {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    min-width: 0;
+  }
+
+  &__name {
+    overflow: hidden;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--pivot-ops-ink);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  &__actions {
+    display: flex;
+    flex-shrink: 0;
+    gap: 4px;
+  }
+}
+
+.explore-themes-preview {
+  position: sticky;
+  top: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+
+  &__screen {
+    position: relative;
+    overflow: hidden;
+    height: 500px;
+    border-radius: 32px;
+    border: 6px solid $app-ink;
+    background: $app-orange center / cover no-repeat;
+    color: $app-ink;
+
+    &.has-photo {
+      color: $app-cream;
+    }
+  }
+
+  // Same job as the app's scrim: cream type stays readable on any photo.
+  &__scrim {
+    position: absolute;
+    inset: 0;
+    display: none;
+    background: linear-gradient(
+      180deg,
+      rgba(0, 0, 0, 0.55) 0%,
+      rgba(0, 0, 0, 0.2) 45%,
+      rgba(0, 0, 0, 0.35) 100%
+    );
+
+    .has-photo & {
+      display: block;
+    }
+  }
+
+  &__content {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    padding: 34px 16px 0;
+  }
+
+  &__title {
+    font-size: 26px;
+    font-weight: 700;
+    line-height: 1;
+  }
+
+  &__subtitle {
+    margin-top: 4px;
+    font-size: 11px;
+    opacity: 0.8;
+  }
+
+  &__headline {
+    margin: 22px 0 0;
+    font-size: 27px;
+    font-weight: 700;
+    line-height: 1;
+    letter-spacing: -0.5px;
+    text-transform: lowercase;
+    overflow-wrap: anywhere;
+  }
+
+  &__fallback {
+    opacity: 0.45;
+  }
+
+  &__shelf {
+    margin-top: 18px;
+    font-size: 13px;
+    font-weight: 600;
+  }
+
+  &__posters {
+    display: flex;
+    gap: 8px;
+    margin-top: 8px;
+  }
+
+  &__poster {
+    flex-shrink: 0;
+    width: 76px;
+    height: 76px;
+    border-radius: 10px;
+    background: rgba(26, 23, 20, 0.25) center / cover no-repeat;
+  }
+
+  &__empty {
+    font-size: 11px;
+    opacity: 0.8;
+  }
+
+  &__sheet {
+    position: absolute;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    height: 120px;
+    border-radius: 18px 18px 0 0;
+    background: $app-sheet;
+  }
+}
