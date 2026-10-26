@@ -37,6 +37,14 @@ const IMAGE_MAX_WIDTH = 1290;
 const IMAGE_MAX_HEIGHT = 2796;
 const IMAGE_FOLDER = 'pivot-explore-themes';
 
+/** Carousel groups offered as starting points for a theme's featured events. */
+const CAROUSEL_GROUP_LIMIT = 12;
+const CAROUSEL_LOOKBACK_DAYS = 120;
+/** Each account's suggestions run several vector searches; two is plenty. */
+const SUGGESTED_ACCOUNT_LIMIT = 2;
+/** A suggested group trimmed to one city needs at least this many to help. */
+const SUGGESTED_MIN_EVENTS = 2;
+
 const DATE_PATTERN = /^(\d{4})-(\d{2})-(\d{2})$/;
 const ID_PATTERN = /^[a-f\d]{24}$/i;
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
@@ -321,6 +329,161 @@ function searchExploreThemeEvents(req, tenantKey, query = {}) {
   });
 }
 
+/** This city's event ids from carousel refs, in order, once each. */
+function cityEventIds(refs, city) {
+  const ids = [];
+  for (const ref of refs || []) {
+    const id = String(ref?.eventId || '');
+    if (String(ref?.sourceTenantKey || '').toLowerCase() === city && ID_PATTERN.test(id) && !ids.includes(id)) {
+      ids.push(id);
+    }
+  }
+  return ids;
+}
+
+/**
+ * Carousels the team made recently that include this city: issues (not
+ * archived) and curation drafts still open. A consumed draft is its issue,
+ * so it isn't listed twice.
+ */
+async function recentCarouselGroups(req, city, now) {
+  const { PivotCarouselDeck, PivotCarouselCurationDraft, PivotCarouselAccount } = getGlobalModels(
+    req,
+    'PivotCarouselDeck',
+    'PivotCarouselCurationDraft',
+    'PivotCarouselAccount',
+  );
+  const since = new Date(now.getTime() - CAROUSEL_LOOKBACK_DAYS * MS_PER_DAY);
+  const [issues, drafts] = await Promise.all([
+    PivotCarouselDeck.find({
+      accountId: { $ne: null },
+      status: { $ne: 'archived' },
+      'sources.sourceTenantKey': city,
+      updatedAt: { $gte: since },
+    })
+      .sort({ updatedAt: -1 })
+      .limit(CAROUSEL_GROUP_LIMIT)
+      .select('name title accountId sources curation.theme updatedAt')
+      .lean(),
+    PivotCarouselCurationDraft.find({
+      status: 'open',
+      'selected.ref.sourceTenantKey': city,
+      updatedAt: { $gte: since },
+    })
+      .sort({ updatedAt: -1 })
+      .limit(CAROUSEL_GROUP_LIMIT)
+      .select('accountId selected.ref theme updatedAt')
+      .lean(),
+  ]);
+  const accountIds = [...new Set([...issues, ...drafts].map((row) => String(row.accountId)))];
+  const accounts = accountIds.length
+    ? await PivotCarouselAccount.find({ _id: { $in: accountIds } }).select('displayName').lean()
+    : [];
+  const accountName = new Map(accounts.map((row) => [String(row._id), row.displayName]));
+
+  const groups = [
+    ...issues.map((row) => ({
+      id: `issue:${row._id}`,
+      kind: 'issue',
+      label: row.name || row.title || row.curation?.theme || 'Untitled carousel',
+      detail: [accountName.get(String(row.accountId)), 'Carousel'].filter(Boolean).join(' · '),
+      updatedAt: row.updatedAt,
+      eventIds: cityEventIds(row.sources, city),
+    })),
+    ...drafts.map((row) => ({
+      id: `draft:${row._id}`,
+      kind: 'draft',
+      label: row.theme || 'Untitled draft',
+      detail: [accountName.get(String(row.accountId)), 'Draft'].filter(Boolean).join(' · '),
+      updatedAt: row.updatedAt,
+      eventIds: cityEventIds((row.selected || []).map((item) => item?.ref), city),
+    })),
+  ];
+  return {
+    groups: groups
+      .filter((group) => group.eventIds.length)
+      .sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt))
+      .slice(0, CAROUSEL_GROUP_LIMIT),
+  };
+}
+
+const SUGGESTION_NOTICES = Object.freeze({
+  PROVIDER_UNAVAILABLE: 'Suggested groups are turned off on this server.',
+  VECTOR_INDEX_UNAVAILABLE: 'The related-event index is unavailable right now. Try again later.',
+});
+
+/**
+ * The carousel workspace's suggested groups, from the accounts that draw on
+ * this city, trimmed to this city's events.
+ */
+async function suggestedCarouselGroups(req, city, now) {
+  // Loaded here so the consumer explore path never pulls in the carousel.
+  const { findSuggestedCurationGroups } = require('./pivotCarouselRelatedService');
+  const { PivotCarouselAccount } = getGlobalModels(req, 'PivotCarouselAccount');
+  const accounts = await PivotCarouselAccount.find({ sourceTenantKeys: city })
+    .sort({ updatedAt: -1 })
+    .limit(SUGGESTED_ACCOUNT_LIMIT)
+    .select('_id')
+    .lean();
+  if (!accounts.length) {
+    return { groups: [], notice: 'No carousel account draws on this city yet, so there are no suggestions.' };
+  }
+  const groups = [];
+  const seen = new Set();
+  for (const account of accounts) {
+    const result = await findSuggestedCurationGroups(req, String(account._id), { now });
+    if (result.error) {
+      const notice = SUGGESTION_NOTICES[result.code];
+      if (notice) return { groups, notice };
+      continue;
+    }
+    for (const group of result.data.groups || []) {
+      const eventIds = cityEventIds((group.candidates || []).map((candidate) => candidate.ref), city);
+      const key = eventIds.join('|');
+      if (eventIds.length < SUGGESTED_MIN_EVENTS || seen.has(key)) continue;
+      seen.add(key);
+      groups.push({
+        id: `suggested:${group.id}`,
+        kind: 'suggested',
+        label: group.label,
+        detail: group.signal?.label ? `Starts from a ${group.signal.label.toLowerCase()} event` : '',
+        updatedAt: null,
+        eventIds,
+      });
+    }
+  }
+  return { groups };
+}
+
+/**
+ * Starting points for a theme's featured events: recent carousels
+ * (`source=recent`) or the carousel workspace's suggestions
+ * (`source=suggested`), each with this city's events and their state.
+ */
+function listExploreThemeCarouselGroups(req, tenantKey, query = {}) {
+  return withCity(req, tenantKey, async (city, tenant) => {
+    const now = new Date();
+    const source = query.source === 'suggested' ? 'suggested' : 'recent';
+    const found = source === 'suggested'
+      ? await suggestedCarouselGroups(req, city, now)
+      : await recentCarouselGroups(req, city, now);
+    const ids = [...new Set(found.groups.flatMap((group) => group.eventIds))];
+    const Event = ids.length ? await tenantEventModel(tenant) : null;
+    const described = Event ? await describeCuratedEvents(Event, ids, now) : [];
+    const byId = new Map(described.map((event) => [event.id, event]));
+    return {
+      data: {
+        source,
+        notice: found.notice || null,
+        groups: found.groups.map(({ eventIds, ...group }) => ({
+          ...group,
+          events: eventIds.map((id) => byId.get(id)).filter(Boolean),
+        })),
+      },
+    };
+  });
+}
+
 /**
  * The theme live for a city at `now`: published, and `now` inside its dates.
  * Overlaps go to the one that started latest, so a festival weekend can sit
@@ -374,6 +537,8 @@ module.exports = {
   deleteExploreTheme,
   uploadExploreThemeImage,
   searchExploreThemeEvents,
+  cityEventIds,
+  listExploreThemeCarouselGroups,
   findLiveExploreTheme,
   serializeExploreTheme,
 };

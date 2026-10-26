@@ -10,7 +10,36 @@ export function exploreThemePaths(tenantKey) {
     theme: (id) => `${base}/${encodeURIComponent(id)}`,
     image: `${base}/image`,
     events: `${base}/events`,
+    carouselGroups: `${base}/carousel-groups`,
   };
+}
+
+/** Where a theme's featured events can start from: carousels the team made
+ * recently, or the carousel workspace's live suggestions. */
+export const EXPLORE_THEME_GROUP_SOURCES = Object.freeze([
+  { id: 'recent', label: 'Recent carousels' },
+  { id: 'suggested', label: 'Suggested groups' },
+]);
+
+export function exploreThemeCarouselGroupsUrl(tenantKey, source) {
+  const id = source === 'suggested' ? 'suggested' : 'recent';
+  return `${exploreThemePaths(tenantKey).carouselGroups}?source=${id}`;
+}
+
+/**
+ * Takes a carousel group's events into the featured list: only events the
+ * app can show, not already featured, up to `max`. `replace` starts the list
+ * over from the group. Reports how many went in and how many didn't fit.
+ */
+export function mergeCarouselGroupEvents(current, groupEvents, max, { replace = false } = {}) {
+  const base = replace ? [] : current;
+  const have = new Set(base.map((event) => event.id));
+  const fresh = (groupEvents || []).filter(
+    (event) => event.state === 'live' && !have.has(event.id) && have.add(event.id),
+  );
+  const room = Math.max(0, max - base.length);
+  const taken = fresh.slice(0, room);
+  return { events: [...base, ...taken], added: taken.length, overflow: fresh.length - taken.length };
 }
 
 export function exploreThemeSearchUrl(tenantKey, { q = '', includePast = false } = {}) {

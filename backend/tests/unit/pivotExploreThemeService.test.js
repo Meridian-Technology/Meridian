@@ -6,9 +6,20 @@ jest.mock('../../services/pivotClipAdminService', () => ({
   searchClipCandidateEvents: jest.fn(),
   tenantEventModel: jest.fn(),
 }));
+jest.mock('../../services/getGlobalModelService', () => jest.fn());
+jest.mock('../../services/pivotCarouselRelatedService', () => ({
+  findSuggestedCurationGroups: jest.fn(),
+}));
+
+const getGlobalModels = require('../../services/getGlobalModelService');
+const { resolvePivotTenant } = require('../../services/pivotIngestPublishService');
+const { describeCuratedEvents, tenantEventModel } = require('../../services/pivotClipAdminService');
+const { findSuggestedCurationGroups } = require('../../services/pivotCarouselRelatedService');
 
 const {
   FEATURED_MAX,
+  cityEventIds,
+  listExploreThemeCarouselGroups,
   parseCalendarDate,
   resolveThemeWindow,
   serializeExploreTheme,
@@ -128,5 +139,134 @@ describe('serializeExploreTheme', () => {
       events: [{ _id: ID(3) }, { _id: ID(1) }],
     });
     expect(serializeExploreTheme(null, eventsById)).toBeNull();
+  });
+});
+
+/** A Mongoose query stand-in: find(filter).sort().limit().select().lean(). */
+function model(rows) {
+  const find = jest.fn(() => {
+    const chain = {
+      sort: () => chain,
+      limit: () => chain,
+      select: () => chain,
+      lean: async () => rows,
+    };
+    return chain;
+  });
+  return { find };
+}
+
+const live = (id, name) => ({ id, name, state: 'live' });
+
+describe('cityEventIds', () => {
+  it('keeps this city’s valid ids in order, once each', () => {
+    expect(cityEventIds([
+      { sourceTenantKey: 'toronto', eventId: ID(2) },
+      { sourceTenantKey: 'montreal', eventId: ID(3) },
+      { sourceTenantKey: 'Toronto', eventId: ID(1) },
+      { sourceTenantKey: 'toronto', eventId: ID(2) },
+      { sourceTenantKey: 'toronto', eventId: 'bad' },
+      null,
+    ], 'toronto')).toEqual([ID(2), ID(1)]);
+  });
+});
+
+describe('listExploreThemeCarouselGroups', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    resolvePivotTenant.mockResolvedValue({ tenant: { tenantKey: 'toronto' } });
+    tenantEventModel.mockResolvedValue({});
+    describeCuratedEvents.mockImplementation(async (_Event, ids) =>
+      ids.map((id) => live(id, `Event ${Number(id)}`)));
+  });
+
+  it('lists recent carousels and open drafts with this city’s events, newest first', async () => {
+    const decks = model([{
+      _id: 'deck1',
+      name: 'Halloween weekend',
+      accountId: 'acct1',
+      sources: [
+        { sourceTenantKey: 'toronto', eventId: ID(1) },
+        { sourceTenantKey: 'montreal', eventId: ID(9) },
+      ],
+      updatedAt: new Date('2026-10-20T00:00:00Z'),
+    }]);
+    const drafts = model([{
+      _id: 'draft1',
+      theme: 'spooky picks',
+      accountId: 'acct1',
+      selected: [{ ref: { sourceTenantKey: 'toronto', eventId: ID(2) } }],
+      updatedAt: new Date('2026-10-22T00:00:00Z'),
+    }]);
+    const accounts = model([{ _id: 'acct1', displayName: 'Just Go Toronto' }]);
+    getGlobalModels.mockReturnValue({
+      PivotCarouselDeck: decks,
+      PivotCarouselCurationDraft: drafts,
+      PivotCarouselAccount: accounts,
+    });
+
+    const { data } = await listExploreThemeCarouselGroups({}, 'toronto', {});
+
+    expect(decks.find.mock.calls[0][0]).toMatchObject({
+      'sources.sourceTenantKey': 'toronto',
+      status: { $ne: 'archived' },
+    });
+    expect(drafts.find.mock.calls[0][0]).toMatchObject({ status: 'open' });
+    expect(data.source).toBe('recent');
+    expect(data.groups.map((group) => [group.id, group.label, group.detail])).toEqual([
+      ['draft:draft1', 'spooky picks', 'Just Go Toronto · Draft'],
+      ['issue:deck1', 'Halloween weekend', 'Just Go Toronto · Carousel'],
+    ]);
+    expect(data.groups[1].events).toEqual([live(ID(1), 'Event 1')]);
+  });
+
+  it('trims suggested groups to this city and drops ones too thin to help', async () => {
+    getGlobalModels.mockReturnValue({ PivotCarouselAccount: model([{ _id: 'acct1' }]) });
+    findSuggestedCurationGroups.mockResolvedValue({
+      data: {
+        groups: [
+          {
+            id: 'toronto:x',
+            label: 'live music + jazz',
+            signal: { label: 'Featured' },
+            candidates: [
+              { ref: { sourceTenantKey: 'toronto', eventId: ID(1) } },
+              { ref: { sourceTenantKey: 'toronto', eventId: ID(2) } },
+              { ref: { sourceTenantKey: 'montreal', eventId: ID(3) } },
+            ],
+          },
+          {
+            id: 'montreal:y',
+            label: 'mostly elsewhere',
+            signal: { label: 'Promoted' },
+            candidates: [
+              { ref: { sourceTenantKey: 'toronto', eventId: ID(4) } },
+              { ref: { sourceTenantKey: 'montreal', eventId: ID(5) } },
+            ],
+          },
+        ],
+      },
+    });
+
+    const { data } = await listExploreThemeCarouselGroups({}, 'toronto', { source: 'suggested' });
+
+    expect(data.groups).toHaveLength(1);
+    expect(data.groups[0]).toMatchObject({
+      id: 'suggested:toronto:x',
+      label: 'live music + jazz',
+      detail: 'Starts from a featured event',
+    });
+    expect(data.groups[0].events.map((event) => event.id)).toEqual([ID(1), ID(2)]);
+  });
+
+  it('explains why there are no suggestions', async () => {
+    getGlobalModels.mockReturnValue({ PivotCarouselAccount: model([]) });
+    let result = await listExploreThemeCarouselGroups({}, 'toronto', { source: 'suggested' });
+    expect(result.data.notice).toMatch(/No carousel account/);
+
+    getGlobalModels.mockReturnValue({ PivotCarouselAccount: model([{ _id: 'acct1' }]) });
+    findSuggestedCurationGroups.mockResolvedValue({ error: 'off', code: 'PROVIDER_UNAVAILABLE' });
+    result = await listExploreThemeCarouselGroups({}, 'toronto', { source: 'suggested' });
+    expect(result.data).toMatchObject({ groups: [], notice: expect.stringMatching(/turned off/) });
   });
 });

@@ -1,4 +1,5 @@
 import {
+  exploreThemeCarouselGroupsUrl,
   exploreThemeDraftFromTheme,
   exploreThemeDraftKey,
   exploreThemeDraftProblem,
@@ -6,6 +7,7 @@ import {
   exploreThemePaths,
   exploreThemeSearchUrl,
   formatExploreThemeDates,
+  mergeCarouselGroupEvents,
   newExploreThemeDraft,
   overlappingExploreThemes,
 } from './pivotExploreThemesAdmin';
@@ -86,5 +88,31 @@ describe('formatExploreThemeDates', () => {
     expect(formatExploreThemeDates('2026-10-31', '2026-11-02')).toBe('Oct 31 – Nov 2, 2026');
     expect(formatExploreThemeDates('2026-12-30', '2027-01-02')).toBe('Dec 30, 2026 – Jan 2, 2027');
     expect(formatExploreThemeDates('2026-10-31', '2026-10-31')).toBe('Oct 31, 2026');
+  });
+});
+
+describe('carousel groups', () => {
+  const ev = (id, state = 'live') => ({ id, name: id, state });
+
+  it('asks for recent carousels unless suggestions are wanted', () => {
+    expect(exploreThemeCarouselGroupsUrl('toronto', 'suggested'))
+      .toBe('/admin/pivot/tenants/toronto/explore-themes/carousel-groups?source=suggested');
+    expect(exploreThemeCarouselGroupsUrl('toronto', 'anything'))
+      .toBe('/admin/pivot/tenants/toronto/explore-themes/carousel-groups?source=recent');
+  });
+
+  it('adds only showable events not already featured, up to the cap', () => {
+    const current = [ev('a')];
+    const group = [ev('a'), ev('b'), ev('c', 'ended'), ev('d'), ev('e'), ev('e')];
+    expect(mergeCarouselGroupEvents(current, group, 3)).toEqual({
+      events: [ev('a'), ev('b'), ev('d')],
+      added: 2,
+      overflow: 1,
+    });
+  });
+
+  it('can start the list over from a group', () => {
+    const result = mergeCarouselGroupEvents([ev('a')], [ev('b'), ev('c', 'missing')], 12, { replace: true });
+    expect(result).toEqual({ events: [ev('b')], added: 1, overflow: 0 });
   });
 });

@@ -346,3 +346,92 @@ $app-sheet: #f5efe6;
     background: $app-sheet;
   }
 }
+
+.explore-themes-carousels {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 8px;
+
+  &__toggle {
+    align-self: flex-start;
+  }
+
+  &__body {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 12px;
+    border: 1px solid var(--pivot-ops-border);
+    border-radius: var(--pivot-ops-radius-control);
+    background: var(--pivot-ops-surface-subtle);
+  }
+}
+
+.explore-themes-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.explore-themes-group {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 10px;
+  border: 1px solid var(--pivot-ops-border);
+  border-radius: var(--pivot-ops-radius-control);
+  background: var(--pivot-ops-surface);
+
+  // A short fan of the group's posters, overlapping like a hand of cards.
+  &__posters {
+    display: flex;
+    flex-shrink: 0;
+    width: 88px;
+
+    img,
+    .explore-themes-group__blank {
+      width: 36px;
+      height: 36px;
+      object-fit: cover;
+      border: 2px solid var(--pivot-ops-surface);
+      border-radius: 8px;
+
+      & + img,
+      & + .explore-themes-group__blank {
+        margin-left: -18px;
+      }
+    }
+  }
+
+  &__blank {
+    display: block;
+    background: var(--pivot-ops-surface-subtle);
+  }
+
+  &__copy {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+  }
+
+  &__label {
+    overflow: hidden;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--pivot-ops-ink);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  &__actions {
+    display: flex;
+    flex-shrink: 0;
+    gap: 6px;
+  }
+}

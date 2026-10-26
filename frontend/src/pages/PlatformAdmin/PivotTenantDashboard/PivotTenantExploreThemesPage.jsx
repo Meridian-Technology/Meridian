@@ -3,16 +3,20 @@ import { useFetch, authenticatedRequest } from '../../../hooks/useFetch';
 import { useNotification } from '../../../NotificationContext';
 import { PivotOpsBanner, PivotOpsSection, PivotOpsStatus } from '../../../components/PivotOps';
 import PivotTenantPage from './PivotTenantPage';
+import PivotTenantViewTabs from './PivotTenantViewTabs';
 import { addClipPin, formatClipEventDate, moveClipPin, removeClipPin } from './pivotClipAdmin';
 import {
+  EXPLORE_THEME_GROUP_SOURCES,
   EXPLORE_THEME_STATUS,
   exploreThemeDraftFromTheme,
   exploreThemeDraftKey,
+  exploreThemeCarouselGroupsUrl,
   exploreThemeDraftProblem,
   exploreThemeInputFromDraft,
   exploreThemePaths,
   exploreThemeSearchUrl,
   formatExploreThemeDates,
+  mergeCarouselGroupEvents,
   newExploreThemeDraft,
   overlappingExploreThemes,
 } from './pivotExploreThemesAdmin';
@@ -23,6 +27,8 @@ const SEARCH_DEBOUNCE_MS = 280;
 const JSON_HEADERS = { 'Content-Type': 'application/json' };
 /** Featured events the phone preview shows before the shelf runs off-screen. */
 const PREVIEW_POSTERS = 3;
+/** Posters fanned on a carousel group's card. */
+const GROUP_POSTERS = 4;
 
 const EVENT_STATE_LABELS = Object.freeze({
   ended: 'Ended',
@@ -179,6 +185,170 @@ function ThemePhotoField({ tenantKey, value, onChange }) {
   );
 }
 
+function CarouselGroupCard({ group, featured, onAdd, onReplace }) {
+  const showable = group.events.filter((event) => event.state === 'live');
+  const fresh = showable.filter((event) => !featured.has(event.id)).length;
+  const gone = group.events.length - showable.length;
+  const updated = group.updatedAt ? formatClipEventDate(group.updatedAt).split(',').slice(0, 2).join(',') : '';
+  return (
+    <li className="explore-themes-group">
+      <span className="explore-themes-group__posters" aria-hidden="true">
+        {group.events.slice(0, GROUP_POSTERS).map((event) => (
+          event.coverImageUrl
+            ? <img key={event.id} src={event.coverImageUrl} alt="" loading="lazy" />
+            : <span key={event.id} className="explore-themes-group__blank" />
+        ))}
+      </span>
+      <div className="explore-themes-group__copy">
+        <span className="explore-themes-group__label">{group.label}</span>
+        <span className="explore-themes__muted">
+          {[group.detail, updated && `updated ${updated}`].filter(Boolean).join(' · ')}
+        </span>
+        <span className="explore-themes__muted">
+          {showable.length} upcoming here
+          {gone ? ` · ${gone} ended or unpublished` : ''}
+        </span>
+      </div>
+      <div className="explore-themes-group__actions">
+        <button
+          type="button"
+          className="linear-btn linear-btn--secondary linear-btn--sm"
+          disabled={!fresh}
+          onClick={() => onAdd(group)}
+        >
+          {fresh || !showable.length ? 'Add' : 'All added'}
+        </button>
+        <button
+          type="button"
+          className="linear-btn linear-btn--ghost linear-btn--sm"
+          disabled={!showable.length}
+          onClick={() => onReplace(group)}
+        >
+          Use instead
+        </button>
+      </div>
+    </li>
+  );
+}
+
+function CarouselGroupList({ tenantKey, source, featured, onAdd, onReplace }) {
+  const { data: response, loading, error, refetch } = useFetch(
+    exploreThemeCarouselGroupsUrl(tenantKey, source),
+    { cache: NO_FETCH_CACHE },
+  );
+  const data = response?.success ? response.data : null;
+  const loadError = error || (response && !response.success ? response.message : null);
+  if (!data && loading) {
+    return (
+      <p className="explore-themes__muted" role="status">
+        {source === 'suggested' ? 'Finding suggested groups… this takes a few seconds.' : 'Loading recent carousels…'}
+      </p>
+    );
+  }
+  if (loadError) {
+    return (
+      <p className="explore-themes__error" role="alert">
+        {loadError}{' '}
+        <button type="button" className="linear-btn linear-btn--ghost linear-btn--sm" onClick={refetch}>Retry</button>
+      </p>
+    );
+  }
+  if (!data) return null;
+  return (
+    <>
+      {data.notice ? <PivotOpsBanner tone="muted">{data.notice}</PivotOpsBanner> : null}
+      {data.groups.length ? (
+        <ul className="explore-themes-groups">
+          {data.groups.map((group) => (
+            <CarouselGroupCard key={group.id} group={group} featured={featured} onAdd={onAdd} onReplace={onReplace} />
+          ))}
+        </ul>
+      ) : !data.notice ? (
+        <p className="explore-themes__muted">
+          {source === 'suggested'
+            ? 'No suggested groups have enough events in this city.'
+            : 'No carousels from the last four months include this city.'}
+        </p>
+      ) : null}
+    </>
+  );
+}
+
+/** Starts the featured list from a carousel: recent ones, or suggestions. */
+function CarouselGroupPicker({ tenantKey, events, max, onChange }) {
+  const { addNotification } = useNotification();
+  const [open, setOpen] = useState(false);
+  const [source, setSource] = useState('recent');
+  // Each tab loads the first time it's shown and stays loaded after.
+  const [opened, setOpened] = useState(() => new Set(['recent']));
+  const featured = useMemo(() => new Set(events.map((event) => event.id)), [events]);
+
+  const showSource = useCallback((next) => {
+    setSource(next);
+    setOpened((prev) => (prev.has(next) ? prev : new Set([...prev, next])));
+  }, []);
+
+  const take = useCallback(
+    (group, replace) => {
+      const result = mergeCarouselGroupEvents(events, group.events, max, { replace });
+      onChange(result.events);
+      const overflow = result.overflow ? ` ${result.overflow} more didn’t fit under the ${max}-event cap.` : '';
+      addNotification({
+        title: replace ? `Featuring “${group.label}”` : `Added from “${group.label}”`,
+        message: `${result.added} ${result.added === 1 ? 'event' : 'events'} in the featured list.${overflow}`,
+        type: result.added ? 'success' : 'info',
+      });
+    },
+    [addNotification, events, max, onChange],
+  );
+  const add = useCallback((group) => take(group, false), [take]);
+  const replace = useCallback(
+    (group) => {
+      // eslint-disable-next-line no-alert
+      if (events.length && !window.confirm(`Replace the ${events.length} featured events with “${group.label}”?`)) return;
+      take(group, true);
+    },
+    [events.length, take],
+  );
+
+  return (
+    <div className="explore-themes-carousels">
+      <button
+        type="button"
+        className="linear-btn linear-btn--ghost linear-btn--sm explore-themes-carousels__toggle"
+        aria-expanded={open}
+        onClick={() => setOpen((value) => !value)}
+      >
+        {open ? 'Hide carousel groups' : 'Start from a carousel'}
+      </button>
+      {open ? (
+        <div className="explore-themes-carousels__body">
+          <PivotTenantViewTabs
+            views={EXPLORE_THEME_GROUP_SOURCES}
+            value={source}
+            onChange={showSource}
+            ariaLabel="Carousel groups"
+          />
+          {EXPLORE_THEME_GROUP_SOURCES.filter((option) => opened.has(option.id)).map((option) => (
+            <div key={option.id} hidden={option.id !== source}>
+              <CarouselGroupList
+                tenantKey={tenantKey}
+                source={option.id}
+                featured={featured}
+                onAdd={add}
+                onReplace={replace}
+              />
+            </div>
+          ))}
+          <span className="explore-themes__muted">
+            Only this city’s upcoming events come across; you can still reorder or remove them.
+          </span>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function FeaturedEvents({ tenantKey, events, max, onChange }) {
   const [query, setQuery] = useState('');
   const [term, setTerm] = useState('');
@@ -253,6 +423,8 @@ function FeaturedEvents({ tenantKey, events, max, onChange }) {
       <span className="explore-themes__muted">
         Ended, unpublished, or passed events drop out of the shelf on their own.
       </span>
+
+      <CarouselGroupPicker tenantKey={tenantKey} events={events} max={max} onChange={onChange} />
 
       <input
         type="search"
