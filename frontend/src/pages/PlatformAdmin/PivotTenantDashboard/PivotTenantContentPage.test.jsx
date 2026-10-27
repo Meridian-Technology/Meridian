@@ -43,6 +43,16 @@ jest.mock('./PivotTenantClipPage', () => ({
   ),
 }));
 
+jest.mock('./PivotTenantExploreThemesPage', () => ({
+  __esModule: true,
+  default: ({ title, nav }) => (
+    <div>
+      {nav}
+      <p>themes:{title}</p>
+    </div>
+  ),
+}));
+
 jest.mock('./PivotTenantLocationMigrationPage', () => ({
   __esModule: true,
   default: ({ title, nav }) => (
@@ -76,7 +86,7 @@ describe('PivotTenantContentPage', () => {
     mockLocationsEnabled = true;
   });
 
-  it('opens on Events with the five Content tabs', () => {
+  it('opens on Events with the six Content tabs', () => {
     renderContent();
 
     expect(screen.getByText('curation:events:Content')).toBeInTheDocument();
@@ -86,6 +96,7 @@ describe('PivotTenantContentPage', () => {
       'Organizers',
       'Locations',
       'App Clip',
+      'Explore themes',
     ]);
     expect(screen.getByRole('tab', { name: 'Events' })).toHaveAttribute('aria-selected', 'true');
   });
@@ -143,5 +154,14 @@ describe('PivotTenantContentPage', () => {
 
     expect(screen.queryByRole('tab', { name: 'Locations' })).toBeNull();
     expect(screen.getByText('curation:events:Content')).toBeInTheDocument();
+  });
+});
+
+describe('Explore themes tab', () => {
+  it('opens Explore themes under Content', () => {
+    renderContent();
+    fireEvent.click(screen.getByRole('tab', { name: 'Explore themes' }));
+    expect(screen.getByText('themes:Content')).toBeInTheDocument();
+    expect(screen.getByTestId('search')).toHaveTextContent('content=themes');
   });
 });
