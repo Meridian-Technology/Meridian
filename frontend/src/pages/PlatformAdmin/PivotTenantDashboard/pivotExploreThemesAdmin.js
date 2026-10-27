@@ -11,7 +11,18 @@ export function exploreThemePaths(tenantKey) {
     image: `${base}/image`,
     events: `${base}/events`,
     carouselGroups: `${base}/carousel-groups`,
+    unsplash: `${base}/unsplash`,
+    unsplashSelect: `${base}/unsplash/select`,
   };
+}
+
+export function exploreThemeUnsplashUrl(tenantKey, { query = '', page = 1 } = {}) {
+  const params = new URLSearchParams();
+  const term = String(query || '').trim();
+  if (term) params.set('query', term);
+  if (page > 1) params.set('page', String(page));
+  const search = params.toString();
+  return `${exploreThemePaths(tenantKey).unsplash}${search ? `?${search}` : ''}`;
 }
 
 /** Where a theme's featured events can start from: carousels the team made
@@ -62,6 +73,7 @@ export function newExploreThemeDraft(today = new Date()) {
     startsOn: start,
     endsOn: end,
     backgroundImageUrl: '',
+    backgroundCredit: null,
     published: false,
     events: [],
   };
@@ -75,6 +87,7 @@ export function exploreThemeDraftFromTheme(theme) {
     startsOn: theme.startsOn || '',
     endsOn: theme.endsOn || '',
     backgroundImageUrl: theme.backgroundImageUrl || '',
+    backgroundCredit: theme.backgroundCredit || null,
     published: theme.published === true,
     // Whole rows, so newly added events render before a save.
     events: Array.isArray(theme.events) ? theme.events : [],
@@ -89,6 +102,7 @@ export function exploreThemeInputFromDraft(draft) {
     startsOn: draft.startsOn,
     endsOn: draft.endsOn,
     backgroundImageUrl: draft.backgroundImageUrl || '',
+    backgroundCredit: draft.backgroundCredit || null,
     published: draft.published === true,
     eventIds: draft.events.map((event) => event.id),
   };

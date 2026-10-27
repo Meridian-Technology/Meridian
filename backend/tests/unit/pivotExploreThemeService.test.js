@@ -10,16 +10,22 @@ jest.mock('../../services/getGlobalModelService', () => jest.fn());
 jest.mock('../../services/pivotCarouselRelatedService', () => ({
   findSuggestedCurationGroups: jest.fn(),
 }));
+jest.mock('../../services/pivotCarouselUnsplashService', () => ({
+  searchUnsplashPhotos: jest.fn(),
+  selectUnsplashPhoto: jest.fn(),
+}));
 
 const getGlobalModels = require('../../services/getGlobalModelService');
 const { resolvePivotTenant } = require('../../services/pivotIngestPublishService');
 const { describeCuratedEvents, tenantEventModel } = require('../../services/pivotClipAdminService');
 const { findSuggestedCurationGroups } = require('../../services/pivotCarouselRelatedService');
+const { selectUnsplashPhoto } = require('../../services/pivotCarouselUnsplashService');
 
 const {
   FEATURED_MAX,
   cityEventIds,
   listExploreThemeCarouselGroups,
+  selectExploreThemeUnsplash,
   parseCalendarDate,
   resolveThemeWindow,
   serializeExploreTheme,
@@ -134,6 +140,7 @@ describe('serializeExploreTheme', () => {
       name: 'Halloween',
       tagline: null,
       backgroundImageUrl: IMAGE,
+      backgroundCredit: null,
       startsAt: '2026-10-24T04:00:00.000Z',
       endsAt: '2026-11-01T04:00:00.000Z',
       events: [{ _id: ID(3) }, { _id: ID(1) }],
@@ -268,5 +275,48 @@ describe('listExploreThemeCarouselGroups', () => {
     findSuggestedCurationGroups.mockResolvedValue({ error: 'off', code: 'PROVIDER_UNAVAILABLE' });
     result = await listExploreThemeCarouselGroups({}, 'toronto', { source: 'suggested' });
     expect(result.data).toMatchObject({ groups: [], notice: expect.stringMatching(/turned off/) });
+  });
+});
+
+describe('Unsplash backgrounds', () => {
+  const base = { name: 'Halloween', startsOn: '2026-10-24', endsOn: '2026-10-31' };
+  const unsplash = 'https://images.unsplash.com/photo-1?ixid=x&w=1290';
+  const credit = {
+    photographer: 'Pat',
+    photographerUrl: 'https://unsplash.com/@pat?utm_source=just_go&utm_medium=referral',
+    sourceUrl: 'https://unsplash.com/photos/abc?utm_source=just_go&utm_medium=referral',
+  };
+
+  it('takes an Unsplash photo only with its photographer’s credit', () => {
+    expect(validateThemeInput({ ...base, backgroundImageUrl: unsplash }).error).toMatch(/credit/);
+    expect(validateThemeInput({ ...base, backgroundImageUrl: unsplash, backgroundCredit: credit }).fields)
+      .toMatchObject({ backgroundImageUrl: unsplash, backgroundCredit: { provider: 'unsplash', photographer: 'Pat' } });
+  });
+
+  it('refuses credits that link off Unsplash', () => {
+    const offsite = { ...credit, photographerUrl: 'https://example.com/@pat' };
+    expect(validateThemeInput({ ...base, backgroundImageUrl: unsplash, backgroundCredit: offsite }).error)
+      .toMatch(/credit/);
+  });
+
+  it('drops the credit when the photo is an upload or removed', () => {
+    expect(validateThemeInput({ ...base, backgroundImageUrl: IMAGE, backgroundCredit: credit }).fields.backgroundCredit)
+      .toBeNull();
+    expect(validateThemeInput({ ...base, backgroundImageUrl: '' }).fields.backgroundCredit).toBeNull();
+  });
+
+  it('picks a phone-sized link on Unsplash’s CDN, with the credit', async () => {
+    resolvePivotTenant.mockResolvedValue({ tenant: { tenantKey: 'toronto' } });
+    selectUnsplashPhoto.mockResolvedValue({
+      data: {
+        asset: { src: 'https://images.unsplash.com/regular', ...credit },
+        raw: 'https://images.unsplash.com/photo-1?ixid=x',
+      },
+    });
+    const { data } = await selectExploreThemeUnsplash({}, 'toronto', 'abc');
+    expect(selectUnsplashPhoto).toHaveBeenCalledWith('abc');
+    expect(new URL(data.url).searchParams.get('w')).toBe('1290');
+    expect(new URL(data.url).searchParams.get('ixid')).toBe('x');
+    expect(data.credit).toEqual({ provider: 'unsplash', ...credit });
   });
 });

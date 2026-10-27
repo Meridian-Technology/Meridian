@@ -19,6 +19,16 @@ const schema = new mongoose.Schema({
   // Featured events, in order. Ids from the city's own database.
   eventIds: { type: [String], default: [] },
   backgroundImageUrl: { type: String, trim: true, default: '' },
+  // Set for Unsplash photos, which have to credit their photographer.
+  backgroundCredit: {
+    type: new mongoose.Schema({
+      provider: { type: String, enum: ['unsplash'], required: true },
+      photographer: { type: String, trim: true, maxlength: 120, required: true },
+      photographerUrl: { type: String, trim: true, required: true },
+      sourceUrl: { type: String, trim: true, required: true },
+    }, { _id: false }),
+    default: null,
+  },
   published: { type: Boolean, default: false },
   createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'GlobalUser', default: null },
   updatedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'GlobalUser', default: null },

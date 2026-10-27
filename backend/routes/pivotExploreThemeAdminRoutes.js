@@ -10,6 +10,8 @@ const {
   uploadExploreThemeImage,
   searchExploreThemeEvents,
   listExploreThemeCarouselGroups,
+  searchExploreThemeUnsplash,
+  selectExploreThemeUnsplash,
 } = require('../services/pivotExploreThemeService');
 
 // Mounted at /admin/pivot/tenants/:tenantKey/explore-themes: every theme belongs to a city.
@@ -49,6 +51,8 @@ router.get('/', handle(req => listExploreThemes(req, req.params.tenantKey)));
 router.post('/', handle(req => createExploreTheme(req, req.params.tenantKey, req.body)));
 router.get('/events', handle(req => searchExploreThemeEvents(req, req.params.tenantKey, req.query)));
 router.get('/carousel-groups', handle(req => listExploreThemeCarouselGroups(req, req.params.tenantKey, req.query)));
+router.get('/unsplash', handle(req => searchExploreThemeUnsplash(req, req.params.tenantKey, req.query)));
+router.post('/unsplash/select', handle(req => selectExploreThemeUnsplash(req, req.params.tenantKey, req.body?.photoId)));
 router.post('/image', receiveImage, handle(req => uploadExploreThemeImage(req, req.params.tenantKey, req.file)));
 router.patch('/:themeId', handle(req => updateExploreTheme(req, req.params.tenantKey, req.params.themeId, req.body)));
 router.delete('/:themeId', handle(req => deleteExploreTheme(req, req.params.tenantKey, req.params.themeId)));

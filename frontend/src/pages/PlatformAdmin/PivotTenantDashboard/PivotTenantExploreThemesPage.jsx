@@ -15,6 +15,7 @@ import {
   exploreThemeInputFromDraft,
   exploreThemePaths,
   exploreThemeSearchUrl,
+  exploreThemeUnsplashUrl,
   formatExploreThemeDates,
   mergeCarouselGroupEvents,
   newExploreThemeDraft,
@@ -102,16 +103,160 @@ function ThemePhonePreview({ draft, cityDisplayName }) {
         <div className="explore-themes-preview__sheet" />
       </div>
       <figcaption className="explore-themes__muted">
-        {photo ? 'Type turns cream over the photo.' : 'No photo: the hero keeps its orange.'}
+        {photo
+          ? draft.backgroundCredit?.provider === 'unsplash'
+            ? `Type turns cream over the photo. The app credits ${draft.backgroundCredit.photographer} under the hero.`
+            : 'Type turns cream over the photo.'
+          : 'No photo: the hero keeps its orange.'}
       </figcaption>
     </figure>
   );
 }
 
-function ThemePhotoField({ tenantKey, value, onChange }) {
+/** Unsplash's required attribution: the photographer and Unsplash, both linked. */
+function PhotoCredit({ credit }) {
+  if (credit?.provider !== 'unsplash') return null;
+  return (
+    <span className="explore-themes__muted explore-themes-credit">
+      Photo by{' '}
+      <a href={credit.photographerUrl} target="_blank" rel="noreferrer">{credit.photographer}</a>
+      {' '}on{' '}
+      <a href={credit.sourceUrl} target="_blank" rel="noreferrer">Unsplash</a>
+    </span>
+  );
+}
+
+function UnsplashSearch({ tenantKey, disabled, onPick, onClose }) {
+  const [query, setQuery] = useState('');
+  const [results, setResults] = useState({ term: null, photos: [], page: 0, hasMore: false });
+  const [loading, setLoading] = useState(false);
+  const [picking, setPicking] = useState(null);
+  const [error, setError] = useState('');
+  const requestId = useRef(0);
+
+  const load = useCallback(
+    async (term, page = 1) => {
+      const id = requestId.current + 1;
+      requestId.current = id;
+      setLoading(true);
+      setError('');
+      const result = await authenticatedRequest(exploreThemeUnsplashUrl(tenantKey, { query: term, page }));
+      // A newer search has started; this one's photos are stale.
+      if (requestId.current !== id) return;
+      setLoading(false);
+      if (!result.data?.success) {
+        setError(requestMessage(result, 'Could not search Unsplash.'));
+        return;
+      }
+      const data = result.data.data;
+      setResults((prev) => ({
+        term,
+        photos: page > 1 ? [...prev.photos, ...data.photos] : data.photos,
+        page: data.page,
+        hasMore: data.hasMore,
+      }));
+    },
+    [tenantKey],
+  );
+
+  useEffect(() => {
+    load('');
+  }, [load]);
+
+  const pick = useCallback(
+    async (photo) => {
+      setPicking(photo.photoId);
+      setError('');
+      const result = await authenticatedRequest(exploreThemePaths(tenantKey).unsplashSelect, {
+        method: 'POST',
+        data: { photoId: photo.photoId },
+        headers: JSON_HEADERS,
+      });
+      setPicking(null);
+      if (!result.data?.success) {
+        setError(requestMessage(result, 'Could not use that photo.'));
+        return;
+      }
+      onPick(result.data.data);
+    },
+    [onPick, tenantKey],
+  );
+
+  return (
+    <div className="explore-themes-unsplash">
+      <form
+        className="explore-themes-unsplash__search"
+        onSubmit={(event) => {
+          event.preventDefault();
+          load(query.trim());
+        }}
+      >
+        <input
+          type="search"
+          value={query}
+          maxLength={200}
+          placeholder="Try pumpkins, autumn leaves, fireworks…"
+          aria-label="Search Unsplash"
+          onChange={(event) => setQuery(event.target.value)}
+        />
+        <button type="submit" className="linear-btn linear-btn--secondary linear-btn--sm" disabled={loading}>
+          Search
+        </button>
+        <button type="button" className="linear-btn linear-btn--ghost linear-btn--sm" onClick={onClose}>
+          Close
+        </button>
+      </form>
+      {error ? <p className="explore-themes__error" role="alert">{error}</p> : null}
+      {results.photos.length ? (
+        <ul className="explore-themes-unsplash__grid">
+          {results.photos.map((photo) => (
+            <li key={photo.id}>
+              <button
+                type="button"
+                className={`explore-themes-unsplash__photo${photo.height > photo.width ? ' is-portrait' : ''}`}
+                disabled={disabled || Boolean(picking)}
+                aria-label={`Use ${photo.alt} by ${photo.photographer}`}
+                onClick={() => pick(photo)}
+              >
+                <img src={photo.thumbnail} alt="" loading="lazy" />
+                <span>{picking === photo.photoId ? 'Using…' : photo.photographer}</span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      {loading ? <p className="explore-themes__muted" role="status">Loading photos…</p> : null}
+      {!loading && results.term !== null && !results.photos.length && !error ? (
+        <p className="explore-themes__muted">No photos match. Try a broader word.</p>
+      ) : null}
+      {results.hasMore && !loading ? (
+        <button
+          type="button"
+          className="linear-btn linear-btn--ghost linear-btn--sm"
+          onClick={() => load(results.term, results.page + 1)}
+        >
+          More photos
+        </button>
+      ) : null}
+      <span className="explore-themes__muted">
+        Portrait photos fill the screen best. The photographer is credited in the app.
+      </span>
+    </div>
+  );
+}
+
+function ThemePhotoField({ tenantKey, value, credit, onChange }) {
   const { addNotification } = useNotification();
   const inputRef = useRef(null);
   const [uploading, setUploading] = useState(false);
+  const [searching, setSearching] = useState(false);
+  const pickUnsplash = useCallback(
+    ({ url, credit: photoCredit }) => {
+      onChange({ url, credit: photoCredit });
+      setSearching(false);
+    },
+    [onChange],
+  );
 
   const upload = useCallback(
     async (file) => {
@@ -132,7 +277,7 @@ function ThemePhotoField({ tenantKey, value, onChange }) {
         });
         return;
       }
-      onChange(result.data.data.url);
+      onChange({ url: result.data.data.url, credit: null });
     },
     [addNotification, onChange, tenantKey],
   );
@@ -163,20 +308,38 @@ function ThemePhotoField({ tenantKey, value, onChange }) {
             disabled={uploading}
             onClick={() => inputRef.current?.click()}
           >
-            {uploading ? 'Uploading…' : value ? 'Replace photo' : 'Upload photo'}
+            {uploading ? 'Uploading…' : value ? 'Upload another' : 'Upload photo'}
+          </button>
+          <button
+            type="button"
+            className="linear-btn linear-btn--secondary linear-btn--sm"
+            disabled={uploading}
+            aria-expanded={searching}
+            onClick={() => setSearching((open) => !open)}
+          >
+            Search Unsplash
           </button>
           {value ? (
             <button
               type="button"
               className="linear-btn linear-btn--ghost linear-btn--sm"
               disabled={uploading}
-              onClick={() => onChange('')}
+              onClick={() => onChange({ url: '', credit: null })}
             >
               Remove
             </button>
           ) : null}
         </div>
       </div>
+      {value ? <PhotoCredit credit={credit} /> : null}
+      {searching ? (
+        <UnsplashSearch
+          tenantKey={tenantKey}
+          disabled={uploading}
+          onPick={pickUnsplash}
+          onClose={() => setSearching(false)}
+        />
+      ) : null}
       <span className="explore-themes__muted">
         Portrait, at least 1290 px wide. The top half sits behind the title and headline, so keep
         faces and words out of it. JPEG, PNG or WebP up to 12 MB.
@@ -469,7 +632,10 @@ function ThemeEditor({ tenantKey, cityDisplayName, timezone, limits, themes, edi
   const problem = exploreThemeDraftProblem(draft, limits);
   const overlaps = overlappingExploreThemes(draft, themes);
   const patch = useCallback((changes) => setDraft((prev) => ({ ...prev, ...changes })), []);
-  const setPhoto = useCallback((backgroundImageUrl) => patch({ backgroundImageUrl }), [patch]);
+  const setPhoto = useCallback(
+    ({ url, credit }) => patch({ backgroundImageUrl: url, backgroundCredit: credit }),
+    [patch],
+  );
   const setEvents = useCallback((events) => patch({ events }), [patch]);
 
   const save = useCallback(async () => {
@@ -575,7 +741,12 @@ function ThemeEditor({ tenantKey, cityDisplayName, timezone, limits, themes, edi
             </span>
           </div>
 
-          <ThemePhotoField tenantKey={tenantKey} value={draft.backgroundImageUrl} onChange={setPhoto} />
+          <ThemePhotoField
+            tenantKey={tenantKey}
+            value={draft.backgroundImageUrl}
+            credit={draft.backgroundCredit}
+            onChange={setPhoto}
+          />
 
           <FeaturedEvents tenantKey={tenantKey} events={draft.events} max={limits.featuredMax} onChange={setEvents} />
 

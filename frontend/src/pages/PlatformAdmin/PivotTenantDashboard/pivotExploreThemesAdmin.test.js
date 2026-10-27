@@ -6,6 +6,7 @@ import {
   exploreThemeInputFromDraft,
   exploreThemePaths,
   exploreThemeSearchUrl,
+  exploreThemeUnsplashUrl,
   formatExploreThemeDates,
   mergeCarouselGroupEvents,
   newExploreThemeDraft,
@@ -43,6 +44,7 @@ describe('drafts', () => {
       startsOn: '2026-10-24',
       endsOn: '2026-10-31',
       backgroundImageUrl: 'https://x/pivot-explore-themes/a.jpg',
+      backgroundCredit: null,
       published: true,
       eventIds: ['e1'],
     });
@@ -114,5 +116,13 @@ describe('carousel groups', () => {
   it('can start the list over from a group', () => {
     const result = mergeCarouselGroupEvents([ev('a')], [ev('b'), ev('c', 'missing')], 12, { replace: true });
     expect(result).toEqual({ events: [ev('b')], added: 1, overflow: 0 });
+  });
+});
+
+describe('exploreThemeUnsplashUrl', () => {
+  it('searches by keyword and pages on', () => {
+    expect(exploreThemeUnsplashUrl('toronto', { query: ' pumpkins ', page: 2 }))
+      .toBe('/admin/pivot/tenants/toronto/explore-themes/unsplash?query=pumpkins&page=2');
+    expect(exploreThemeUnsplashUrl('toronto')).toBe('/admin/pivot/tenants/toronto/explore-themes/unsplash');
   });
 });

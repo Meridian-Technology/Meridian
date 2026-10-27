@@ -36,6 +36,10 @@ const IMAGE_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp']);
 const IMAGE_MAX_WIDTH = 1290;
 const IMAGE_MAX_HEIGHT = 2796;
 const IMAGE_FOLDER = 'pivot-explore-themes';
+/** Unsplash photos are hotlinked from its CDN, as its API terms ask. */
+const UNSPLASH_IMAGE_HOST = 'images.unsplash.com';
+const UNSPLASH_PAGE_HOST = 'unsplash.com';
+const CREDIT_NAME_MAX = 120;
 
 /** Carousel groups offered as starting points for a theme's featured events. */
 const CAROUSEL_GROUP_LIMIT = 12;
@@ -101,18 +105,44 @@ function cleanText(value, max) {
   return trimmed.length <= max ? trimmed : null;
 }
 
-function cleanImageUrl(value) {
-  if (value === undefined || value === null || value === '') return '';
-  if (typeof value !== 'string') return null;
-  const trimmed = value.trim();
+function parseHttps(value) {
   try {
-    const url = new URL(trimmed);
-    return url.protocol === 'https:' && url.pathname.includes(`/${IMAGE_FOLDER}/`)
-      ? trimmed
-      : null;
+    const url = new URL(String(value).trim());
+    return url.protocol === 'https:' ? url : null;
   } catch (_) {
     return null;
   }
+}
+
+function isUnsplashImage(value) {
+  return parseHttps(value)?.hostname === UNSPLASH_IMAGE_HOST;
+}
+
+/** Our own uploads, or a photo on Unsplash's CDN. Nothing else. */
+function cleanImageUrl(value) {
+  if (value === undefined || value === null || value === '') return '';
+  if (typeof value !== 'string') return null;
+  const url = parseHttps(value);
+  if (!url) return null;
+  return url.hostname === UNSPLASH_IMAGE_HOST || url.pathname.includes(`/${IMAGE_FOLDER}/`)
+    ? value.trim()
+    : null;
+}
+
+/** An Unsplash photo's attribution: the photographer, linking back to Unsplash. */
+function cleanUnsplashCredit(value) {
+  if (!value || typeof value !== 'object') return null;
+  const photographer = cleanText(value.photographer, CREDIT_NAME_MAX);
+  const onUnsplash = (link) => {
+    const url = parseHttps(link);
+    return url && (url.hostname === UNSPLASH_PAGE_HOST || url.hostname.endsWith(`.${UNSPLASH_PAGE_HOST}`))
+      ? url.toString()
+      : null;
+  };
+  const photographerUrl = onUnsplash(value.photographerUrl);
+  const sourceUrl = onUnsplash(value.sourceUrl);
+  if (!photographer || !photographerUrl || !sourceUrl) return null;
+  return { provider: 'unsplash', photographer, photographerUrl, sourceUrl };
 }
 
 /**
@@ -155,8 +185,16 @@ function validateThemeInput(body = {}, { partial = false, existing = null } = {}
   }
   if (!partial || has('backgroundImageUrl')) {
     const url = cleanImageUrl(body.backgroundImageUrl);
-    if (url === null) return invalid('Upload the background photo here rather than linking one.');
+    if (url === null) return invalid('Upload the background photo or pick one from Unsplash here rather than linking one.');
     fields.backgroundImageUrl = url;
+    // Unsplash asks for its photographers to be credited wherever the photo shows.
+    if (isUnsplashImage(url)) {
+      const credit = cleanUnsplashCredit(body.backgroundCredit);
+      if (!credit) return invalid('An Unsplash photo needs its photographer’s credit. Pick it again from the search.');
+      fields.backgroundCredit = credit;
+    } else {
+      fields.backgroundCredit = null;
+    }
   }
   if (!partial || has('published')) {
     if (body.published !== undefined && typeof body.published !== 'boolean') {
@@ -188,6 +226,7 @@ function themeData(row, events, now) {
     startsAt: row.startsAt,
     endsAt: row.endsAt,
     backgroundImageUrl: row.backgroundImageUrl || '',
+    backgroundCredit: row.backgroundCredit || null,
     published: row.published === true,
     status: themeStatus(row, now),
     events,
@@ -316,6 +355,49 @@ function uploadExploreThemeImage(req, tenantKey, file) {
       { maxBytes: IMAGE_MAX_BYTES },
     );
     return { status: 201, data: { url } };
+  });
+}
+
+/** Unsplash's photos for a theme background, searched by keyword. */
+function searchExploreThemeUnsplash(req, tenantKey, query = {}) {
+  return withCity(req, tenantKey, () => {
+    // Loaded here so the consumer explore path never pulls in the carousel.
+    const { searchUnsplashPhotos } = require('./pivotCarouselUnsplashService');
+    return searchUnsplashPhotos({ query: query.query, page: query.page });
+  });
+}
+
+/**
+ * Picks an Unsplash photo for a theme: records the download with Unsplash
+ * and returns a phone-sized link on its CDN, with the credit to show.
+ */
+function selectExploreThemeUnsplash(req, tenantKey, photoId) {
+  return withCity(req, tenantKey, async () => {
+    const { selectUnsplashPhoto } = require('./pivotCarouselUnsplashService');
+    const picked = await selectUnsplashPhoto(photoId);
+    if (picked.error) return picked;
+    const { asset, raw } = picked.data;
+    let url = asset.src;
+    const rawUrl = raw && parseHttps(raw);
+    if (rawUrl?.hostname === UNSPLASH_IMAGE_HOST) {
+      // Unsplash resizes on its CDN: ask for the same size an upload gets.
+      rawUrl.searchParams.set('w', String(IMAGE_MAX_WIDTH));
+      rawUrl.searchParams.set('fit', 'max');
+      rawUrl.searchParams.set('fm', 'jpg');
+      rawUrl.searchParams.set('q', '80');
+      url = rawUrl.toString();
+    }
+    return {
+      data: {
+        url,
+        credit: {
+          provider: 'unsplash',
+          photographer: asset.photographer,
+          photographerUrl: asset.photographerUrl,
+          sourceUrl: asset.sourceUrl,
+        },
+      },
+    };
   });
 }
 
@@ -519,6 +601,7 @@ function serializeExploreTheme(theme, eventsById) {
     name: theme.name,
     tagline: theme.tagline || null,
     backgroundImageUrl: theme.backgroundImageUrl || null,
+    backgroundCredit: theme.backgroundCredit || null,
     startsAt: new Date(theme.startsAt).toISOString(),
     endsAt: new Date(theme.endsAt).toISOString(),
     events,
@@ -536,6 +619,8 @@ module.exports = {
   updateExploreTheme,
   deleteExploreTheme,
   uploadExploreThemeImage,
+  searchExploreThemeUnsplash,
+  selectExploreThemeUnsplash,
   searchExploreThemeEvents,
   cityEventIds,
   listExploreThemeCarouselGroups,

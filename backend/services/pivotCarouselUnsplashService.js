@@ -14,31 +14,47 @@ async function request(path, params) {
     params, timeout: 10000,
   })).data;
 }
+/** Runs an Unsplash call, mapping a missing key or a provider failure to a result. */
+async function withUnsplash(operation) {
+  if (!process.env.UNSPLASH_ACCESS_KEY) return { error: 'Unsplash is not connected yet. Ask an administrator to configure the Unsplash access key.', status: 503, code: 'UNSPLASH_NOT_CONFIGURED' };
+  try { return { data: await operation() }; }
+  catch (error) { return { error: error.response?.status === 429 || error.response?.status === 403 ? 'Unsplash is temporarily unavailable or its request limit was reached. Try again later.' : 'Could not reach Unsplash. Please try again.', status: 502, code: 'UNSPLASH_UNAVAILABLE' }; }
+}
 async function withAccess(req, accountId, operation) {
   let gate;
   try { gate = await loadAccount(req, accountId); }
   catch (_) { return { error: 'Could not verify carousel account access.', status: 500, code: 'ACCOUNT_UNAVAILABLE' }; }
   if (gate.error) return gate;
-  if (!process.env.UNSPLASH_ACCESS_KEY) return { error: 'Unsplash is not connected yet. Ask an administrator to configure the Unsplash access key.', status: 503, code: 'UNSPLASH_NOT_CONFIGURED' };
-  try { return { data: await operation() }; }
-  catch (error) { return { error: error.response?.status === 429 || error.response?.status === 403 ? 'Unsplash is temporarily unavailable or its request limit was reached. Try again later.' : 'Could not reach Unsplash. Please try again.', status: 502, code: 'UNSPLASH_UNAVAILABLE' }; }
+  return withUnsplash(operation);
+}
+async function search(query) {
+  const page = Math.max(1, Math.min(100, Number.parseInt(query.page, 10) || 1));
+  const term = String(query.query || '').trim().slice(0, 200);
+  const data = await request(term ? '/search/photos' : '/photos', { ...(term ? { query: term, content_filter: 'high' } : {}), page, per_page: 24 });
+  const photos = term ? data.results : data;
+  return { photos: photos.map(serialize), page, hasMore: term ? page < data.total_pages : photos.length === 24 };
+}
+const validPhotoId = photoId => /^[\w-]{1,100}$/.test(String(photoId || ''));
+const invalidPhoto = () => ({ error: 'Invalid photograph.', status: 400, code: 'INVALID_PHOTO' });
+async function select(photoId) {
+  const photo = await request(`/photos/${photoId}`);
+  // Construct the fixed provider endpoint from its ID; never fetch a client-supplied URL.
+  await request(`/photos/${photoId}/download`);
+  return { asset: serialize(photo), raw: photo.urls.raw || null };
 }
 function searchPhotos(req, accountId, query = {}) {
-  return withAccess(req, accountId, async () => {
-    const page = Math.max(1, Math.min(100, Number.parseInt(query.page, 10) || 1));
-    const term = String(query.query || '').trim().slice(0, 200);
-    const data = await request(term ? '/search/photos' : '/photos', { ...(term ? { query: term, content_filter: 'high' } : {}), page, per_page: 24 });
-    const photos = term ? data.results : data;
-    return { photos: photos.map(serialize), page, hasMore: term ? page < data.total_pages : photos.length === 24 };
-  });
+  return withAccess(req, accountId, () => search(query));
 }
 function selectPhoto(req, accountId, photoId) {
-  if (!/^[\w-]{1,100}$/.test(String(photoId || ''))) return Promise.resolve({ error: 'Invalid photograph.', status: 400, code: 'INVALID_PHOTO' });
-  return withAccess(req, accountId, async () => {
-    const photo = await request(`/photos/${photoId}`);
-    // Construct the fixed provider endpoint from its ID; never fetch a client-supplied URL.
-    await request(`/photos/${photoId}/download`);
-    return { asset: serialize(photo) };
-  });
+  if (!validPhotoId(photoId)) return Promise.resolve(invalidPhoto());
+  return withAccess(req, accountId, async () => ({ asset: (await select(photoId)).asset }));
 }
-module.exports = { searchPhotos, selectPhoto };
+/** The same search and selection for callers that do their own access check. */
+function searchUnsplashPhotos(query = {}) {
+  return withUnsplash(() => search(query));
+}
+function selectUnsplashPhoto(photoId) {
+  if (!validPhotoId(photoId)) return Promise.resolve(invalidPhoto());
+  return withUnsplash(() => select(photoId));
+}
+module.exports = { searchPhotos, selectPhoto, searchUnsplashPhotos, selectUnsplashPhoto };
