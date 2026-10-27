@@ -44,8 +44,6 @@ const CREDIT_NAME_MAX = 120;
 /** Carousel groups offered as starting points for a theme's featured events. */
 const CAROUSEL_GROUP_LIMIT = 12;
 const CAROUSEL_LOOKBACK_DAYS = 120;
-/** Each account's suggestions run several vector searches; two is plenty. */
-const SUGGESTED_ACCOUNT_LIMIT = 2;
 /** A suggested group trimmed to one city needs at least this many to help. */
 const SUGGESTED_MIN_EVENTS = 2;
 
@@ -495,46 +493,33 @@ const SUGGESTION_NOTICES = Object.freeze({
 });
 
 /**
- * The carousel workspace's suggested groups, from the accounts that draw on
- * this city, trimmed to this city's events.
+ * The carousel workspace's suggested groups, seeded from this city alone, so
+ * every group is this city's events.
  */
 async function suggestedCarouselGroups(req, city, now) {
   // Loaded here so the consumer explore path never pulls in the carousel.
-  const { findSuggestedCurationGroups } = require('./pivotCarouselRelatedService');
-  const { PivotCarouselAccount } = getGlobalModels(req, 'PivotCarouselAccount');
-  const accounts = await PivotCarouselAccount.find({ sourceTenantKeys: city })
-    .sort({ updatedAt: -1 })
-    .limit(SUGGESTED_ACCOUNT_LIMIT)
-    .select('_id')
-    .lean();
-  if (!accounts.length) {
-    return { groups: [], notice: 'No carousel account draws on this city yet, so there are no suggestions.' };
+  const { findSuggestedGroupsForSources } = require('./pivotCarouselRelatedService');
+  const result = await findSuggestedGroupsForSources(req, [city], { now });
+  if (result.error) {
+    const notice = SUGGESTION_NOTICES[result.code];
+    if (notice) return { groups: [], notice };
+    return result;
   }
   const groups = [];
-  const seen = new Set();
-  for (const account of accounts) {
-    const result = await findSuggestedCurationGroups(req, String(account._id), { now });
-    if (result.error) {
-      const notice = SUGGESTION_NOTICES[result.code];
-      if (notice) return { groups, notice };
-      continue;
-    }
-    for (const group of result.data.groups || []) {
-      const eventIds = cityEventIds((group.candidates || []).map((candidate) => candidate.ref), city);
-      const key = eventIds.join('|');
-      if (eventIds.length < SUGGESTED_MIN_EVENTS || seen.has(key)) continue;
-      seen.add(key);
-      groups.push({
-        id: `suggested:${group.id}`,
-        kind: 'suggested',
-        label: group.label,
-        detail: group.signal?.label ? `Starts from a ${group.signal.label.toLowerCase()} event` : '',
-        updatedAt: null,
-        eventIds,
-      });
-    }
+  for (const group of result.data.groups || []) {
+    const eventIds = cityEventIds((group.candidates || []).map((candidate) => candidate.ref), city);
+    if (eventIds.length < SUGGESTED_MIN_EVENTS) continue;
+    groups.push({
+      id: `suggested:${group.id}`,
+      kind: 'suggested',
+      label: group.label,
+      detail: group.signal?.label ? `Starts from a ${group.signal.label.toLowerCase()} event` : '',
+      updatedAt: null,
+      eventIds,
+    });
   }
-  return { groups };
+  const failed = (result.data.sources || []).some((source) => source.status === 'failed');
+  return { groups, notice: failed ? 'Suggestions could not load for this city. Try again.' : null };
 }
 
 /**
@@ -549,6 +534,7 @@ function listExploreThemeCarouselGroups(req, tenantKey, query = {}) {
     const found = source === 'suggested'
       ? await suggestedCarouselGroups(req, city, now)
       : await recentCarouselGroups(req, city, now);
+    if (found.error) return found;
     const ids = [...new Set(found.groups.flatMap((group) => group.eventIds))];
     const Event = ids.length ? await tenantEventModel(tenant) : null;
     const described = Event ? await describeCuratedEvents(Event, ids, now) : [];

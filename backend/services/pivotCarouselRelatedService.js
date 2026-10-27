@@ -63,15 +63,22 @@ function eligibleRelatedEvents(now) {
   return { parsed, match };
 }
 
+const relatedDisabled = (options) => process.env.PIVOT_CURATION_RELATED_ENABLED !== 'true' && !options.enabled;
+const disabled = () => ({ error: 'Related-event proposals are disabled.', status: 503, code: 'PROVIDER_UNAVAILABLE' });
+
 async function findRelatedCurationEvents(req, accountId, raw = {}, options = {}) {
-  if (process.env.PIVOT_CURATION_RELATED_ENABLED !== 'true' && !options.enabled) {
-    return { error: 'Related-event proposals are disabled.', status: 503, code: 'PROVIDER_UNAVAILABLE' };
-  }
+  if (relatedDisabled(options)) return disabled();
   const loaded = await loadAccount(req, accountId);
   if (loaded.error) return loaded;
+  return findRelatedForSources(req, loaded.account.sourceTenantKeys, raw, { ...options, enabled: true });
+}
+
+/** Related events for a seed in one of `sourceTenantKeys`, with or without an account. */
+async function findRelatedForSources(req, sourceTenantKeys, raw = {}, options = {}) {
+  if (relatedDisabled(options)) return disabled();
   const tenantKey = String(raw.sourceTenantKey || '').trim().toLowerCase();
   const eventId = String(raw.eventId || '').trim();
-  if (!loaded.account.sourceTenantKeys.includes(tenantKey)) {
+  if (!sourceTenantKeys.includes(tenantKey)) {
     return { error: 'That source tenant is not allowed for this account.', status: 403, code: 'SOURCE_NOT_ALLOWED' };
   }
   if (!mongoose.isValidObjectId(eventId)) {
@@ -156,17 +163,21 @@ function orderGroupSeeds(seeds) {
 }
 
 async function findSuggestedCurationGroups(req, accountId, options = {}) {
-  if (process.env.PIVOT_CURATION_RELATED_ENABLED !== 'true' && !options.enabled) {
-    return { error: 'Related-event proposals are disabled.', status: 503, code: 'PROVIDER_UNAVAILABLE' };
-  }
+  if (relatedDisabled(options)) return disabled();
   const loaded = await loadAccount(req, accountId);
   if (loaded.error) return loaded;
+  return findSuggestedGroupsForSources(req, loaded.account.sourceTenantKeys, { ...options, enabled: true });
+}
+
+/** Suggested groups seeded from `sourceTenantKeys`, with or without an account. */
+async function findSuggestedGroupsForSources(req, sourceTenantKeys, options = {}) {
+  if (relatedDisabled(options)) return disabled();
   const now = options.now || new Date();
   const { parsed, match } = eligibleRelatedEvents(now);
   const seeds = [];
   const sources = [];
 
-  for (const tenantKey of loaded.account.sourceTenantKeys) {
+  for (const tenantKey of sourceTenantKeys) {
     try {
       const db = await connectToDatabase(tenantKey);
       const { Event, PivotEventIntent } = getModels({ db }, 'Event', 'PivotEventIntent');
@@ -196,7 +207,7 @@ async function findSuggestedCurationGroups(req, accountId, options = {}) {
     if (groups.length === GROUP_LIMIT) break;
     const seedKey = `${seed.tenantKey}:${seed.event._id}`;
     if (used.has(seedKey)) continue;
-    const proposal = await findRelatedCurationEvents(req, accountId, {
+    const proposal = await findRelatedForSources(req, sourceTenantKeys, {
       sourceTenantKey: seed.tenantKey, eventId: String(seed.event._id),
     }, { enabled: true, now });
     if (proposal.error) {
@@ -230,4 +241,5 @@ async function findSuggestedCurationGroups(req, accountId, options = {}) {
 module.exports = {
   INDEX_NAME, TEXT_PATH, relatedPipeline, chooseNeighbors, findRelatedCurationEvents,
   seedSignal, orderGroupSeeds, findSuggestedCurationGroups,
+  findRelatedForSources, findSuggestedGroupsForSources,
 };

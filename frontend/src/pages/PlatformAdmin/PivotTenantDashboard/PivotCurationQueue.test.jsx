@@ -567,3 +567,53 @@ describe('PivotCurationQueue catalog', () => {
     await waitFor(() => expect(onDraft).toHaveBeenCalled());
   });
 });
+
+describe('pick mode', () => {
+  it('borrows the catalog without its status, feature, weight or edit controls', () => {
+    mockMatchMedia(false);
+    renderQueue({ mode: 'pick', selectedIds: new Set(['2']), title: 'Catalog · pick' });
+
+    expect(screen.getByText('Catalog · pick')).toBeInTheDocument();
+    expect(screen.getByRole('searchbox', { name: 'Search catalog' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Unpublished' })).toBeInTheDocument();
+    expect(screen.getByRole('complementary', { name: 'Oakland disco details' })).toBeInTheDocument();
+    for (const name of ['Publish', 'Edit', 'Feature', 'Delete', 'Draft', 'Fullscreen', 'Resolve location']) {
+      expect(screen.queryByRole('button', { name })).not.toBeInTheDocument();
+    }
+    expect(screen.queryByText('Use selection as exact set')).not.toBeInTheDocument();
+    expect(screen.getByText('1 selected')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^Unpublish \(/ })).not.toBeInTheDocument();
+  });
+
+  it('adds a clicked row to the picks instead of replacing them', () => {
+    mockMatchMedia(false);
+    const onSelectedIdsChange = jest.fn();
+    renderQueue({ mode: 'pick', selectedIds: new Set(['elsewhere']), onSelectedIdsChange });
+
+    fireEvent.pointerDown(eventRow('Mission brunch'), { button: 0, pointerId: 1 });
+
+    expect(onSelectedIdsChange).toHaveBeenLastCalledWith(new Set(['elsewhere', '2']));
+  });
+
+  it('ignores status hotkeys and keeps picks when moving focus', () => {
+    mockMatchMedia(false);
+    const onStage = jest.fn();
+    const onSelectedIdsChange = jest.fn();
+    renderQueue({
+      mode: 'pick',
+      onStage,
+      onSelectedIdsChange,
+      selectedIds: new Set(['elsewhere']),
+      events: [
+        { _id: '3', name: 'Draft disco', organizerName: 'Nico', ingestStatus: 'draft' },
+        { _id: '4', name: 'Draft brunch', organizerName: 'Ada', ingestStatus: 'draft' },
+      ],
+    });
+
+    fireEvent.keyDown(window, { key: 's' });
+    fireEvent.keyDown(screen.getByRole('grid', { name: 'Curation catalog' }), { key: 'ArrowDown' });
+
+    expect(onStage).not.toHaveBeenCalled();
+    expect(onSelectedIdsChange).not.toHaveBeenCalled();
+  });
+});

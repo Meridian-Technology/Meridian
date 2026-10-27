@@ -3,6 +3,11 @@
  * save sends, and how themes read in the list (status, dates, overlaps).
  */
 
+/** The city's catalog for one batch week: what the Events page lists. */
+export function cityCatalogPath(tenantKey) {
+  return `/admin/pivot/tenants/${encodeURIComponent(String(tenantKey || '').trim().toLowerCase())}/ops`;
+}
+
 export function exploreThemePaths(tenantKey) {
   const base = `/admin/pivot/tenants/${encodeURIComponent(String(tenantKey || '').trim().toLowerCase())}/explore-themes`;
   return {
@@ -191,4 +196,32 @@ function calendarDaysBetween(from, to) {
   const end = calendarDateToUtc(to);
   if (!start || !end) return 0;
   return Math.round((end - start) / (24 * 60 * 60 * 1000));
+}
+
+/** A catalog row from the Events page, as a featured event. */
+export function catalogEventToFeatured(event, now = new Date()) {
+  const ends = event.end_time || event.start_time;
+  const ended = ends ? new Date(ends) < now : false;
+  return {
+    id: String(event._id),
+    name: event.name || '',
+    hostName: event.organizerName || '',
+    startTime: event.start_time || null,
+    ...(event.image ? { coverImageUrl: event.image } : {}),
+    state: event.ingestStatus !== 'published' ? 'unpublished' : ended ? 'ended' : 'live',
+  };
+}
+
+/**
+ * Folds the catalog's selection back into the ordered featured list. Picks
+ * stay where they were; new ones join the end in the order the catalog
+ * lists them. Ids the catalog no longer selects are dropped.
+ */
+export function mergePickedEvents(current, selectedIds, catalogEvents, now = new Date()) {
+  const kept = current.filter((event) => selectedIds.has(event.id));
+  const have = new Set(kept.map((event) => event.id));
+  const added = catalogEvents
+    .filter((event) => selectedIds.has(String(event._id)) && !have.has(String(event._id)))
+    .map((event) => catalogEventToFeatured(event, now));
+  return [...kept, ...added];
 }

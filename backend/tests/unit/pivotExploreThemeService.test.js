@@ -8,7 +8,8 @@ jest.mock('../../services/pivotClipAdminService', () => ({
 }));
 jest.mock('../../services/getGlobalModelService', () => jest.fn());
 jest.mock('../../services/pivotCarouselRelatedService', () => ({
-  findSuggestedCurationGroups: jest.fn(),
+  findSuggestedGroupsForSources: jest.fn(),
+  findRelatedForSources: jest.fn(),
 }));
 jest.mock('../../services/pivotCarouselUnsplashService', () => ({
   searchUnsplashPhotos: jest.fn(),
@@ -18,7 +19,7 @@ jest.mock('../../services/pivotCarouselUnsplashService', () => ({
 const getGlobalModels = require('../../services/getGlobalModelService');
 const { resolvePivotTenant } = require('../../services/pivotIngestPublishService');
 const { describeCuratedEvents, tenantEventModel } = require('../../services/pivotClipAdminService');
-const { findSuggestedCurationGroups } = require('../../services/pivotCarouselRelatedService');
+const { findSuggestedGroupsForSources } = require('../../services/pivotCarouselRelatedService');
 const { selectUnsplashPhoto } = require('../../services/pivotCarouselUnsplashService');
 
 const {
@@ -227,9 +228,8 @@ describe('listExploreThemeCarouselGroups', () => {
     expect(data.groups[1].events).toEqual([live(ID(1), 'Event 1')]);
   });
 
-  it('trims suggested groups to this city and drops ones too thin to help', async () => {
-    getGlobalModels.mockReturnValue({ PivotCarouselAccount: model([{ _id: 'acct1' }]) });
-    findSuggestedCurationGroups.mockResolvedValue({
+  it('seeds suggested groups from this city and drops ones too thin to help', async () => {
+    findSuggestedGroupsForSources.mockResolvedValue({
       data: {
         groups: [
           {
@@ -257,6 +257,7 @@ describe('listExploreThemeCarouselGroups', () => {
 
     const { data } = await listExploreThemeCarouselGroups({}, 'toronto', { source: 'suggested' });
 
+    expect(findSuggestedGroupsForSources.mock.calls[0][1]).toEqual(['toronto']);
     expect(data.groups).toHaveLength(1);
     expect(data.groups[0]).toMatchObject({
       id: 'suggested:toronto:x',
@@ -267,15 +268,11 @@ describe('listExploreThemeCarouselGroups', () => {
   });
 
   it('explains why there are no suggestions', async () => {
-    getGlobalModels.mockReturnValue({ PivotCarouselAccount: model([]) });
-    let result = await listExploreThemeCarouselGroups({}, 'toronto', { source: 'suggested' });
-    expect(result.data.notice).toMatch(/No carousel account/);
-
-    getGlobalModels.mockReturnValue({ PivotCarouselAccount: model([{ _id: 'acct1' }]) });
-    findSuggestedCurationGroups.mockResolvedValue({ error: 'off', code: 'PROVIDER_UNAVAILABLE' });
-    result = await listExploreThemeCarouselGroups({}, 'toronto', { source: 'suggested' });
+    findSuggestedGroupsForSources.mockResolvedValue({ error: 'off', code: 'PROVIDER_UNAVAILABLE' });
+    const result = await listExploreThemeCarouselGroups({}, 'toronto', { source: 'suggested' });
     expect(result.data).toMatchObject({ groups: [], notice: expect.stringMatching(/turned off/) });
   });
+
 });
 
 describe('Unsplash backgrounds', () => {

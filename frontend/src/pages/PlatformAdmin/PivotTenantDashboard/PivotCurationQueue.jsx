@@ -12,7 +12,7 @@ import { isTypingTarget } from '../PivotLab/PivotManualImportModal';
 import { curationPublicEventUrl } from './curationPublicEventUrl';
 import { dragRangeSelection, nextSelection, reconcileCatalogAnchor, sameIdSet } from './curationQueueSelection';
 import useCurationImmersiveScroll from './useCurationImmersiveScroll';
-import { eventMatchesCatalogSearch } from './curationCatalogFilters';
+import { HOST_CREATED_SOURCE, eventMatchesCatalogSearch } from './curationCatalogFilters';
 import {
   bulkGoogleLocationEvents,
   locationReviewBlock,
@@ -29,7 +29,6 @@ import PivotLocationReviewInspector from './PivotLocationReviewInspector';
 import KeybindTooltip from '../../../components/Interface/KeybindTooltip/KeybindTooltip';
 import './PivotCurationQueue.scss';
 
-const HOST_CREATED_SOURCE = 'justgo';
 const DRAG_SELECT_THRESHOLD_PX = 5;
 const CURATION_INSPECT_POPUP_MQ = '(max-width: 720px)';
 
@@ -513,6 +512,7 @@ function QueueInspector({
   imageBroken = false,
   layout = 'pane',
   showWeight = true,
+  statusControls = true,
 }) {
   const [mediaFailed, setMediaFailed] = useState(false);
   useEffect(() => {
@@ -596,7 +596,7 @@ function QueueInspector({
             <strong>{reviewBlock.title}</strong>
             <p>{reviewBlock.detail} Publishing stays blocked until location review is approved.</p>
             <div className="pivot-curation-sheet__review-callout-actions">
-              {onResolveLocation ? (
+              {statusControls && onResolveLocation ? (
                 <button
                   type="button"
                   className="linear-btn linear-btn--secondary linear-btn--sm"
@@ -685,7 +685,7 @@ function QueueInspector({
             ))}
           </ul>
         ) : null}
-        {showWeight ? (
+        {statusControls && showWeight ? (
           <EditorialWeightControl
             event={event}
             busy={editorialSaving}
@@ -714,6 +714,7 @@ function QueueInspector({
             </a>
           ) : null}
         </div>
+        {statusControls ? (
         <div className="pivot-curation-sheet__inspect-actions">
           <button
             type="button"
@@ -802,6 +803,7 @@ function QueueInspector({
             {deleting ? 'Deleting…' : 'Delete'}
           </button>
         </div>
+        ) : null}
       </div>
     </aside>
   );
@@ -985,7 +987,17 @@ function PivotCurationQueue({
   emptyLabel,
   brokenImageIds,
   scanningBrokenImages = false,
+  /**
+   * `curate` is the Events page. `pick` borrows the same catalog, search,
+   * filters and selection to choose events for something else (an Explore
+   * theme): no status, feature, weight, tag or edit controls, and it stays
+   * inside its container rather than taking over the page.
+   */
+  mode = 'curate',
+  title,
+  description,
 }) {
+  const statusControls = mode !== 'pick';
   const sheetRef = useRef(null);
   const scrollerRef = useRef(null);
   const sentinelRef = useRef(null);
@@ -1010,7 +1022,7 @@ function PivotCurationQueue({
   );
   const eventsIdentity = `${query}:${events.length}:${events[0]?._id ?? ''}:${events[events.length - 1]?._id ?? ''}`;
   const { frameRef, slotRef, slotHeight, immersive, expanded, collapse } = useCurationImmersiveScroll({
-    enabled: catalogEvents.length > 0,
+    enabled: statusControls && catalogEvents.length > 0,
     scrollerRef,
   });
   const [chromeFullscreen, setChromeFullscreen] = useState(false);
@@ -1101,10 +1113,11 @@ function PivotCurationQueue({
     prevEventsRef.current = events;
     focusIdRef.current = next.focusId;
     if (next.focusIndex !== focusIndex) setFocusIndex(next.focusIndex);
-    if (anchorActive && !sameIdSet(selectedIds, next.selectedIds)) {
+    // Picking keeps choices the current filter or week doesn't show.
+    if (statusControls && anchorActive && !sameIdSet(selectedIds, next.selectedIds)) {
       onSelectedIdsChange(next.selectedIds);
     }
-  }, [anchorActive, events, focusIndex, onSelectedIdsChange, selectedIds]);
+  }, [anchorActive, events, focusIndex, onSelectedIdsChange, selectedIds, statusControls]);
 
   const revealThrough = useCallback((index) => {
     if (!Number.isInteger(index) || index < 0) return;
@@ -1194,7 +1207,8 @@ function PivotCurationQueue({
 
   const selectAt = useCallback(
     (event, index, nativeEvent, { toggle = false } = {}) => {
-      const additive = toggle || nativeEvent.metaKey || nativeEvent.ctrlKey;
+      // Picking adds to the choice rather than replacing it, like a checklist.
+      const additive = !statusControls || toggle || nativeEvent.metaKey || nativeEvent.ctrlKey;
       const range = nativeEvent.shiftKey;
       const nextIds = nextSelection(selectedIds, {
         id: event._id,
@@ -1209,7 +1223,7 @@ function PivotCurationQueue({
       if (event?._id != null) focusIdRef.current = event._id;
       onSelectedIdsChange(nextIds);
     },
-    [events, onSelectedIdsChange, selectedIds],
+    [events, onSelectedIdsChange, selectedIds, statusControls],
   );
 
   const rowIndexFromPoint = useCallback((clientX, clientY) => {
@@ -1260,9 +1274,9 @@ function PivotCurationQueue({
 
   const dismissAnchor = useCallback(() => {
     setAnchorActive(false);
-    if (selectedIds.size) onSelectedIdsChange(new Set());
+    if (statusControls && selectedIds.size) onSelectedIdsChange(new Set());
     setDossierEventId(null);
-  }, [onSelectedIdsChange, selectedIds]);
+  }, [onSelectedIdsChange, selectedIds, statusControls]);
 
   const handlePanePointerDown = useCallback(
     (nativeEvent) => {
@@ -1299,7 +1313,7 @@ function PivotCurationQueue({
         return;
       }
 
-      const additive = nativeEvent.metaKey || nativeEvent.ctrlKey;
+      const additive = !statusControls || nativeEvent.metaKey || nativeEvent.ctrlKey;
       dragRef.current = {
         pointerId: nativeEvent.pointerId,
         startIndex: index,
@@ -1317,7 +1331,7 @@ function PivotCurationQueue({
         previewAt(event, index, new Set([event._id]));
       }
     },
-    [dismissAnchor, events, previewAt, selectAt, selectedIds],
+    [dismissAnchor, events, previewAt, selectAt, selectedIds, statusControls],
   );
 
   const handlePanePointerMove = useCallback(
@@ -1353,13 +1367,14 @@ function PivotCurationQueue({
       const drag = dragRef.current;
       if (nativeEvent.type === 'pointerup' && drag?.pointerId === nativeEvent.pointerId) {
         if (drag.touch && !drag.cancelled) {
-          previewAt(drag.event, drag.index, new Set([drag.event._id]));
+          if (statusControls) previewAt(drag.event, drag.index, new Set([drag.event._id]));
+          else selectAt(drag.event, drag.index, nativeEvent, { toggle: true });
           if (inspectAsPopup) setDossierEventId(drag.event._id);
         }
       }
       endDrag(nativeEvent.pointerId);
     },
-    [endDrag, inspectAsPopup, previewAt],
+    [endDrag, inspectAsPopup, previewAt, selectAt, statusControls],
   );
 
   const handleKeyDown = useCallback(
@@ -1382,7 +1397,7 @@ function PivotCurationQueue({
         const focused = events[nextIndex];
         if (!focused) return;
         if (extend) selectAt(focused, nextIndex, nativeEvent);
-        else previewAt(focused, nextIndex, new Set([focused._id]));
+        else previewAt(focused, nextIndex, statusControls ? new Set([focused._id]) : undefined);
       };
 
       const actionTargets = () => {
@@ -1449,7 +1464,8 @@ function PivotCurationQueue({
         window.getSelection?.()?.removeAllRanges?.();
         if (events.length) {
           setAnchorActive(true);
-          onSelectedIdsChange(new Set(events.map((event) => event._id)));
+          const all = events.map((event) => event._id);
+          onSelectedIdsChange(new Set(statusControls ? all : [...selectedIds, ...all]));
         }
         return;
       }
@@ -1458,7 +1474,7 @@ function PivotCurationQueue({
 
       if (withMeta && key === 'p') {
         nativeEvent.preventDefault();
-        if (busyKey) return;
+        if (busyKey || !statusControls) return;
         const staged = actionTargets().filter((event) => event.ingestStatus === 'staged');
         if (!staged.length) return;
         Promise.resolve(executePublish(staged)).then((ok) => {
@@ -1473,7 +1489,7 @@ function PivotCurationQueue({
         const focused = events[focusIndex];
         if (!focused) return;
         nativeEvent.preventDefault();
-        previewAt(focused, focusIndex, new Set([focused._id]));
+        previewAt(focused, focusIndex, statusControls ? new Set([focused._id]) : undefined);
         setDossierEventId(focused._id);
         return;
       }
@@ -1496,7 +1512,7 @@ function PivotCurationQueue({
         return;
       }
 
-      if (busyKey || !['s', 'p', 'u', 'd', 'w'].includes(key)) return;
+      if (!statusControls || busyKey || !['s', 'p', 'u', 'd', 'w'].includes(key)) return;
 
       const targets = actionTargets();
       if (!targets.length) return;
@@ -1580,6 +1596,7 @@ function PivotCurationQueue({
       weightEventId,
       locationEventId,
       brokenImageIds,
+      statusControls,
     ],
   );
 
@@ -1707,6 +1724,7 @@ function PivotCurationQueue({
       batchWeek={batchWeek}
       imageBroken={brokenImageIds?.has(String(event._id))}
       showWeight={layout === 'dossier' || !weightEvent}
+      statusControls={statusControls}
     />
   );
 
@@ -1732,19 +1750,20 @@ function PivotCurationQueue({
         }${chromeFullscreen ? ' is-chrome-fullscreen' : ''}`}
       >
         <PivotOpsSection
-          title={`Catalog · ${batchWeek}`}
+          title={title || `Catalog · ${batchWeek}`}
           titleId="curation-queue"
-          description={
+          description={description || (
             immersive
               ? 'Scroll the list. Scroll up past the top to return, or use Fullscreen to hide the dashboard.'
               : showPerformance
                 ? 'The side panel follows the focused row. Press Enter for a closer look. Click and drag to select several. Interest % updates as the live batch gets swipes.'
                 : 'The side panel follows the focused row. Press Enter for a closer look. Click and drag to select several. Unpublished rows still need staging or location review before they can go live.'
-          }
+          )}
           actions={filterActions}
           className={`pivot-curation-sheet${immersive ? ' is-immersive' : ''}`}
           bodyClassName="pivot-curation-sheet__body"
         >
+      {statusControls ? (
       <div className="pivot-curation-selection-policy">
         <div>
           <strong>
@@ -1780,6 +1799,7 @@ function PivotCurationQueue({
           ) : null}
         </div>
       </div>
+      ) : null}
       <div className="pivot-curation-sheet__toolbar">
         <label className="pivot-curation-sheet__search">
           <span className="visually-hidden">Search catalog</span>
@@ -1792,6 +1812,7 @@ function PivotCurationQueue({
             spellCheck="false"
           />
         </label>
+        {statusControls ? (
         <button
           type="button"
           className="linear-btn linear-btn--secondary linear-btn--sm pivot-curation-sheet__fullscreen"
@@ -1805,18 +1826,29 @@ function PivotCurationQueue({
         >
           {chromeFullscreen ? 'Exit fullscreen' : 'Fullscreen'}
         </button>
-        <p className="pivot-curation-sheet__keys">
-          <span><kbd>I</kbd> up <kbd>K</kbd> down</span>
-          <span><kbd>↑</kbd><kbd>↓</kbd> also</span>
-          <span><kbd>S</kbd> stage</span>
-          <span><kbd>D</kbd> draft</span>
-          <span><kbd>P</kbd> review</span>
-          <span><kbd>⌘P</kbd> publish</span>
-          <span><kbd>⌘A</kbd> select all</span>
-          <span><kbd>W</kbd> weight</span>
-          <span><kbd>U</kbd> unpublish</span>
-          <span><kbd>↵</kbd> details</span>
-        </p>
+        ) : null}
+        {statusControls ? (
+          <p className="pivot-curation-sheet__keys">
+            <span><kbd>I</kbd> up <kbd>K</kbd> down</span>
+            <span><kbd>↑</kbd><kbd>↓</kbd> also</span>
+            <span><kbd>S</kbd> stage</span>
+            <span><kbd>D</kbd> draft</span>
+            <span><kbd>P</kbd> review</span>
+            <span><kbd>⌘P</kbd> publish</span>
+            <span><kbd>⌘A</kbd> select all</span>
+            <span><kbd>W</kbd> weight</span>
+            <span><kbd>U</kbd> unpublish</span>
+            <span><kbd>↵</kbd> details</span>
+          </p>
+        ) : (
+          <p className="pivot-curation-sheet__keys">
+            <span><kbd>I</kbd> up <kbd>K</kbd> down</span>
+            <span><kbd>↑</kbd><kbd>↓</kbd> also</span>
+            <span><kbd>Space</kbd> select</span>
+            <span><kbd>⌘A</kbd> select all</span>
+            <span><kbd>↵</kbd> details</span>
+          </p>
+        )}
       </div>
       <div
         ref={layoutRef}
@@ -1905,6 +1937,8 @@ function PivotCurationQueue({
               <span className="pivot-curation-sheet__bulk-count">
                 {selectedIds.size} selected
               </span>
+              {statusControls ? (
+              <>
               <div className="pivot-curation-sheet__bulk-tags">
                 <PivotTagMultiSelect
                   catalogTags={catalogTags}
@@ -2056,6 +2090,8 @@ function PivotCurationQueue({
                   </button>
                 ) : null}
               </div>
+              </>
+              ) : null}
             </div>
           ) : null}
         </div>

@@ -4,7 +4,20 @@ import { useNotification } from '../../../NotificationContext';
 import { PivotOpsBanner, PivotOpsSection, PivotOpsStatus } from '../../../components/PivotOps';
 import PivotTenantPage from './PivotTenantPage';
 import PivotTenantViewTabs from './PivotTenantViewTabs';
-import { addClipPin, formatClipEventDate, moveClipPin, removeClipPin } from './pivotClipAdmin';
+import PivotCarouselPopup from './carousel/PivotCarouselPopup';
+import PivotCurationQueue from './PivotCurationQueue';
+import PivotBatchWeekPicker from './PivotBatchWeekPicker';
+import useBrokenCatalogImages from './useBrokenCatalogImages';
+import {
+  FILTER_OPTIONS,
+  HOST_CREATED_SOURCE,
+  compareCurationEvents,
+  eventMatchesFilter,
+  eventMatchesSourceFilter,
+  isHostCreatedEvent,
+} from './curationCatalogFilters';
+import { batchWeekFromEventDate, toIsoWeek } from '../../../utils/pivotIsoWeek';
+import { formatClipEventDate, moveClipPin, removeClipPin } from './pivotClipAdmin';
 import {
   EXPLORE_THEME_GROUP_SOURCES,
   EXPLORE_THEME_STATUS,
@@ -14,17 +27,17 @@ import {
   exploreThemeDraftProblem,
   exploreThemeInputFromDraft,
   exploreThemePaths,
-  exploreThemeSearchUrl,
   exploreThemeUnsplashUrl,
+  cityCatalogPath,
   formatExploreThemeDates,
   mergeCarouselGroupEvents,
   newExploreThemeDraft,
   overlappingExploreThemes,
+  mergePickedEvents,
 } from './pivotExploreThemesAdmin';
 import './PivotTenantExploreThemesPage.scss';
 
 const NO_FETCH_CACHE = { enabled: false };
-const SEARCH_DEBOUNCE_MS = 280;
 const JSON_HEADERS = { 'Content-Type': 'application/json' };
 /** Featured events the phone preview shows before the shelf runs off-screen. */
 const PREVIEW_POSTERS = 3;
@@ -512,23 +525,162 @@ function CarouselGroupPicker({ tenantKey, events, max, onChange }) {
   );
 }
 
-function FeaturedEvents({ tenantKey, events, max, onChange }) {
-  const [query, setQuery] = useState('');
-  const [term, setTerm] = useState('');
+const NO_OP = () => {};
+const NO_TAGS = [];
+const NO_EVENTS = [];
+const NO_PERFORMANCE = new Map();
 
-  useEffect(() => {
-    const timer = window.setTimeout(() => setTerm(query), SEARCH_DEBOUNCE_MS);
-    return () => window.clearTimeout(timer);
-  }, [query]);
+/** The week a theme starts in, or this week if it already has. */
+function pickerStartWeek(startsOn) {
+  const today = toIsoWeek();
+  const start = batchWeekFromEventDate(startsOn ? `${startsOn}T12:00:00Z` : null);
+  return start && start > today ? start : today;
+}
 
-  const { data: response, loading, error } = useFetch(
-    exploreThemeSearchUrl(tenantKey, { q: term }),
-    { cache: NO_FETCH_CACHE },
+/**
+ * The Events page's catalog, opened to pick a theme's featured events: the
+ * same week switcher, filters, search, keyboard and drag selection, and
+ * detail view, without the status, feature, weight, tag or edit controls.
+ * It opens on Featured; picks from other weeks and filters stay picked.
+ */
+function ThemeEventPicker({ tenantKey, startsOn, events, max, onDone, onClose }) {
+  const city = String(tenantKey || '').trim().toLowerCase();
+  const [batchWeek, setBatchWeek] = useState(() => pickerStartWeek(startsOn));
+  const [filter, setFilter] = useState('featured');
+  const [sourceFilter, setSourceFilter] = useState('all');
+  const [picked, setPicked] = useState(events);
+  const params = useMemo(() => ({ batchWeek, include: 'catalog' }), [batchWeek]);
+  const { data: response, loading, error } = useFetch(cityCatalogPath(city), { params, cache: NO_FETCH_CACHE });
+  const catalog = response?.success ? response.data?.catalog : null;
+  const catalogEvents = useMemo(
+    () => (catalog && !catalog.error && catalog.events ? catalog.events : NO_EVENTS),
+    [catalog],
   );
-  const results = response?.success ? response.data?.events || [] : [];
-  const featured = useMemo(() => new Set(events.map((event) => event.id)), [events]);
-  const full = events.length >= max;
-  const searchError = error || (response && !response.success ? response.message : null);
+  const { brokenIds, scanning } = useBrokenCatalogImages(catalogEvents);
+
+  const shown = useMemo(() => {
+    const hostCreatedOnly = sourceFilter === HOST_CREATED_SOURCE;
+    return catalogEvents
+      .filter((event) => (
+        eventMatchesFilter(event, filter, { brokenImageIds: brokenIds })
+        && eventMatchesSourceFilter(event, sourceFilter)
+      ))
+      .slice()
+      .sort((a, b) => compareCurationEvents(a, b, { hostCreatedOnly }));
+  }, [brokenIds, catalogEvents, filter, sourceFilter]);
+  const hostCreatedCount = useMemo(
+    () => catalogEvents.filter((event) => isHostCreatedEvent(event)).length,
+    [catalogEvents],
+  );
+
+  const selectedIds = useMemo(() => new Set(picked.map((event) => event.id)), [picked]);
+  const handleSelectedIds = useCallback(
+    (next) => setPicked((current) => mergePickedEvents(current, new Set([...next].map(String)), catalogEvents)),
+    [catalogEvents],
+  );
+  const over = picked.length > max;
+
+  return (
+    <PivotCarouselPopup open onClose={onClose} className="explore-themes-picker">
+      <div className="explore-themes-picker__body">
+        <div className="explore-themes-picker__head">
+          <div>
+            <h2 className="explore-themes-picker__title">Featured events</h2>
+            <span className={over ? 'explore-themes__error' : 'explore-themes__muted'}>
+              {picked.length} of {max} picked{over ? `. Drop ${picked.length - max} to use them.` : ''}
+            </span>
+          </div>
+          <PivotBatchWeekPicker batchWeek={batchWeek} onChange={setBatchWeek} showLabel={false} />
+          <div className="explore-themes-picker__actions">
+            <button type="button" className="linear-btn linear-btn--ghost linear-btn--sm" onClick={onClose}>
+              Cancel
+            </button>
+            <button
+              type="button"
+              className="linear-btn linear-btn--primary linear-btn--sm"
+              disabled={over}
+              onClick={() => onDone(picked)}
+            >
+              Use {picked.length} {picked.length === 1 ? 'event' : 'events'}
+            </button>
+          </div>
+        </div>
+        <PivotCurationQueue
+          mode="pick"
+          title={`Catalog · ${batchWeek}`}
+          description="Click events to pick or drop them; picks from other weeks and filters stay. Press Enter for a closer look."
+          tenantKey={city}
+          batchWeek={batchWeek}
+          events={shown}
+          eventsLoading={loading && !catalog}
+          eventsError={error || catalog?.error || null}
+          selectedIds={selectedIds}
+          onSelectedIdsChange={handleSelectedIds}
+          filter={filter}
+          onFilterChange={setFilter}
+          filterOptions={FILTER_OPTIONS}
+          sourceFilter={sourceFilter}
+          onSourceFilterChange={setSourceFilter}
+          hostCreatedCount={hostCreatedCount}
+          brokenImageIds={brokenIds}
+          scanningBrokenImages={scanning}
+          catalogTags={NO_TAGS}
+          bulkTags={NO_TAGS}
+          onBulkTagsChange={NO_OP}
+          showPerformance={false}
+          performanceById={NO_PERFORMANCE}
+          busyKey={null}
+          emptyLabel={filter === 'featured' ? 'No featured events this week. Try All.' : undefined}
+        />
+        {picked.length ? (
+          <div className="explore-themes-picker__picked">
+            <span className="explore-themes-field__label">Picked, in shelf order</span>
+            <ol className="explore-themes-events">
+              {picked.map((event, index) => (
+                <li key={event.id} className="explore-themes-event">
+                  <span className="explore-themes-event__index">{index + 1}</span>
+                  <EventThumb event={event} />
+                  <EventSummary event={event} />
+                  <div className="explore-themes-event__actions">
+                    <button
+                      type="button"
+                      className="linear-btn linear-btn--ghost linear-btn--sm"
+                      aria-label={`Move ${event.name || 'event'} up`}
+                      disabled={index === 0}
+                      onClick={() => setPicked(moveClipPin(picked, index, -1))}
+                    >
+                      ↑
+                    </button>
+                    <button
+                      type="button"
+                      className="linear-btn linear-btn--ghost linear-btn--sm"
+                      aria-label={`Move ${event.name || 'event'} down`}
+                      disabled={index === picked.length - 1}
+                      onClick={() => setPicked(moveClipPin(picked, index, 1))}
+                    >
+                      ↓
+                    </button>
+                    <button
+                      type="button"
+                      className="linear-btn linear-btn--ghost linear-btn--sm"
+                      aria-label={`Remove ${event.name || 'event'}`}
+                      onClick={() => setPicked(removeClipPin(picked, event.id))}
+                    >
+                      Remove
+                    </button>
+                  </div>
+                </li>
+              ))}
+            </ol>
+          </div>
+        ) : null}
+      </div>
+    </PivotCarouselPopup>
+  );
+}
+
+function FeaturedEvents({ tenantKey, startsOn, events, max, onChange }) {
+  const [browsing, setBrowsing] = useState(false);
 
   return (
     <div className="explore-themes-field">
@@ -587,39 +739,30 @@ function FeaturedEvents({ tenantKey, events, max, onChange }) {
         Ended, unpublished, or passed events drop out of the shelf on their own.
       </span>
 
-      <CarouselGroupPicker tenantKey={tenantKey} events={events} max={max} onChange={onChange} />
-
-      <input
-        type="search"
-        className="explore-themes-search"
-        value={query}
-        placeholder="Search this city’s upcoming published events"
-        aria-label="Search events to feature"
-        onChange={(event) => setQuery(event.target.value)}
-      />
-      {searchError ? <p className="explore-themes__error">{searchError}</p> : null}
-      {!searchError && !loading && response?.success && !results.length ? (
-        <p className="explore-themes__muted">No upcoming published events match.</p>
+      <div className="explore-themes-featured__actions">
+        <button
+          type="button"
+          className="linear-btn linear-btn--secondary linear-btn--sm"
+          onClick={() => setBrowsing(true)}
+        >
+          Browse events
+        </button>
+      </div>
+      {browsing ? (
+        <ThemeEventPicker
+          tenantKey={tenantKey}
+          startsOn={startsOn}
+          events={events}
+          max={max}
+          onClose={() => setBrowsing(false)}
+          onDone={(next) => {
+            onChange(next);
+            setBrowsing(false);
+          }}
+        />
       ) : null}
-      <ul className="explore-themes-events">
-        {results.map((event) => {
-          const isFeatured = featured.has(event.id);
-          return (
-            <li key={event.id} className="explore-themes-event">
-              <EventThumb event={event} />
-              <EventSummary event={event} />
-              <button
-                type="button"
-                className="linear-btn linear-btn--secondary linear-btn--sm"
-                disabled={isFeatured || full}
-                onClick={() => onChange(addClipPin(events, event, max))}
-              >
-                {isFeatured ? 'Featured' : 'Feature'}
-              </button>
-            </li>
-          );
-        })}
-      </ul>
+
+      <CarouselGroupPicker tenantKey={tenantKey} events={events} max={max} onChange={onChange} />
     </div>
   );
 }
@@ -748,7 +891,13 @@ function ThemeEditor({ tenantKey, cityDisplayName, timezone, limits, themes, edi
             onChange={setPhoto}
           />
 
-          <FeaturedEvents tenantKey={tenantKey} events={draft.events} max={limits.featuredMax} onChange={setEvents} />
+          <FeaturedEvents
+            tenantKey={tenantKey}
+            startsOn={draft.startsOn}
+            events={draft.events}
+            max={limits.featuredMax}
+            onChange={setEvents}
+          />
 
           <label className="explore-themes__check">
             <input type="checkbox" checked={draft.published} onChange={(event) => patch({ published: event.target.checked })} />

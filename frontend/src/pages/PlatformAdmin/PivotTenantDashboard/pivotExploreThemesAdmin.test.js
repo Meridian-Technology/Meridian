@@ -1,5 +1,7 @@
 import {
   exploreThemeCarouselGroupsUrl,
+  catalogEventToFeatured,
+  mergePickedEvents,
   exploreThemeDraftFromTheme,
   exploreThemeDraftKey,
   exploreThemeDraftProblem,
@@ -124,5 +126,38 @@ describe('exploreThemeUnsplashUrl', () => {
     expect(exploreThemeUnsplashUrl('toronto', { query: ' pumpkins ', page: 2 }))
       .toBe('/admin/pivot/tenants/toronto/explore-themes/unsplash?query=pumpkins&page=2');
     expect(exploreThemeUnsplashUrl('toronto')).toBe('/admin/pivot/tenants/toronto/explore-themes/unsplash');
+  });
+});
+
+describe('picking from the catalog', () => {
+  const now = new Date('2026-10-26T12:00:00Z');
+  const row = (id, overrides = {}) => ({
+    _id: id,
+    name: `Event ${id}`,
+    organizerName: 'Host',
+    start_time: '2026-10-30T23:00:00Z',
+    image: `https://img/${id}.jpg`,
+    ingestStatus: 'published',
+    ...overrides,
+  });
+
+  it('reads a catalog row as a featured event', () => {
+    expect(catalogEventToFeatured(row('a'), now)).toEqual({
+      id: 'a',
+      name: 'Event a',
+      hostName: 'Host',
+      startTime: '2026-10-30T23:00:00Z',
+      coverImageUrl: 'https://img/a.jpg',
+      state: 'live',
+    });
+    expect(catalogEventToFeatured(row('b', { ingestStatus: 'staged' }), now).state).toBe('unpublished');
+    expect(catalogEventToFeatured(row('c', { start_time: '2026-10-01T00:00:00Z' }), now).state).toBe('ended');
+  });
+
+  it('keeps earlier picks in place and adds new ones in catalog order', () => {
+    const current = [{ id: 'x', name: 'From another week' }, { id: 'a', name: 'Event a' }];
+    const catalog = [row('c'), row('a'), row('b')];
+    const merged = mergePickedEvents(current, new Set(['x', 'b', 'c']), catalog, now);
+    expect(merged.map((event) => event.id)).toEqual(['x', 'c', 'b']);
   });
 });

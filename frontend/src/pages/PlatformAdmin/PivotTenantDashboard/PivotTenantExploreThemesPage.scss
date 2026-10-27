@@ -514,3 +514,46 @@ $app-sheet: #f5efe6;
     }
   }
 }
+
+.explore-themes-featured__actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+// The Events page's catalog, opened in a popup to pick featured events. The
+// catalog brings its own styles; this gives it room and a header.
+.explore-themes-picker__body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: min(84rem, 94vw);
+  max-height: 88vh;
+  overflow: auto;
+}
+
+.explore-themes-picker__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.explore-themes-picker__title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--pivot-ops-ink);
+}
+
+.explore-themes-picker__actions {
+  display: flex;
+  gap: 6px;
+}
+
+.explore-themes-picker__picked {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
