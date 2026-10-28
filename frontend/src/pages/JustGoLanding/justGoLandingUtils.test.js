@@ -11,6 +11,8 @@ import {
   landingSwipeRotate,
   landingSwipeTint,
   landingTenantKeyFromParam,
+  landingTenantKeyForTimeZone,
+  resolveLandingLockedTenantKey,
   resolveDeckSwipeAxis,
   resolveNextLandingDropAt,
   parseLandingNextDropAt,
@@ -312,5 +314,41 @@ describe('padDropUnit', () => {
   it('keeps the scoreboard two digits wide', () => {
     expect(padDropUnit(4)).toBe('04');
     expect(padDropUnit(14)).toBe('14');
+  });
+});
+
+describe('landingTenantKeyForTimeZone', () => {
+  it('maps each live city zone and ignores the rest', () => {
+    expect(landingTenantKeyForTimeZone('America/New_York')).toBe('troy');
+    expect(landingTenantKeyForTimeZone('America/Chicago')).toBe('ic');
+    expect(landingTenantKeyForTimeZone('America/Los_Angeles')).toBe('sf');
+    expect(landingTenantKeyForTimeZone('Europe/London')).toBe('');
+    expect(landingTenantKeyForTimeZone('')).toBe('');
+  });
+});
+
+describe('resolveLandingLockedTenantKey', () => {
+  const cities = [{ tenantKey: 'troy' }, { tenantKey: 'sf' }];
+
+  it('prefers the URL slug', () => {
+    expect(
+      resolveLandingLockedTenantKey({ routeTenantKey: 'sf', timeZoneTenantKey: 'troy', cities, citiesState: 'ready' }),
+    ).toBe('sf');
+  });
+
+  it('locks to the zone city while loading and once it is listed', () => {
+    expect(resolveLandingLockedTenantKey({ timeZoneTenantKey: 'troy' })).toBe('troy');
+    expect(
+      resolveLandingLockedTenantKey({ timeZoneTenantKey: 'troy', cities, citiesState: 'ready' }),
+    ).toBe('troy');
+  });
+
+  it('falls back to every city when the zone city is not listed', () => {
+    expect(
+      resolveLandingLockedTenantKey({ timeZoneTenantKey: 'ic', cities, citiesState: 'ready' }),
+    ).toBe('');
+    expect(
+      resolveLandingLockedTenantKey({ timeZoneTenantKey: 'ic', cities: [], citiesState: 'empty' }),
+    ).toBe('');
   });
 });

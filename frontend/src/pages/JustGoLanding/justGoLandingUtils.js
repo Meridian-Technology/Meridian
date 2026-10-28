@@ -286,6 +286,44 @@ export function scopeLandingCities(cities = [], lockedTenantKey = '') {
   return match ? [match] : [];
 }
 
+/**
+ * Temporary: each live city sits in its own US zone, so the bare landing
+ * (justgo.lol/) renders the city page for the visitor's phone/browser zone.
+ * Eastern resolves to Troy. Other zones keep the all-cities landing.
+ */
+export const LANDING_TIME_ZONE_TENANTS = Object.freeze({
+  'America/New_York': 'troy',
+  'America/Detroit': 'troy',
+  'America/Indiana/Indianapolis': 'troy',
+  'America/Kentucky/Louisville': 'troy',
+  'US/Eastern': 'troy',
+  'America/Chicago': 'ic',
+  'US/Central': 'ic',
+  'America/Los_Angeles': 'sf',
+  'US/Pacific': 'sf',
+  'America/Tijuana': 'sf',
+});
+
+export function landingTenantKeyForTimeZone(timeZone) {
+  return LANDING_TIME_ZONE_TENANTS[String(timeZone || '').trim()] || '';
+}
+
+/**
+ * Tenant the page renders as. The URL slug wins; on the bare landing the
+ * zone city applies while cities load and once it is confirmed listed.
+ */
+export function resolveLandingLockedTenantKey({
+  routeTenantKey = '',
+  timeZoneTenantKey = '',
+  cities = [],
+  citiesState = 'loading',
+} = {}) {
+  if (routeTenantKey) return routeTenantKey;
+  if (!timeZoneTenantKey) return '';
+  if (citiesState === 'loading') return timeZoneTenantKey;
+  return findLandingCity(cities, timeZoneTenantKey) ? timeZoneTenantKey : '';
+}
+
 export const JUSTGO_LANDING_CITY_KEY = 'justgo.landing.city';
 
 export function readStoredLandingCity() {
