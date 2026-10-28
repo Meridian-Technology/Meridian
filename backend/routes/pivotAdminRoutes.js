@@ -1066,7 +1066,11 @@ router.post(
       return sendDeckResult(res, await createCurationDraft(req, req.params.accountId, req.body || {}), 201);
     } catch (err) {
       logPivotRouteError('POST carousel curation draft', err, req);
-      return res.status(500).json({ success: false, message: 'Unable to save the curation draft.' });
+      return res.status(500).json({
+        success: false,
+        message: 'Unable to save the curation draft.',
+        ...(process.env.NODE_ENV !== 'production' && err?.message ? { detail: err.message } : {}),
+      });
     }
   },
 );

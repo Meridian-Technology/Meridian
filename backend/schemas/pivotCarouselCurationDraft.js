@@ -18,7 +18,8 @@ const pivotCarouselCurationDraftSchema = new mongoose.Schema(
     eventPreset: { type: String, default: 'photo-note', trim: true },
     revision: { type: Number, default: 1, min: 1 },
     status: { type: String, enum: ['open', 'consumed'], default: 'open' },
-    idempotencyKey: { type: String, default: null, trim: true, maxlength: 128 },
+    // Omit when unset — explicit null is indexed and breaks unique+sparse (E11000 dup null).
+    idempotencyKey: { type: String, trim: true, maxlength: 128 },
     createdIssueId: { type: mongoose.Schema.Types.ObjectId, default: null },
     createdBy: { type: String, default: null, trim: true },
     updatedBy: { type: String, default: null, trim: true },
