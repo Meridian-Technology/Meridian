@@ -142,6 +142,8 @@ describe('serializeExploreTheme', () => {
       tagline: null,
       backgroundImageUrl: IMAGE,
       backgroundCredit: null,
+      filmGrain: false,
+      darkVignette: false,
       startsAt: '2026-10-24T04:00:00.000Z',
       endsAt: '2026-11-01T04:00:00.000Z',
       events: [{ _id: ID(3) }, { _id: ID(1) }],
@@ -315,5 +317,22 @@ describe('Unsplash backgrounds', () => {
     expect(new URL(data.url).searchParams.get('w')).toBe('1290');
     expect(new URL(data.url).searchParams.get('ixid')).toBe('x');
     expect(data.credit).toEqual({ provider: 'unsplash', ...credit });
+  });
+});
+
+describe('photo looks', () => {
+  const base = { name: 'Halloween', startsOn: '2026-10-24', endsOn: '2026-10-31' };
+
+  it('takes film grain and a dark vignette as true or false, off by default', () => {
+    expect(validateThemeInput(base).fields).toMatchObject({ filmGrain: false, darkVignette: false });
+    expect(validateThemeInput({ ...base, filmGrain: true, darkVignette: true }).fields)
+      .toMatchObject({ filmGrain: true, darkVignette: true });
+    expect(validateThemeInput({ ...base, filmGrain: 'yes' }).error).toMatch(/filmGrain/);
+  });
+
+  it('edits a look on its own', () => {
+    const existing = { startsOn: '2026-10-24', endsOn: '2026-10-31' };
+    expect(validateThemeInput({ darkVignette: true }, { partial: true, existing }).fields)
+      .toEqual({ darkVignette: true });
   });
 });

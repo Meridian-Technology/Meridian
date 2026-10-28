@@ -29,6 +29,10 @@ const schema = new mongoose.Schema({
     }, { _id: false }),
     default: null,
   },
+  // Looks layered over the background photo in the app.
+  filmGrain: { type: Boolean, default: false },
+  // A heavier darkening at the edges and behind the shelf, for bright photos.
+  darkVignette: { type: Boolean, default: false },
   published: { type: Boolean, default: false },
   createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'GlobalUser', default: null },
   updatedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'GlobalUser', default: null },

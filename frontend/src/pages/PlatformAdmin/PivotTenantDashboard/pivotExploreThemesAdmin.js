@@ -79,6 +79,8 @@ export function newExploreThemeDraft(today = new Date()) {
     endsOn: end,
     backgroundImageUrl: '',
     backgroundCredit: null,
+    filmGrain: false,
+    darkVignette: false,
     published: false,
     events: [],
   };
@@ -93,6 +95,8 @@ export function exploreThemeDraftFromTheme(theme) {
     endsOn: theme.endsOn || '',
     backgroundImageUrl: theme.backgroundImageUrl || '',
     backgroundCredit: theme.backgroundCredit || null,
+    filmGrain: theme.filmGrain === true,
+    darkVignette: theme.darkVignette === true,
     published: theme.published === true,
     // Whole rows, so newly added events render before a save.
     events: Array.isArray(theme.events) ? theme.events : [],
@@ -108,6 +112,8 @@ export function exploreThemeInputFromDraft(draft) {
     endsOn: draft.endsOn,
     backgroundImageUrl: draft.backgroundImageUrl || '',
     backgroundCredit: draft.backgroundCredit || null,
+    filmGrain: draft.filmGrain === true,
+    darkVignette: draft.darkVignette === true,
     published: draft.published === true,
     eventIds: draft.events.map((event) => event.id),
   };

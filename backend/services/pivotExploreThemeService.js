@@ -194,6 +194,13 @@ function validateThemeInput(body = {}, { partial = false, existing = null } = {}
       fields.backgroundCredit = null;
     }
   }
+  for (const key of ['filmGrain', 'darkVignette']) {
+    if (partial && !has(key)) continue;
+    if (body[key] !== undefined && typeof body[key] !== 'boolean') {
+      return invalid(`${key} must be true or false.`);
+    }
+    fields[key] = body[key] === true;
+  }
   if (!partial || has('published')) {
     if (body.published !== undefined && typeof body.published !== 'boolean') {
       return invalid('Published must be true or false.');
@@ -225,6 +232,8 @@ function themeData(row, events, now) {
     endsAt: row.endsAt,
     backgroundImageUrl: row.backgroundImageUrl || '',
     backgroundCredit: row.backgroundCredit || null,
+    filmGrain: row.filmGrain === true,
+    darkVignette: row.darkVignette === true,
     published: row.published === true,
     status: themeStatus(row, now),
     events,
@@ -572,8 +581,8 @@ async function findLiveExploreTheme(req, tenantKey, now = new Date()) {
 /**
  * The explore payload's `theme`: its copy and photo, and its featured events
  * in the admin's order, served in the same shape as explore rows. Events the
- * explore catalog doesn't carry (ended, unpublished, past the horizon, or
- * passed by this user) drop out.
+ * explore catalog doesn't carry (ended, unpublished, or past the horizon)
+ * drop out; ones this user passed stay.
  */
 function serializeExploreTheme(theme, eventsById) {
   if (!theme) return null;
@@ -588,6 +597,8 @@ function serializeExploreTheme(theme, eventsById) {
     tagline: theme.tagline || null,
     backgroundImageUrl: theme.backgroundImageUrl || null,
     backgroundCredit: theme.backgroundCredit || null,
+    filmGrain: theme.filmGrain === true,
+    darkVignette: theme.darkVignette === true,
     startsAt: new Date(theme.startsAt).toISOString(),
     endsAt: new Date(theme.endsAt).toISOString(),
     events,

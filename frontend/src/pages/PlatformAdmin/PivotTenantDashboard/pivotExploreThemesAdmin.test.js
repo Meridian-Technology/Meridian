@@ -47,6 +47,8 @@ describe('drafts', () => {
       endsOn: '2026-10-31',
       backgroundImageUrl: 'https://x/pivot-explore-themes/a.jpg',
       backgroundCredit: null,
+      filmGrain: false,
+      darkVignette: false,
       published: true,
       eventIds: ['e1'],
     });

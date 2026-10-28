@@ -622,9 +622,12 @@ function summarizeExploreFilterRemovals(catalogEvents, filteredEvents, userInten
 /**
  * The city's live theme, with its featured events drawn from the whole
  * catalog rather than the filtered page, so search and tabs don't drop it.
- * A theme lookup that fails leaves Explore as it would be without one.
+ * Passed events stay too: the picks are the theme, and a theme whose picks
+ * the user swiped past would keep its headline over some other shelf. Their
+ * rows carry the pass, so the app can badge them. A theme lookup that fails
+ * leaves Explore as it would be without one.
  */
-async function resolveExploreTheme(req, { now, catalogEvents, excludePassed, serializeContext }) {
+async function resolveExploreTheme(req, { now, catalogEvents, serializeContext }) {
   let liveTheme;
   try {
     liveTheme = await findLiveExploreTheme(req, req.school, now);
@@ -639,13 +642,7 @@ async function resolveExploreTheme(req, { now, catalogEvents, excludePassed, ser
     return null;
   }
   const featuredIds = new Set((liveTheme.eventIds || []).map(String));
-  const featured = catalogEvents.filter((event) => {
-    const id = String(event._id);
-    return (
-      featuredIds.has(id)
-      && !(excludePassed && serializeContext.userIntents.get(id)?.status === 'passed')
-    );
-  });
+  const featured = catalogEvents.filter((event) => featuredIds.has(String(event._id)));
   const rows = serializeExploreCatalogEvents(featured, serializeContext);
   return serializeExploreTheme(
     liveTheme,
@@ -965,7 +962,6 @@ async function getPivotExplore(req, options = {}) {
   const theme = await resolveExploreTheme(req, {
     now,
     catalogEvents,
-    excludePassed,
     serializeContext: {
       socialByEvent,
       userIntents,

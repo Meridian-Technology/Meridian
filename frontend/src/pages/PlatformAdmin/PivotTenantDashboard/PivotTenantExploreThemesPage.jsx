@@ -84,13 +84,24 @@ function ThemePhonePreview({ draft, cityDisplayName }) {
   return (
     <figure className="explore-themes-preview" aria-label="Preview of the discover page">
       <div
-        className={`explore-themes-preview__screen${photo ? ' has-photo' : ''}`}
+        className={[
+          'explore-themes-preview__screen',
+          photo ? 'has-photo' : '',
+          photo && draft.darkVignette ? 'has-vignette' : '',
+          photo && draft.filmGrain ? 'has-grain' : '',
+        ].filter(Boolean).join(' ')}
         style={photo ? { backgroundImage: `url(${photo})` } : undefined}
       >
         <div className="explore-themes-preview__scrim" />
+        <div className="explore-themes-preview__vignette" />
+        <div className="explore-themes-preview__grain" />
         <div className="explore-themes-preview__content">
-          <span className="explore-themes-preview__title">explore</span>
-          <span className="explore-themes-preview__subtitle">{city}</span>
+          <span className="explore-themes-preview__title">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M12 2a7 7 0 0 0-7 7c0 5.2 7 13 7 13s7-7.8 7-13a7 7 0 0 0-7-7Zm0 9.5A2.5 2.5 0 1 1 12 6.5a2.5 2.5 0 0 1 0 5Z" />
+            </svg>
+            {city || 'city'}
+          </span>
           <p className="explore-themes-preview__headline">
             {draft.tagline.trim() || <span className="explore-themes-preview__fallback">the usual headline</span>}
           </p>
@@ -116,11 +127,7 @@ function ThemePhonePreview({ draft, cityDisplayName }) {
         <div className="explore-themes-preview__sheet" />
       </div>
       <figcaption className="explore-themes__muted">
-        {photo
-          ? draft.backgroundCredit?.provider === 'unsplash'
-            ? `Type turns cream over the photo. The app credits ${draft.backgroundCredit.photographer} under the hero.`
-            : 'Type turns cream over the photo.'
-          : 'No photo: the hero keeps its orange.'}
+        {photo ? 'Type turns cream over the photo.' : 'No photo: the hero keeps its orange.'}
       </figcaption>
     </figure>
   );
@@ -890,6 +897,29 @@ function ThemeEditor({ tenantKey, cityDisplayName, timezone, limits, themes, edi
             credit={draft.backgroundCredit}
             onChange={setPhoto}
           />
+
+          <fieldset className="explore-themes-field explore-themes-looks" disabled={!draft.backgroundImageUrl}>
+            <legend className="explore-themes-field__label">Photo look</legend>
+            <label className="explore-themes__check">
+              <input
+                type="checkbox"
+                checked={draft.darkVignette}
+                onChange={(event) => patch({ darkVignette: event.target.checked })}
+              />
+              Dark vignette: darkens the edges and the strip behind the featured events, so they read on a bright photo
+            </label>
+            <label className="explore-themes__check">
+              <input
+                type="checkbox"
+                checked={draft.filmGrain}
+                onChange={(event) => patch({ filmGrain: event.target.checked })}
+              />
+              Film grain: the app’s photo texture over the background
+            </label>
+            {!draft.backgroundImageUrl ? (
+              <span className="explore-themes__muted">Add a photo to choose its look.</span>
+            ) : null}
+          </fieldset>
 
           <FeaturedEvents
             tenantKey={tenantKey}

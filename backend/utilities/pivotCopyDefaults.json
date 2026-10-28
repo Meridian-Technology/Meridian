@@ -3270,7 +3270,7 @@
       "path": "explore.filterAll",
       "kind": "string",
       "params": [],
-      "shipped": "all"
+      "shipped": "explore"
     },
     {
       "path": "explore.filterFriends",
