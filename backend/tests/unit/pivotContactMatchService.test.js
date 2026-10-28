@@ -93,6 +93,7 @@ describe('pivotContactMatchService', () => {
       expect(result.data).toEqual({
         users: [],
         matchedHashCount: 0,
+        matchedHashes: [],
         submittedHashCount: MAX_HASHES_PER_REQUEST,
       });
       const [query] = PivotContactHash.find.mock.calls[0];
@@ -157,6 +158,33 @@ describe('pivotContactMatchService', () => {
         },
       ]);
       expect(result.data.matchedHashCount).toBe(1);
+      // The app leaves these out of its "invite" list.
+      expect(result.data.matchedHashes).toEqual([`email:${targetHash}`]);
+    });
+
+    it("doesn't say which contacts are on just go in another city", async () => {
+      const targetHash = hashContactEmail('elsewhere@example.com');
+      GlobalUser.findById.mockReturnValue({
+        select: jest.fn().mockReturnThis(),
+        lean: jest.fn().mockResolvedValue({ email: 'me@example.com' }),
+      });
+      PivotContactHash.find.mockReturnValue({
+        select: jest.fn().mockReturnThis(),
+        lean: jest.fn().mockResolvedValue([
+          { globalUserId: friendGlobalId, identifierType: 'email', hash: targetHash },
+        ]),
+      });
+      TenantMembership.find.mockReturnValue({
+        select: jest.fn().mockReturnThis(),
+        lean: jest.fn().mockResolvedValue([]),
+      });
+
+      const result = await matchPivotContacts(req, {
+        hashes: [{ type: 'email', hash: targetHash }],
+      });
+
+      expect(result.data.users).toEqual([]);
+      expect(result.data.matchedHashes).toEqual([]);
     });
 
     it('hashes raw identifiers server-side without persisting them', async () => {

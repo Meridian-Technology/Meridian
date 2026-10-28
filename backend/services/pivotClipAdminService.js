@@ -196,6 +196,8 @@ async function searchClipCandidateEvents(req, options = {}) {
 }
 
 module.exports = {
+  describeCuratedEvents,
+  tenantEventModel,
   getTenantClipAdmin,
   updateTenantClipConfig,
   searchClipCandidateEvents,

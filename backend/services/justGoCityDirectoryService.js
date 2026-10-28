@@ -204,4 +204,31 @@ function citySelection(city, activeTenants) {
   };
 }
 
-module.exports = {normalize, searchCities, getCity, nearestCity, publicCity, citySelection};
+const tenantPlaceCache = new Map();
+
+/**
+ * Where a live city's label ("San Francisco, California") sits, from the
+ * directory, by the same match search uses to call a city live. Null when the
+ * directory has no such city.
+ */
+function locateTenantCity(cityDisplayName) {
+  const label = String(cityDisplayName || '').trim();
+  if (!label) return null;
+  if (tenantPlaceCache.has(label)) return tenantPlaceCache.get(label);
+  const tenants = [{cityDisplayName: label}];
+  const match = searchCities(label.split(',')[0], 12, tenants)
+    .find(city => activeTenantForCity(city, tenants));
+  const place = match ? {latitude: match.latitude, longitude: match.longitude} : null;
+  tenantPlaceCache.set(label, place);
+  return place;
+}
+
+module.exports = {
+  normalize,
+  searchCities,
+  getCity,
+  nearestCity,
+  publicCity,
+  citySelection,
+  locateTenantCity,
+};

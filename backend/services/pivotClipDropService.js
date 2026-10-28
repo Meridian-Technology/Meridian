@@ -14,7 +14,10 @@
 
 const { connectToDatabase } = require('../connectionsManager');
 const getModels = require('./getModelService');
-const { shiftIsoWeek } = require('../utilities/pivotIsoWeek');
+const {
+  batchWeekToDropCycleUtcRange,
+  shiftIsoWeek,
+} = require('../utilities/pivotIsoWeek');
 const {
   resolvePivotLiveBatchWeek,
   resolvePivotDropInstant,
@@ -195,6 +198,65 @@ async function buildPivotClipDrop(req, tenant, options = {}) {
   };
 }
 
+/**
+ * Everything on in a city this drop week, for the onboarding journey's
+ * haystack ("in a week in san francisco, there are 171 events"): every
+ * event starting in the live week's drop cycle that isn't deleted, whatever
+ * its curation status, since the point is the whole week, not the deck. And
+ * how many sites those events came from (by link host, else the platform).
+ * No event fields are returned.
+ */
+async function getPivotCityWeekCounts(req, options = {}) {
+  const resolved = await resolvePublicDropTenant(req, options.tenantKey);
+  if (resolved.error) return resolved;
+  const { tenant } = resolved;
+  const now = options.now || new Date();
+  const liveWeek = resolvePivotLiveBatchWeek(tenant, now);
+  const { start, end } = batchWeekToDropCycleUtcRange(
+    liveWeek,
+    tenant.pivotDropDayOfWeek,
+  );
+
+  const db = await connectToDatabase(tenant.tenantKey);
+  const { Event } = getModels({ db, school: tenant.tenantKey }, 'Event');
+  const events = await Event.find({
+    isDeleted: { $ne: true },
+    $or: [
+      { start_time: { $gte: start, $lt: end } },
+      { 'customFields.pivot.timeSlots': { $elemMatch: { start_time: { $gte: start, $lt: end } } } },
+    ],
+  })
+    .select('customFields.pivot.sourceUrl customFields.pivot.source')
+    .lean();
+
+  const sites = new Set();
+  for (const event of events) {
+    const site = eventSourceSite(event);
+    if (site) sites.add(site);
+  }
+  return {
+    data: {
+      tenantKey: tenant.tenantKey,
+      batchWeek: liveWeek,
+      eventCount: events.length,
+      sourceCount: sites.size,
+    },
+  };
+}
+
+function eventSourceSite(event) {
+  const pivot = event?.customFields?.pivot || {};
+  try {
+    if (pivot.sourceUrl) {
+      return new URL(pivot.sourceUrl).hostname.replace(/^www\./, '').toLowerCase();
+    }
+  } catch {
+    // Not a URL; fall back to the platform name.
+  }
+  const source = String(pivot.source || '').trim().toLowerCase();
+  return source || null;
+}
+
 async function getPivotClipDrop(req, options = {}) {
   const resolved = await resolvePublicDropTenant(req, options.tenantKey);
   if (resolved.error) return resolved;
@@ -203,6 +265,7 @@ async function getPivotClipDrop(req, options = {}) {
 
 module.exports = {
   getPivotClipDrop,
+  getPivotCityWeekCounts,
   buildPivotClipDrop,
   serializeClipDropEvent,
   buildClipDropQuery,

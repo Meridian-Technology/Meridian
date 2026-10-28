@@ -28,7 +28,10 @@ const {
   submitEventFeedback,
   listUserPivotEventFeedback,
 } = require('../services/pivotFeedbackService');
-const { getPivotConfig } = require('../services/pivotConfigService');
+const {
+  getPivotConfig,
+  getPivotOnboardingVariant,
+} = require('../services/pivotConfigService');
 const {
   getPivotCopy,
   getPlatformLandingCopy,
@@ -71,7 +74,10 @@ const {
   redeemPivotEntry,
 } = require('../services/pivotEntryService');
 const { getPivotLandingDrop } = require('../services/pivotLandingDropService');
-const { getPivotClipDrop } = require('../services/pivotClipDropService');
+const {
+  getPivotClipDrop,
+  getPivotCityWeekCounts,
+} = require('../services/pivotClipDropService');
 const { recordLandingEvent, getLandingConfig } = require('../services/pivotLandingService');
 const { joinWaitlist } = require('../services/pivotLandingWaitlistService');
 const {joinCityInterest} = require('../services/justGoCityInterestService');
@@ -109,6 +115,8 @@ const router = express.Router();
 
 router.use(pivotRequestLogger);
 
+router.use('/campaign-invites', require('./justGoCampaignInviteRoutes'));
+router.use('/tags', require('./justGoTagRoutes'));
 router.use('/crews', pivotCrewRoutes);
 router.use('/creator', pivotCreatorRoutes);
 
@@ -176,6 +184,24 @@ router.post('/city-interest', pivotLandingWaitlistRateLimit, async (req, res) =>
   } catch (err) {
     logPivotRouteError('POST /pivot/city-interest', err, req);
     return res.status(500).json({success: false, message: 'Unable to join this city waitlist.'});
+  }
+});
+
+// Public: the app reads this before sign-in to pick which first run to show.
+router.get('/onboarding-variant', pivotLandingConfigRateLimit, (req, res) => {
+  try {
+    const result = getPivotOnboardingVariant();
+    res.set('Cache-Control', 'public, max-age=60');
+    return res.status(200).json({
+      success: true,
+      data: result.data,
+    });
+  } catch (err) {
+    logPivotRouteError('GET /pivot/onboarding-variant', err, req);
+    return res.status(500).json({
+      success: false,
+      message: 'Unable to load onboarding variant.',
+    });
   }
 });
 
@@ -312,6 +338,28 @@ router.get('/landing/drop', pivotLandingDropRateLimit, async (req, res) => {
     return res.status(500).json({
       success: false,
       message: 'Unable to load this week’s drop.',
+    });
+  }
+});
+
+/** How much is on in a city this week (the journey's haystack) — public, counts only. */
+router.get('/clip/week-counts', pivotClipDropRateLimit, async (req, res) => {
+  try {
+    const result = await getPivotCityWeekCounts(req, { tenantKey: req.query.tenantKey });
+    if (result.error) {
+      return res.status(result.status || 400).json({
+        success: false,
+        message: result.error,
+        code: result.code,
+      });
+    }
+    res.set('Cache-Control', 'public, max-age=300');
+    return res.status(200).json({ success: true, data: result.data });
+  } catch (err) {
+    logPivotRouteError('GET /pivot/clip/week-counts', err, req);
+    return res.status(500).json({
+      success: false,
+      message: 'Unable to count this week’s events.',
     });
   }
 });
@@ -538,6 +586,31 @@ router.put('/profile/plan-visibility', verifyToken, async (req, res) => {
   } catch (err) {
     logPivotRouteError('PUT /pivot/profile/plan-visibility', err, req);
     return res.status(500).json({ success: false, message: 'Unable to update plan visibility.' });
+  }
+});
+
+/**
+ * The interest tag vocabulary, public: the onboarding journey shows it
+ * before there's an account. Active tags only; slugs and labels.
+ */
+router.get('/catalog/tags', pivotLandingConfigRateLimit, async (req, res) => {
+  try {
+    const result = await listPivotTags(req);
+    if (result.error) {
+      return res.status(result.status || 400).json({
+        success: false,
+        message: result.error,
+        code: result.code,
+      });
+    }
+    res.set('Cache-Control', 'public, max-age=300');
+    return res.status(200).json({ success: true, data: result.data });
+  } catch (err) {
+    logPivotRouteError('GET /pivot/catalog/tags', err, req);
+    return res.status(500).json({
+      success: false,
+      message: 'Unable to load pivot tags.',
+    });
   }
 });
 

@@ -34,6 +34,14 @@ describe('pivotLogger', () => {
     );
   });
 
+  it.each(['/pivot/campaign-invites/', '/pivot/CAMPAIGN-INVITES/'])('redacts invitation bearer tokens under %s', (prefix) => {
+    const context = pivotRequestContext({
+      method: 'POST', originalUrl: `${prefix}private-nfc-token/claim`,
+    });
+    expect(context.path).toBe(`${prefix}[redacted]/claim`);
+    expect(JSON.stringify(context)).not.toContain('private-nfc-token');
+  });
+
   it('keeps per-item detail logging opt-in', () => {
     expect(isPivotDetailLoggingEnabled()).toBe(false);
     process.env.PIVOT_DETAIL_LOG = '1';

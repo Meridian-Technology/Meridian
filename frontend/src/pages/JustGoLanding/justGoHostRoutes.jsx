@@ -28,3 +28,12 @@ export function JustGoClipFallback() {
   const city = landingTenantKeyFromParam(tenantKey);
   return <Navigate to={city ? `/${city}${search}` : `/${search}`} replace />;
 }
+
+/**
+ * justgo.lol/pivot/tag/{code} — NFC dog tags. iPhones open the app, or the
+ * App Clip without it; everything else (Android, App Clips off) lands on the
+ * home page. Tags aren't tied to a city, and the code is dropped from the URL.
+ */
+export function JustGoTagFallback() {
+  return <Navigate to="/" replace />;
+}

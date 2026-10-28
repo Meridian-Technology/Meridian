@@ -31,6 +31,17 @@ const pivotCrewSchema = new mongoose.Schema(
       trim: true,
     },
     /**
+     * Six characters a friend types to join (no 0/O/1/I/L), shown in the app
+     * and the invite text. Separate from the share token: rotating the link
+     * keeps the code. Backfilled by migrations/backfillPivotCrewJoinCodes.js.
+     */
+    joinCode: {
+      type: String,
+      trim: true,
+      uppercase: true,
+      default: null,
+    },
+    /**
      * How many events this crew can lock per week (1–2).
      * null = inherit tenant judgement.maxPickSlots.
      */
@@ -47,5 +58,9 @@ const pivotCrewSchema = new mongoose.Schema(
 pivotCrewSchema.index({ tenantKey: 1, createdAt: -1 });
 pivotCrewSchema.index({ createdBy: 1, tenantKey: 1 });
 pivotCrewSchema.index({ shareInviteToken: 1 }, { unique: true });
+pivotCrewSchema.index(
+  { joinCode: 1 },
+  { unique: true, partialFilterExpression: { joinCode: { $type: 'string' } } },
+);
 
 module.exports = pivotCrewSchema;

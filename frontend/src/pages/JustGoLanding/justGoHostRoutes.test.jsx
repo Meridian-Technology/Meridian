@@ -1,7 +1,7 @@
 import React from 'react';
 import { render, screen } from '@testing-library/react';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
-import { JustGoClipFallback } from './justGoHostRoutes';
+import { JustGoClipFallback, JustGoTagFallback } from './justGoHostRoutes';
 
 jest.mock('./JustGoLanding', () => () => null);
 
@@ -20,6 +20,20 @@ function renderClip(path) {
     </MemoryRouter>,
   );
 }
+
+describe('JustGoTagFallback', () => {
+  it('sends dog tag links to the home page without the code', () => {
+    render(
+      <MemoryRouter initialEntries={['/pivot/tag/AbCdEfGhIjKlMnOpQrStUv']}>
+        <Routes>
+          <Route path="/pivot/tag/:code" element={<JustGoTagFallback />} />
+          <Route path="*" element={<Landed />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    expect(screen.getByTestId('landed')).toHaveTextContent(/^\/$/);
+  });
+});
 
 describe('JustGoClipFallback', () => {
   it('sends App Clip links to the city page and keeps the invite ref', () => {

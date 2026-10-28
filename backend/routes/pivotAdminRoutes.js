@@ -227,6 +227,10 @@ const router = express.Router();
 
 router.use(pivotRequestLogger);
 
+router.use('/campaigns', require('./justGoCampaignAdminRoutes'));
+router.use('/tenants/:tenantKey/tags', require('./justGoTagAdminRoutes'));
+router.use('/tenants/:tenantKey/explore-themes', require('./pivotExploreThemeAdminRoutes'));
+
 function sendCopyAdminResult(res, result) {
   if (result.error) {
     return res.status(result.status || 400).json({
@@ -1062,7 +1066,11 @@ router.post(
       return sendDeckResult(res, await createCurationDraft(req, req.params.accountId, req.body || {}), 201);
     } catch (err) {
       logPivotRouteError('POST carousel curation draft', err, req);
-      return res.status(500).json({ success: false, message: 'Unable to save the curation draft.' });
+      return res.status(500).json({
+        success: false,
+        message: 'Unable to save the curation draft.',
+        ...(process.env.NODE_ENV !== 'production' && err?.message ? { detail: err.message } : {}),
+      });
     }
   },
 );

@@ -47,6 +47,26 @@ async function resolveCopyPointer(req, tenantKey) {
   return { ...EMPTY_COPY_POINTER };
 }
 
+/** Which first run new Just Go installs get. `classic` is the shipped onboarding. */
+const PIVOT_ONBOARDING_VARIANTS = Object.freeze(['journey', 'classic']);
+const PIVOT_ONBOARDING_DEFAULT_VARIANT = 'journey';
+
+/**
+ * The onboarding switch, read before sign-in (and before a city is chosen),
+ * so it is tenant-independent. Set PIVOT_JUSTGO_ONBOARDING_VARIANT to
+ * `classic` to send new installs back to the shipped onboarding; changing a
+ * config var restarts the app without a deploy. Anything else is `journey`.
+ */
+function getPivotOnboardingVariant(env = process.env) {
+  const raw = String(env.PIVOT_JUSTGO_ONBOARDING_VARIANT || '')
+    .trim()
+    .toLowerCase();
+  const variant = PIVOT_ONBOARDING_VARIANTS.includes(raw)
+    ? raw
+    : PIVOT_ONBOARDING_DEFAULT_VARIANT;
+  return { data: { variant } };
+}
+
 async function getPivotConfig(req, options = {}) {
   const tenantKey = req.school || options.tenantKey;
   if (!tenantKey) {
@@ -100,4 +120,7 @@ async function getPivotConfig(req, options = {}) {
 module.exports = {
   buildDropSchedulePayload,
   getPivotConfig,
+  getPivotOnboardingVariant,
+  PIVOT_ONBOARDING_VARIANTS,
+  PIVOT_ONBOARDING_DEFAULT_VARIANT,
 };

@@ -14,6 +14,7 @@ const { getTenantByKey } = require('../../services/tenantConfigService');
 const { buildPublishedCatalogQuery } = require('../../services/pivotFeedService');
 const {
   getPivotClipDrop,
+  getPivotCityWeekCounts,
   buildClipDropQuery,
   CLIP_DROP_LIMIT,
   CLIP_EVENT_FIELDS,
@@ -262,5 +263,54 @@ describe('getPivotClipDrop', () => {
       events: [],
       dropAt: DROP_AT.toISOString(),
     });
+  });
+});
+
+describe('getPivotCityWeekCounts', () => {
+  function mockWeekEvents(rows) {
+    const lean = jest.fn().mockResolvedValue(rows);
+    const select = jest.fn().mockReturnValue({ lean });
+    const find = jest.fn().mockReturnValue({ select });
+    getModels.mockReturnValue({ Event: { find } });
+    return { find, select };
+  }
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    connectToDatabase.mockResolvedValue({});
+    getTenantByKey.mockResolvedValue(NYC_TENANT);
+  });
+
+  it("counts the whole week and the sites it came from, curated or not", async () => {
+    const { find, select } = mockWeekEvents([
+      { customFields: { pivot: { sourceUrl: 'https://partiful.com/e/a', source: 'partiful' } } },
+      { customFields: { pivot: { sourceUrl: 'https://www.partiful.com/e/b' } } },
+      { customFields: { pivot: { sourceUrl: 'https://lu.ma/c' } } },
+      { customFields: { pivot: { source: 'eventbrite' } } },
+      { customFields: { pivot: {} } },
+    ]);
+    const result = await getPivotCityWeekCounts({}, { tenantKey: 'nyc', now: HOUR_BEFORE_NEXT_DROP });
+    expect(result.data).toEqual({
+      tenantKey: 'nyc',
+      batchWeek: '2026-W33',
+      eventCount: 5,
+      sourceCount: 3,
+    });
+    const query = find.mock.calls[0][0];
+    expect(query.isDeleted).toEqual({ $ne: true });
+    expect(query['customFields.pivot.ingestStatus']).toBeUndefined();
+    // The live week's drop cycle: Thursday drop to the next Thursday.
+    expect(query.$or[0].start_time.$gte.toISOString()).toBe('2026-08-13T00:00:00.000Z');
+    expect(query.$or[0].start_time.$lt.toISOString()).toBe('2026-08-20T00:00:00.000Z');
+    // Counts only: no event fields leave the server.
+    expect(select).toHaveBeenCalledWith('customFields.pivot.sourceUrl customFields.pivot.source');
+  });
+
+  it('shares the public city checks', async () => {
+    const missing = await getPivotCityWeekCounts({}, {});
+    expect(missing.status).toBe(400);
+    getTenantByKey.mockResolvedValue(null);
+    const unknown = await getPivotCityWeekCounts({}, { tenantKey: 'nowhere' });
+    expect(unknown.status).toBe(404);
   });
 });

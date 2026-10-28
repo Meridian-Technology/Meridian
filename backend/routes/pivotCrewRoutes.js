@@ -13,6 +13,8 @@ const {
   deletePivotCrew,
   rotatePivotCrewInviteLink,
   joinPivotCrew,
+  previewPivotCrew,
+  joinPivotCrewByCode,
   invitePivotCrewPlaceholders,
   addPivotCrewMember,
   listPivotCrewInvites,
@@ -33,6 +35,14 @@ const {
 } = require('../services/pivotCrewJudgementService');
 const { requireMinAppVersion } = require('../middlewares/requireMinAppVersion');
 const { RITUAL_MIN_APP_VERSION } = require('../services/pivotWeekRitualService');
+const { createLandingRateLimit } = require('../middlewares/pivotLandingDropRateLimit');
+
+/** Circle codes are six characters, so looking them up is rate-limited. */
+const crewCodeRateLimit = createLandingRateLimit({
+  message: 'Too many tries. Wait a minute and check the code.',
+  code: 'CREW_CODE_RATE_LIMIT',
+  max: 20,
+});
 
 const router = express.Router();
 
@@ -62,6 +72,46 @@ function handleServiceResult(res, result, successStatus = 200) {
     data: result.data,
   });
 }
+
+/** "Is this your circle?": by `?code=` (six characters) or `?token=` (an invite link). */
+router.get('/preview', verifyToken, crewCodeRateLimit, async (req, res) => {
+  try {
+    const result = await previewPivotCrew(req, {
+      code: req.query.code,
+      token: req.query.token,
+    });
+    return handleServiceResult(res, result);
+  } catch (err) {
+    logPivotRouteError('GET /pivot/crews/preview', err, req);
+    return res.status(500).json({
+      success: false,
+      message: 'Unable to find that circle.',
+    });
+  }
+});
+
+router.post(
+  '/join-code',
+  verifyToken,
+  crewCodeRateLimit,
+  body('code').isString().trim().notEmpty().withMessage('A code is required.'),
+  async (req, res) => {
+    const validationResponse = handleValidation(req, res);
+    if (validationResponse) {
+      return validationResponse;
+    }
+    try {
+      const result = await joinPivotCrewByCode(req, { code: req.body.code });
+      return handleServiceResult(res, result);
+    } catch (err) {
+      logPivotRouteError('POST /pivot/crews/join-code', err, req);
+      return res.status(500).json({
+        success: false,
+        message: 'Unable to join crew.',
+      });
+    }
+  },
+);
 
 router.post(
   '/join',

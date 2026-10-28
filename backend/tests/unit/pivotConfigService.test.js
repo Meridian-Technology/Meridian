@@ -12,7 +12,11 @@ jest.mock('../../services/pivotCopyService', () => ({
 
 const { getTenantByKey } = require('../../services/tenantConfigService');
 const { getCopyPointer } = require('../../services/pivotCopyService');
-const { getPivotConfig, buildDropSchedulePayload } = require('../../services/pivotConfigService');
+const {
+  getPivotConfig,
+  getPivotOnboardingVariant,
+  buildDropSchedulePayload,
+} = require('../../services/pivotConfigService');
 const { PIVOT_CREW_CONFIG_VERSION } = require('../../utilities/pivotCrewConfig');
 const { PIVOT_MOBILE_STORE_URLS } = require('../../utilities/pivotMobileConfig');
 
@@ -177,5 +181,23 @@ describe('pivotConfigService', () => {
         schemaVersion: 1,
       });
     });
+  });
+});
+
+describe('getPivotOnboardingVariant', () => {
+  it('defaults new installs to the journey', () => {
+    expect(getPivotOnboardingVariant({})).toEqual({ data: { variant: 'journey' } });
+  });
+
+  it('switches back to the shipped onboarding with classic', () => {
+    expect(
+      getPivotOnboardingVariant({ PIVOT_JUSTGO_ONBOARDING_VARIANT: ' Classic ' }),
+    ).toEqual({ data: { variant: 'classic' } });
+  });
+
+  it('ignores values it does not know', () => {
+    expect(
+      getPivotOnboardingVariant({ PIVOT_JUSTGO_ONBOARDING_VARIANT: 'off' }),
+    ).toEqual({ data: { variant: 'journey' } });
   });
 });
