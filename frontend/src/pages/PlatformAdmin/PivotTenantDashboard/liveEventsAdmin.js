@@ -9,7 +9,13 @@ export const LIVE_EVENTS_PATH = '/admin/pivot/live-events';
 
 export function liveEventPaths(eventId) {
   const base = `${LIVE_EVENTS_PATH}/${encodeURIComponent(eventId)}`;
-  return { event: base, reset: `${base}/reset`, image: `${base}/image` };
+  return {
+    event: base,
+    reset: `${base}/reset`,
+    image: `${base}/image`,
+    close: `${base}/close`,
+    unlockSpotter: `${base}/unlock-spotter`,
+  };
 }
 
 export const LIVE_EVENT_ID_PATTERN = /^[A-Za-z0-9_-]{1,64}$/;
@@ -213,6 +219,39 @@ export function liveFanLink({ city = 'ic', eventId, source = '' }) {
 /** The spotter's console, on the same server as this admin. */
 export function liveSpotterLink(eventId, origin = typeof window !== 'undefined' ? window.location.origin : '') {
   return `${origin}/pivot/live/${encodeURIComponent(eventId)}/spot`;
+}
+
+/** A date as a `datetime-local` value, in this browser's time zone. */
+export function toLocalInput(value) {
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+/** The night's hours from the two inputs, for the server. Empty closes the night. */
+export function liveHoursFromInputs({ opens = '', closes = '' } = {}) {
+  const iso = (value) => {
+    if (!value) return null;
+    const date = new Date(value);
+    return Number.isNaN(date.getTime()) ? null : date.toISOString();
+  };
+  return { opensAt: iso(opens), closesAt: iso(closes) };
+}
+
+export function liveHoursInputs(hours) {
+  return { opens: toLocalInput(hours?.opensAt), closes: toLocalInput(hours?.closesAt) };
+}
+
+/** Where a night's hours stand, in a few words: `{label, tone}`. */
+export function liveHoursStatus(hours, now = Date.now()) {
+  const opens = hours?.opensAt ? Date.parse(hours.opensAt) : NaN;
+  const closes = hours?.closesAt ? Date.parse(hours.closesAt) : NaN;
+  if (Number.isNaN(opens) || Number.isNaN(closes) || closes <= now) return { label: 'Closed to phones', tone: 'muted' };
+  const when = (time) => new Date(time).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' });
+  if (opens > now) return { label: `Opens to phones ${when(opens)}`, tone: 'info' };
+  return { label: `Open to phones until ${when(closes)}`, tone: 'ok' };
 }
 
 export function moveItem(list, index, delta) {

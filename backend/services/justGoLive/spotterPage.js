@@ -125,8 +125,9 @@ function renderSpotterPage(eventId, nonce) {
   var EVENT = ${eventJson};
   var BASE = '/pivot/live/' + encodeURIComponent(EVENT) + '/spot';
   var HOLD_MS = 900;
-  var KEY = 'live-pin:' + EVENT;
-  var pin = sessionStorage.getItem(KEY) || '';
+  // The PIN is sent once, for a token good for the night.
+  var KEY = 'live-token:' + EVENT;
+  var token = sessionStorage.getItem(KEY) || '';
   var view = null;
   var busy = false;
   var $ = function (id) { return document.getElementById(id); };
@@ -163,7 +164,7 @@ function renderSpotterPage(eventId, nonce) {
   function request(method, path, body) {
     return fetch(BASE + path, {
       method: method,
-      headers: { 'Content-Type': 'application/json', 'X-Live-Pin': pin },
+      headers: { 'Content-Type': 'application/json', 'X-Live-Token': token },
       body: body ? JSON.stringify(body) : undefined,
       cache: 'no-store',
     }).then(function (response) {
@@ -185,7 +186,7 @@ function renderSpotterPage(eventId, nonce) {
       });
     };
     attempt(2).then(function (result) {
-      if (result.status === 401 || result.status === 429) return lock(result.payload.message);
+      if (result.status === 401 || result.status === 404 || result.status === 429) return lock(result.payload.message);
       if (result.payload.data && result.payload.data.view) render(result.payload.data.view);
       if (result.status !== 200) return toast(result.payload.message || 'that didn’t work', true);
       if (result.payload.data && result.payload.data.saved === false) toast('done, but not saved. tell james.', true);
@@ -357,15 +358,15 @@ function renderSpotterPage(eventId, nonce) {
   }
 
   function refresh() {
-    if (!pin || busy) return Promise.resolve();
+    if (!token || busy) return Promise.resolve();
     return request('GET', '/state').then(function (result) {
-      if (result.status === 401 || result.status === 429) return lock(result.payload.message);
+      if (result.status === 401 || result.status === 404 || result.status === 429) return lock(result.payload.message);
       if (result.status === 200) render(result.payload.data.view);
     }).catch(function () { $('counts').textContent = 'reconnecting…'; });
   }
 
   function lock(message) {
-    pin = '';
+    token = '';
     sessionStorage.removeItem(KEY);
     $('app').hidden = true;
     $('undo').hidden = true;
@@ -374,10 +375,11 @@ function renderSpotterPage(eventId, nonce) {
   }
 
   $('enter').addEventListener('click', function () {
-    pin = $('pin').value.trim();
-    request('GET', '/state').then(function (result) {
+    request('POST', '/session', { pin: $('pin').value.trim() }).then(function (result) {
       if (result.status !== 200) return lock(result.payload.message || 'that didn’t work');
-      sessionStorage.setItem(KEY, pin);
+      token = result.payload.data.token;
+      sessionStorage.setItem(KEY, token);
+      $('pin').value = '';
       $('gate').hidden = true;
       $('app').hidden = false;
       render(result.payload.data.view);
@@ -403,7 +405,7 @@ function renderSpotterPage(eventId, nonce) {
   });
   $('holdClear').addEventListener('click', function () { command('hold', { title: '' }, 'hold screen off'); });
 
-  if (pin) {
+  if (token) {
     $('gate').hidden = true;
     $('app').hidden = false;
     refresh();

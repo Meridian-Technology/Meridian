@@ -1125,6 +1125,7 @@ function createLiveEngine({
       return { ...shared(options), ...personal(deviceId) };
     },
     hasFan: (deviceId) => fans.has(deviceId),
+    fanCount: () => fans.size,
     exportState: () => clone(state),
     exportFan,
     spotterView,

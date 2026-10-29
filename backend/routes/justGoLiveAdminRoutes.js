@@ -7,6 +7,8 @@ const {
   getLiveEvent,
   saveLiveEvent,
   resetLiveEvent,
+  closeLiveEvent,
+  unlockLiveSpotter,
   uploadLiveImage,
 } = require('../services/justGoLive/liveAdminService');
 
@@ -53,6 +55,8 @@ router.get('/', handle((req) => listLiveEvents(req)));
 router.get('/:eventId', handle((req) => getLiveEvent(req, req.params.eventId)));
 router.put('/:eventId', handle((req) => saveLiveEvent(req, req.params.eventId, req.body)));
 router.post('/:eventId/reset', handle((req) => resetLiveEvent(req, req.params.eventId, req.body)));
+router.post('/:eventId/close', handle((req) => closeLiveEvent(req, req.params.eventId)));
+router.post('/:eventId/unlock-spotter', handle((req) => unlockLiveSpotter(req, req.params.eventId)));
 router.post('/:eventId/image', receiveImage, handle((req) => uploadLiveImage(req, req.params.eventId, req.file)));
 
 module.exports = router;

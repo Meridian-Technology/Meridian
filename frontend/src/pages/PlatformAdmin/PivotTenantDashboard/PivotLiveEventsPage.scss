@@ -335,6 +335,14 @@
     gap: 8px;
   }
 
+  .live-hours__actions {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    flex-wrap: wrap;
+    margin-top: 14px;
+  }
+
   .live-reset {
     display: flex;
     gap: 10px;

@@ -63,7 +63,7 @@ describe('PivotLiveEventsPage', () => {
     expect(url).toBe('/admin/pivot/live-events/underground-6');
     expect(options.method).toBe('PUT');
     // The PIN field keeps digits only.
-    expect(options.data).toMatchObject({ pin: '2468', create: true });
+    expect(options.data).toMatchObject({ pin: '2468', create: true, hours: { opensAt: null, closesAt: null } });
     expect(options.data.definition.title).toBe('underground pro-wrestling 6');
     expect(options.data.definition.matches[0].sides.map((side) => side.name)).toEqual(['Rex', 'Vega']);
 
@@ -84,6 +84,26 @@ describe('PivotLiveEventsPage', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Create event' }));
     expect(await screen.findByText('title is required')).toBeInTheDocument();
     expect(screen.getByText('matches[0]: needs 2 to 4 sides')).toBeInTheDocument();
+  });
+
+  it('sends the hours with the card, and closes the night to phones on confirm', async () => {
+    const open = { ...SAVED, open: true, hours: { opensAt: '2026-10-30T22:00:00.000Z', closesAt: '2026-10-31T05:00:00.000Z' } };
+    mockUseFetch.mockReturnValue({ data: { success: true, data: { events: [open] } }, loading: false, refetch: mockRefetch });
+    mockAuthenticatedRequest.mockResolvedValue({ data: { success: true, data: { event: open } } });
+    render(<PivotLiveEventsPage tenants={[{ tenantKey: 'ic' }]} />);
+    fireEvent.click(screen.getByText('underground pro-wrestling 6'));
+    await screen.findByRole('button', { name: 'Close to phones now' });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(mockAuthenticatedRequest).toHaveBeenCalledTimes(2));
+    expect(mockAuthenticatedRequest.mock.calls[1][1].data.hours).toEqual(open.hours);
+
+    const confirm = jest.spyOn(window, 'confirm').mockReturnValue(true);
+    mockAuthenticatedRequest.mockResolvedValue({ data: { success: true, data: { event: { ...open, open: false } } } });
+    fireEvent.click(screen.getByRole('button', { name: 'Close to phones now' }));
+    await waitFor(() => expect(mockAuthenticatedRequest).toHaveBeenCalledWith('/admin/pivot/live-events/underground-6/close', { method: 'POST' }));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Close to phones now' })).toBeDisabled());
+    confirm.mockRestore();
   });
 
   it('only resets once the event id is typed back', async () => {

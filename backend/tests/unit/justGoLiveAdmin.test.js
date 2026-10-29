@@ -1,17 +1,27 @@
 const mongoose = require('mongoose');
 const { MongoMemoryServer } = require('mongodb-memory-server');
+
+const mockHub = { refreshEvent: jest.fn(async () => undefined), forget: jest.fn(async () => undefined), unlockSpotter: jest.fn() };
+jest.mock('../../services/justGoLive/liveHub', () => ({ getLiveHub: () => mockHub }));
+
 const {
   listLiveEvents,
   saveLiveEvent,
   resetLiveEvent,
+  closeLiveEvent,
+  unlockLiveSpotter,
   getLiveEvent,
+  parseHours,
 } = require('../../services/justGoLive/liveAdminService');
 const {
   loadLiveEvent,
+  listLiveHours,
   saveLiveFans,
   saveLiveState,
   verifyLivePin,
 } = require('../../services/justGoLive/liveStore');
+
+const HOUR = 60 * 60 * 1000;
 
 const CARD = {
   title: 'rehearsal night',
@@ -80,6 +90,55 @@ describe('Just Go Live admin and store, on a real Mongo', () => {
     const reset = await resetLiveEvent(req(), 'rehearsal-1', { confirm: 'rehearsal-1' });
     expect(reset.data.event).toMatchObject({ fans: 0, status: { label: 'not started' }, title: 'rehearsal night 2' });
     expect(await verifyLivePin(globalDb, 'rehearsal-1', '2468')).toBe(true);
+  });
+
+  it('sets the night’s hours, lists only nights that haven’t closed, and closes one now', async () => {
+    const created = await saveLiveEvent(req(), 'rehearsal-1', { definition: CARD });
+    expect(created.data.event).toMatchObject({ open: false, hours: { opensAt: null, closesAt: null } });
+    expect(await listLiveHours(globalDb)).toEqual([]);
+
+    const opensAt = new Date(Date.now() - HOUR).toISOString();
+    const closesAt = new Date(Date.now() + 2 * HOUR).toISOString();
+    const opened = await saveLiveEvent(req(), 'rehearsal-1', { definition: CARD, hours: { opensAt, closesAt } });
+    expect(opened.data.event.open).toBe(true);
+    expect(mockHub.refreshEvent).toHaveBeenLastCalledWith('rehearsal-1', expect.objectContaining({ definition: expect.any(Object) }));
+    const [listed] = await listLiveHours(globalDb);
+    expect(listed).toMatchObject({ eventId: 'rehearsal-1', pinTag: expect.stringMatching(/^[0-9a-f]{12}$/) });
+
+    // Saving the card without hours leaves them alone.
+    expect((await saveLiveEvent(req(), 'rehearsal-1', { definition: CARD })).data.event.open).toBe(true);
+
+    const closed = await closeLiveEvent(req(), 'rehearsal-1');
+    expect(closed.data.event.open).toBe(false);
+    expect(await listLiveHours(globalDb)).toEqual([]);
+    expect(await closeLiveEvent(req(), 'nope')).toMatchObject({ status: 404 });
+    expect(await unlockLiveSpotter(req(), 'rehearsal-1')).toMatchObject({ data: { unlocked: true } });
+    expect(mockHub.unlockSpotter).toHaveBeenCalledWith('rehearsal-1');
+  });
+
+  it('refuses hours that are half set, backwards, or longer than a day', () => {
+    const at = (hours) => new Date(Date.now() + hours * HOUR).toISOString();
+    expect(parseHours(undefined)).toEqual({ hours: undefined });
+    expect(parseHours({ opensAt: '', closesAt: '' })).toEqual({ hours: null });
+    expect(parseHours({ opensAt: at(1) }).error).toMatch(/both/);
+    expect(parseHours({ opensAt: at(2), closesAt: at(1) }).error).toMatch(/after/);
+    expect(parseHours({ opensAt: at(0), closesAt: at(25) }).error).toMatch(/24/);
+    expect(parseHours({ opensAt: 'soon', closesAt: at(1) }).error).toMatch(/dates/);
+    expect(parseHours({ opensAt: at(0), closesAt: at(5) }).hours.closesAt).toBeInstanceOf(Date);
+  });
+
+  it('gives saved fans an expiry, and loads at most the cap', async () => {
+    const fans = [1, 2, 3].map((n) => ({
+      deviceId: `fan-cap-000${n}`, name: null, surface: 'clip', source: null, calls: {}, joinedAt: new Date(Date.now() + n),
+    }));
+    await saveLiveFans(globalDb, 'rehearsal-1', fans);
+    const stored = await globalDb.collection('justgo_live_fans').findOne({ deviceId: 'fan-cap-0001' });
+    expect(stored.expireAt.getTime()).toBeGreaterThan(Date.now() + 29 * 24 * HOUR);
+    await globalDb.model('JustGoLiveFan').init();
+    const indexes = await globalDb.collection('justgo_live_fans').indexes();
+    expect(indexes).toEqual(expect.arrayContaining([expect.objectContaining({ key: { expireAt: 1 }, expireAfterSeconds: 0 })]));
+    const loaded = await loadLiveEvent(globalDb, 'rehearsal-1', { maxFans: 2 });
+    expect(loaded.fans).toHaveLength(2);
   });
 
   it('says when there is no such event', async () => {

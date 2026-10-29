@@ -6,12 +6,31 @@ import {
   liveCardFromDefinition,
   liveDefinitionFromCard,
   liveFanLink,
+  liveHoursFromInputs,
+  liveHoursInputs,
+  liveHoursStatus,
   liveSpotterLink,
   moveItem,
   validateLiveEventId,
 } from './liveEventsAdmin';
 
 describe('liveEventsAdmin', () => {
+  it('round-trips the night’s hours through the inputs, and empties close it', () => {
+    const hours = { opensAt: '2026-10-30T22:00:00.000Z', closesAt: '2026-10-31T05:00:00.000Z' };
+    expect(liveHoursFromInputs(liveHoursInputs(hours))).toEqual(hours);
+    expect(liveHoursFromInputs({ opens: '', closes: '' })).toEqual({ opensAt: null, closesAt: null });
+    expect(liveHoursInputs(null)).toEqual({ opens: '', closes: '' });
+  });
+
+  it('says whether phones can join', () => {
+    const now = Date.parse('2026-10-30T23:00:00.000Z');
+    const at = (hours) => new Date(now + hours * 3600000).toISOString();
+    expect(liveHoursStatus(null, now)).toMatchObject({ label: 'Closed to phones', tone: 'muted' });
+    expect(liveHoursStatus({ opensAt: at(-1), closesAt: at(2) }, now)).toMatchObject({ tone: 'ok', label: expect.stringMatching(/^Open to phones until/) });
+    expect(liveHoursStatus({ opensAt: at(1), closesAt: at(2) }, now)).toMatchObject({ tone: 'info', label: expect.stringMatching(/^Opens to phones/) });
+    expect(liveHoursStatus({ opensAt: at(-3), closesAt: at(-1) }, now).tone).toBe('muted');
+  });
+
   it('makes stable ids for new matches and corners', () => {
     const card = blankLiveCard();
     expect(card.matches[0].id).toBe('m1');

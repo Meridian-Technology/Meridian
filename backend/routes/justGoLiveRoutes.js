@@ -1,6 +1,6 @@
 const crypto = require('crypto');
 const express = require('express');
-const { getLiveHub } = require('../services/justGoLive/liveHub');
+const { getLiveHub, clientAddress, liveDisabled } = require('../services/justGoLive/liveHub');
 const { renderSpotterPage } = require('../services/justGoLive/spotterPage');
 
 /**
@@ -8,11 +8,17 @@ const { renderSpotterPage } = require('../services/justGoLive/spotterPage');
  * (`liveHub.attach`) and fall back to these when it fails; the spotter uses
  * these only.
  *
- * No IP rate limits here: a venue's phones often share one address. The
- * engine caps cheers per device, and the hub caps PIN attempts per event.
+ * The hub decides who gets in: only nights within their hours, up to its
+ * fan cap, with generous per-address limits (a venue's phones often share
+ * one address). The engine caps cheers per device.
  */
-function createJustGoLiveRouter(hub = getLiveHub()) {
+function createJustGoLiveRouter(hub = getLiveHub(), { disabled = liveDisabled() } = {}) {
   const router = express.Router();
+
+  if (disabled) {
+    router.use((req, res) => res.status(404).json({ success: false, message: 'this one isn’t live.' }));
+    return router;
+  }
 
   const failed = (res, label, error) => {
     console.error(`[live] ${label} failed`, { message: error.message });
@@ -40,9 +46,19 @@ function createJustGoLiveRouter(hub = getLiveHub()) {
     res.type('html').send(renderSpotterPage(req.params.eventId, nonce));
   });
 
+  router.post('/:eventId/spot/session', async (req, res) => {
+    try {
+      const result = await hub.spotterLogin(req.params.eventId, req.body?.pin, clientAddress(req));
+      if (result.status !== 200) return res.status(result.status).json({ success: false, message: result.message });
+      return res.json({ success: true, data: { token: result.token, view: result.view } });
+    } catch (error) {
+      return failed(res, 'spotter sign-in', error);
+    }
+  });
+
   router.get('/:eventId/spot/state', async (req, res) => {
     try {
-      const result = await hub.spotterState(req.params.eventId, req.get('x-live-pin'));
+      const result = await hub.spotterState(req.params.eventId, req.get('x-live-token'));
       if (result.status !== 200) return res.status(result.status).json({ success: false, message: result.message });
       return res.json({ success: true, data: { view: result.view } });
     } catch (error) {
@@ -52,7 +68,7 @@ function createJustGoLiveRouter(hub = getLiveHub()) {
 
   router.post('/:eventId/spot/command', async (req, res) => {
     try {
-      const result = await hub.spotterCommand(req.params.eventId, req.get('x-live-pin'), req.body);
+      const result = await hub.spotterCommand(req.params.eventId, req.get('x-live-token'), req.body);
       return res.status(result.status).json({
         success: result.status === 200,
         message: result.message,
@@ -68,6 +84,7 @@ function createJustGoLiveRouter(hub = getLiveHub()) {
       const result = await hub.poll(req.params.eventId, {
         deviceId: typeof req.query.device === 'string' ? req.query.device : '',
         surface: req.query.surface === 'app' ? 'app' : 'clip',
+        address: clientAddress(req),
       });
       if (result.status !== 200) return res.status(result.status).json({ success: false, message: result.message });
       return res.json({ success: true, data: { snapshot: result.snapshot } });
@@ -78,7 +95,7 @@ function createJustGoLiveRouter(hub = getLiveHub()) {
 
   router.post('/:eventId/messages', async (req, res) => {
     try {
-      const result = await hub.post(req.params.eventId, req.body);
+      const result = await hub.post(req.params.eventId, req.body, { address: clientAddress(req) });
       if (!result.snapshot) return res.status(result.status).json({ success: false, message: result.message });
       return res.status(result.status).json({
         success: result.ok,

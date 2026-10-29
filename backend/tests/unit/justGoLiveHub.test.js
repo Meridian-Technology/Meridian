@@ -15,14 +15,33 @@ const { definition } = parseLiveEventDefinition({
   }],
 });
 
-/** The store, in memory. */
+const HOUR = 60 * 60 * 1000;
+
+/** The store, in memory. night-1 is open; closed-1 exists but its hours are over. */
 function memoryStore() {
-  const data = { state: null, fans: new Map(), stateSaves: 0 };
+  const data = {
+    state: null,
+    fans: new Map(),
+    stateSaves: 0,
+    loads: 0,
+    hourReads: 0,
+    hours: [
+      { eventId: 'night-1', opensAt: new Date(Date.now() - HOUR), closesAt: new Date(Date.now() + HOUR), pinTag: 'tag-a' },
+      { eventId: 'later-1', opensAt: new Date(Date.now() + HOUR), closesAt: new Date(Date.now() + 2 * HOUR), pinTag: 'tag-b' },
+    ],
+  };
   return {
     data,
-    loadLiveEvent: async (db, eventId) => (eventId === 'night-1'
-      ? { definition, state: data.state, fans: [...data.fans.values()] }
-      : null),
+    listLiveHours: async () => {
+      data.hourReads += 1;
+      return data.hours;
+    },
+    loadLiveEvent: async (db, eventId) => {
+      data.loads += 1;
+      return eventId === 'night-1' || eventId === 'later-1'
+        ? { definition, state: data.state, fans: [...data.fans.values()] }
+        : null;
+    },
     loadLiveDefinition: async () => definition,
     saveLiveState: async (db, eventId, state) => {
       data.state = state;
@@ -35,10 +54,14 @@ function memoryStore() {
   };
 }
 
-function open(url) {
+function open(url, headers = {}) {
   return new Promise((resolve, reject) => {
-    const ws = new WebSocket(url);
+    const ws = new WebSocket(url, { headers });
     const messages = [];
+    ws.closeCode = null;
+    ws.on('close', (code) => {
+      ws.closeCode = code;
+    });
     ws.on('message', (raw) => messages.push(JSON.parse(String(raw))));
     ws.once('open', () => resolve({ ws, messages }));
     ws.once('error', reject);
@@ -62,9 +85,18 @@ describe('liveHub over HTTP and WebSocket', () => {
   let base;
   const sockets = [];
 
+  const limits = { maxFans: 3, newFansPerAddress: 2, joinTimeoutMs: 2000 };
+
   beforeEach(async () => {
     store = memoryStore();
-    hub = createLiveHub({ store, getGlobalDb: async () => ({}), isProfane: () => false });
+    hub = createLiveHub({
+      store,
+      getGlobalDb: async () => ({}),
+      isProfane: () => false,
+      limits,
+      loopDelay: () => 0,
+      secret: 'test-secret',
+    });
     const app = express();
     app.use(express.json());
     app.use('/pivot/live', createJustGoLiveRouter(hub));
@@ -75,16 +107,37 @@ describe('liveHub over HTTP and WebSocket', () => {
   });
 
   afterEach(async () => {
+    token = '';
     sockets.splice(0).forEach((ws) => ws.terminate());
     await hub.stop();
     await new Promise((resolve) => server.close(resolve));
   });
 
-  const spot = (path, { method = 'GET', pin = '4821', body } = {}) => fetch(`http://${base}/pivot/live/night-1/spot${path}`, {
+  const request = (path, { method = 'GET', headers = {}, body } = {}) => fetch(`http://${base}/pivot/live/${path}`, {
     method,
-    headers: { 'Content-Type': 'application/json', 'X-Live-Pin': pin },
+    headers: { 'Content-Type': 'application/json', ...headers },
     body: body ? JSON.stringify(body) : undefined,
   }).then(async (response) => ({ status: response.status, payload: await response.json() }));
+
+  const signIn = (pin = '4821', address = '10.0.0.1', eventId = 'night-1') => request(`${eventId}/spot/session`, {
+    method: 'POST',
+    headers: { 'X-Forwarded-For': `6.6.6.6, ${address}` },
+    body: { pin },
+  });
+
+  let token = '';
+  const spot = async (path, { method = 'GET', body } = {}) => {
+    if (!token) token = (await signIn()).payload.data.token;
+    return request(`night-1/spot${path}`, { method, headers: { 'X-Live-Token': token }, body });
+  };
+
+  const join = async (deviceId, { address = '10.0.0.1' } = {}) => {
+    const phone = await open(`ws://${base}/pivot/live/night-1/socket?device=${deviceId}`, { 'X-Forwarded-For': address });
+    sockets.push(phone.ws);
+    phone.ws.send(JSON.stringify({ type: 'join', eventId: 'night-1', deviceId, surface: 'clip', protocol: 1 }));
+    await until(() => phone.messages.find((m) => m.type === 'snapshot' || m.type === 'error'));
+    return phone;
+  };
 
   it('joins over the socket, takes a pick, and broadcasts the spotter’s bell', async () => {
     const phone = await open(`ws://${base}/pivot/live/night-1/socket?device=phone-abcdefgh`);
@@ -139,20 +192,125 @@ describe('liveHub over HTTP and WebSocket', () => {
     }
   });
 
-  it('tells phones an unknown event isn’t live', async () => {
-    const response = await fetch(`http://${base}/pivot/live/nope?device=poller-12345678`);
-    expect(response.status).toBe(404);
+  it('refuses unknown and closed nights from memory, reading the hours once', async () => {
+    for (const id of ['nope', 'nope-2', 'nope-3', 'later-1']) {
+      expect((await fetch(`http://${base}/pivot/live/${id}?device=poller-12345678`)).status).toBe(404);
+    }
     const phone = await open(`ws://${base}/pivot/live/nope/socket?device=phone-abcdefgh`);
     sockets.push(phone.ws);
     const error = await until(() => phone.messages.find((m) => m.type === 'error'));
-    expect(error).toMatchObject({ fatal: true });
+    expect(error).toMatchObject({ fatal: true, message: 'this one isn’t live.' });
+    // No lookup per id: one read of the hours, and no night loaded.
+    expect(store.data.hourReads).toBe(1);
+    expect(store.data.loads).toBe(0);
+    expect((await signIn('4821', '10.0.0.1', 'later-1')).status).toBe(404);
   });
 
-  it('serves the spotter page and refuses a wrong PIN, then locks out', async () => {
+  it('caps the night’s fans, and lets fans already in it back in', async () => {
+    const first = await join('fan-00000001', { address: '10.0.0.1' });
+    await join('fan-00000002', { address: '10.0.0.2' });
+    await join('fan-00000003', { address: '10.0.0.3' });
+    const fourth = await join('fan-00000004', { address: '10.0.0.4' });
+    expect(fourth.messages.find((m) => m.type === 'error')).toMatchObject({ fatal: true, message: expect.stringMatching(/full/) });
+    await until(() => fourth.ws.closeCode === 4403);
+
+    // Polling can't get past the cap either.
+    const polled = await fetch(`http://${base}/pivot/live/night-1?device=fan-00000005`);
+    expect(polled.status).toBe(403);
+
+    // A fan who drops and comes back is still in, on a new socket.
+    first.ws.terminate();
+    const back = await join('fan-00000001', { address: '10.0.0.9' });
+    expect(back.messages.find((m) => m.type === 'snapshot')).toBeTruthy();
+  });
+
+  it('slows new fans from one address without hanging up on them at once', async () => {
+    await join('fan-0000000a', { address: '10.9.9.9' });
+    await join('fan-0000000b', { address: '10.9.9.9' });
+    const third = await join('fan-0000000c', { address: '10.9.9.9' });
+    expect(third.messages.find((m) => m.type === 'error')).toMatchObject({ fatal: false });
+    expect(third.ws.readyState).toBe(WebSocket.OPEN);
+    // The join timeout hangs up later, and the app tries again then.
+    await until(() => third.ws.readyState === WebSocket.CLOSED, 4000);
+  });
+
+  it('drops sockets that never join', async () => {
+    const idle = await open(`ws://${base}/pivot/live/night-1/socket?device=idle-1234567`);
+    sockets.push(idle.ws);
+    await until(() => idle.ws.readyState === WebSocket.CLOSED, 4000);
+  });
+
+  it('keeps one socket per device', async () => {
+    const first = await join('fan-0000000d');
+    const second = await join('fan-0000000d');
+    await until(() => first.ws.closeCode === 4409);
+    expect(second.ws.readyState).toBe(WebSocket.OPEN);
+  });
+
+  it('hangs up when the night’s hours end', async () => {
+    const phone = await join('fan-0000000e');
+    store.data.hours = [];
+    await hub.refreshEvent('night-1');
+    const last = await until(() => phone.messages.find((m) => m.type === 'error'));
+    expect(last).toMatchObject({ fatal: true, message: expect.stringMatching(/that’s the night/) });
+    await until(() => phone.ws.closeCode === 4410);
+    expect((await fetch(`http://${base}/pivot/live/night-1?device=fan-0000000e`)).status).toBe(404);
+  });
+
+  it('signs the spotter in once, and locks out an address, not the spotter', async () => {
     const page = await fetch(`http://${base}/pivot/live/night-1/spot`);
     expect(page.headers.get('content-security-policy')).toMatch(/script-src 'nonce-/);
     expect(await page.text()).toMatch(/"night-1"/);
-    for (let i = 0; i < 8; i += 1) expect((await spot('/state', { pin: '0000' })).status).toBe(401);
-    expect((await spot('/state', { pin: '4821' })).status).toBe(429);
+
+    const session = await signIn('4821', '10.0.0.1');
+    expect(session.status).toBe(200);
+    const good = session.payload.data.token;
+    expect(session.payload.data.view.title).toBe('test night');
+
+    // Guesses from elsewhere lock that address out…
+    for (let i = 0; i < 8; i += 1) expect((await signIn('0000', '203.0.113.7')).status).toBe(401);
+    expect((await signIn('4821', '203.0.113.7')).status).toBe(429);
+    // …not the spotter's address, and not a spotter who's signed in.
+    expect((await signIn('4821', '10.0.0.1')).status).toBe(200);
+    const state = await request('night-1/spot/state', { headers: { 'X-Live-Token': good } });
+    expect(state.status).toBe(200);
+
+    // An admin can lift the lockout.
+    hub.unlockSpotter('night-1');
+    expect((await signIn('4821', '203.0.113.7')).status).toBe(200);
+
+    // A forged or stale token is refused; a new PIN ends the old ones.
+    expect((await request('night-1/spot/state', { headers: { 'X-Live-Token': `${good}x` } })).status).toBe(401);
+    store.data.hours = store.data.hours.map((night) => ({ ...night, pinTag: 'tag-new' }));
+    await hub.refreshEvent('night-1');
+    expect((await request('night-1/spot/state', { headers: { 'X-Live-Token': good } })).status).toBe(401);
+  });
+
+  it('slows the rope’s snapshots while the event loop lags', async () => {
+    let lag = 0;
+    const slowHub = createLiveHub({ store, getGlobalDb: async () => ({}), loopDelay: () => lag });
+    for (let i = 0; i < 4; i += 1) await slowHub.tick();
+    expect(slowHub.isSlowed()).toBe(false);
+    lag = 250;
+    for (let i = 0; i < 4; i += 1) await slowHub.tick();
+    expect(slowHub.isSlowed()).toBe(true);
+    lag = 10;
+    for (let i = 0; i < 4; i += 1) await slowHub.tick();
+    expect(slowHub.isSlowed()).toBe(false);
+  });
+});
+
+describe('the live routes when turned off', () => {
+  it('answer 404 without touching the hub', async () => {
+    const app = express();
+    app.use('/pivot/live', createJustGoLiveRouter({}, { disabled: true }));
+    const server = http.createServer(app);
+    await new Promise((resolve) => server.listen(0, resolve));
+    try {
+      const response = await fetch(`http://127.0.0.1:${server.address().port}/pivot/live/night-1?device=poller-12345678`);
+      expect(response.status).toBe(404);
+    } finally {
+      await new Promise((resolve) => server.close(resolve));
+    }
   });
 });

@@ -7,15 +7,20 @@ const { upsertLiveEvent } = require('./liveStore');
 const { getLiveHub } = require('./liveHub');
 
 /**
- * Pivot admin's Live page: set up a night's card, its spotter PIN and its
- * images without a terminal. Saving a card updates phones already in the
- * event; resetting clears the spotter's calls and every fan.
+ * Pivot admin's Live page: set up a night's card, its hours, its spotter PIN
+ * and its images without a terminal. Saving a card updates phones already
+ * in the event; resetting clears the spotter's calls and every fan.
+ *
+ * Phones can join only within the night's hours, so the public routes are
+ * shut the rest of the week. With no hours, the night is closed.
  */
 
 const IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp']);
 const IMAGE_MAX_BYTES = 12 * 1024 * 1024;
 const IMAGE_MAX_SIDE = 1600;
 const PIN = /^\d{4,8}$/;
+/** A night's hours span a day at most. */
+const MAX_HOURS_MS = 24 * 60 * 60 * 1000;
 
 const invalid = (message, extra = {}) => ({ error: message, status: 400, code: 'INVALID_LIVE_EVENT', ...extra });
 
@@ -45,6 +50,27 @@ async function fanCounts(req, eventIds) {
   return new Map(rows.map((row) => [row._id, row.fans]));
 }
 
+/**
+ * `{opensAt, closesAt}` from the page: both set, or both empty to close the
+ * night. Undefined leaves the stored hours alone.
+ */
+function parseHours(raw) {
+  if (raw === undefined) return { hours: undefined };
+  const opens = raw?.opensAt ? new Date(raw.opensAt) : null;
+  const closes = raw?.closesAt ? new Date(raw.closesAt) : null;
+  if (!opens && !closes) return { hours: null };
+  if (!opens || !closes) return { error: 'Set both when phones can join and when they stop, or neither.' };
+  if (Number.isNaN(opens.getTime()) || Number.isNaN(closes.getTime())) return { error: 'Those hours aren’t dates.' };
+  if (closes <= opens) return { error: 'Phones have to stop joining after they start.' };
+  if (closes - opens > MAX_HOURS_MS) return { error: 'Keep the hours to 24 at most: doors minus 2 hours to the end plus 1.' };
+  return { hours: { opensAt: opens, closesAt: closes } };
+}
+
+function isOpen(event, at = Date.now()) {
+  return Boolean(event.opensAt && event.closesAt
+    && new Date(event.opensAt).getTime() <= at && at < new Date(event.closesAt).getTime());
+}
+
 function summarize(event, fans) {
   return {
     eventId: event.eventId,
@@ -53,6 +79,8 @@ function summarize(event, fans) {
     hasPin: Boolean(event.spotterPin?.hash),
     fans: fans ?? 0,
     status: nightStatus(event.definition, event.state),
+    hours: { opensAt: event.opensAt || null, closesAt: event.closesAt || null },
+    open: isOpen(event),
     updatedAt: event.updatedAt,
   };
 }
@@ -60,7 +88,7 @@ function summarize(event, fans) {
 async function listLiveEvents(req) {
   const { JustGoLiveEvent } = models(req);
   const events = await JustGoLiveEvent.find({})
-    .select('+spotterPin eventId definition state updatedAt')
+    .select('+spotterPin eventId definition state opensAt closesAt updatedAt')
     .sort({ updatedAt: -1 })
     .limit(100)
     .lean();
@@ -87,14 +115,16 @@ async function saveLiveEvent(req, eventId, body = {}) {
   if (parsed.errors) return invalid('The card has problems.', { errors: parsed.errors });
   const pin = typeof body.pin === 'string' && body.pin.trim() ? body.pin.trim() : undefined;
   if (pin !== undefined && !PIN.test(pin)) return invalid('The PIN must be 4 to 8 digits.');
+  const { hours, error: hoursError } = parseHours(body.hours);
+  if (hoursError) return invalid(hoursError);
 
   const { JustGoLiveEvent } = models(req);
   const existing = await JustGoLiveEvent.findOne({ eventId }).select('+spotterPin').lean();
   if (body.create && existing) return invalid('That event id is taken. Pick another, or open the existing event.');
   if (!existing && !pin) return invalid('Set a spotter PIN for a new event.');
 
-  await upsertLiveEvent(req.globalDb, parsed.definition, { pin });
-  getLiveHub().refreshDefinition(eventId, parsed.definition);
+  await upsertLiveEvent(req.globalDb, parsed.definition, { pin, hours });
+  await getLiveHub().refreshEvent(eventId, { definition: parsed.definition });
   return getLiveEvent(req, eventId);
 }
 
@@ -107,6 +137,28 @@ async function resetLiveEvent(req, eventId, body = {}) {
   await upsertLiveEvent(req.globalDb, event.definition, { reset: true });
   await getLiveHub().forget(eventId);
   return getLiveEvent(req, eventId);
+}
+
+/**
+ * Stops phones joining now: the hours end here, and phones in the night
+ * get a last word and are hung up on.
+ */
+async function closeLiveEvent(req, eventId) {
+  const { JustGoLiveEvent } = models(req);
+  const event = await JustGoLiveEvent.findOne({ eventId }).lean();
+  if (!event) return { error: 'No such event.', status: 404, code: 'LIVE_EVENT_NOT_FOUND' };
+  const at = new Date();
+  const opensAt = event.opensAt && new Date(event.opensAt) < at ? event.opensAt : null;
+  await JustGoLiveEvent.updateOne({ eventId }, { $set: { opensAt, closesAt: opensAt ? at : null } });
+  await getLiveHub().refreshEvent(eventId);
+  return getLiveEvent(req, eventId);
+}
+
+/** Clears wrong-PIN lockouts, so the spotter can sign in again. */
+async function unlockLiveSpotter(req, eventId) {
+  if (!EVENT_ID.test(eventId || '')) return { error: 'No such event.', status: 404, code: 'LIVE_EVENT_NOT_FOUND' };
+  getLiveHub().unlockSpotter(eventId);
+  return { data: { unlocked: true } };
 }
 
 /**
@@ -142,4 +194,14 @@ async function uploadLiveImage(req, eventId, file) {
   return { status: 201, data: { url, cutout: ext === 'png' } };
 }
 
-module.exports = { listLiveEvents, getLiveEvent, saveLiveEvent, resetLiveEvent, uploadLiveImage, nightStatus };
+module.exports = {
+  listLiveEvents,
+  getLiveEvent,
+  saveLiveEvent,
+  resetLiveEvent,
+  closeLiveEvent,
+  unlockLiveSpotter,
+  uploadLiveImage,
+  nightStatus,
+  parseHours,
+};

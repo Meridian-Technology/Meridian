@@ -16,6 +16,9 @@ import {
   liveDefinitionFromCard,
   liveEventPaths,
   liveFanLink,
+  liveHoursFromInputs,
+  liveHoursInputs,
+  liveHoursStatus,
   liveSpotterLink,
   moveItem,
   validateLiveEventId,
@@ -328,6 +331,40 @@ function ShareSection({ event, cities }) {
   );
 }
 
+function HoursSection({ hours, event, onChange, onClose, onUnlock }) {
+  const status = event ? liveHoursStatus(event.hours) : null;
+  return (
+    <PivotOpsSection
+      title="Hours"
+      description="Phones can join only between these times: from 2 hours before doors to an hour after the end, 24 hours at most. With no hours, the night is closed. Save to apply."
+    >
+      <div className="live-grid">
+        <Field label="Phones can join from">
+          <input type="datetime-local" value={hours.opens} onChange={(e) => onChange({ ...hours, opens: e.target.value })} />
+        </Field>
+        <Field label="Until">
+          <input type="datetime-local" value={hours.closes} onChange={(e) => onChange({ ...hours, closes: e.target.value })} />
+        </Field>
+        {status ? (
+          <div className="live-field">
+            <span className="live-field__label">Now</span>
+            <span><PivotOpsStatus tone={status.tone}>{status.label}</PivotOpsStatus></span>
+          </div>
+        ) : null}
+      </div>
+      {event ? (
+        <div className="live-hours__actions">
+          <button type="button" className="live-button live-button--danger" disabled={!event.open} onClick={onClose}>
+            Close to phones now
+          </button>
+          <button type="button" className="live-button" onClick={onUnlock}>Unlock spotter</button>
+          <span className="live-field__hint">Unlock clears wrong-PIN lockouts, if the spotter is locked out.</span>
+        </div>
+      ) : null}
+    </PivotOpsSection>
+  );
+}
+
 function ResetSection({ event, onReset }) {
   const [confirm, setConfirm] = useState('');
   const [busy, setBusy] = useState(false);
@@ -362,7 +399,7 @@ function PivotLiveEventsPage({ tenants = [] }) {
   const events = data?.success ? data.data?.events || [] : [];
   const cities = useMemo(() => tenants.map((tenant) => tenant.tenantKey).filter(Boolean), [tenants]);
 
-  /** `{eventId, isNew, card, pin, saved, event}` while editing. */
+  /** `{eventId, isNew, card, pin, hours, event}` while editing. */
   const [draft, setDraft] = useState(null);
   const [errors, setErrors] = useState([]);
   const [saving, setSaving] = useState(false);
@@ -375,13 +412,13 @@ function PivotLiveEventsPage({ tenants = [] }) {
       return;
     }
     const { event } = result.data.data;
-    setDraft({ eventId, isNew: false, card: liveCardFromDefinition(event.definition), pin: '', event });
+    setDraft({ eventId, isNew: false, card: liveCardFromDefinition(event.definition), pin: '', hours: liveHoursInputs(event.hours), event });
     setErrors([]);
     setDirty(false);
   }, [addNotification]);
 
   const startNew = () => {
-    setDraft({ eventId: '', isNew: true, card: blankLiveCard(), pin: '', event: null });
+    setDraft({ eventId: '', isNew: true, card: blankLiveCard(), pin: '', hours: liveHoursInputs(null), event: null });
     setErrors([]);
     setDirty(false);
   };
@@ -419,6 +456,7 @@ function PivotLiveEventsPage({ tenants = [] }) {
       data: {
         definition: liveDefinitionFromCard(draft.card),
         pin: draft.pin || undefined,
+        hours: liveHoursFromInputs(draft.hours),
         create: draft.isNew,
       },
     });
@@ -428,7 +466,7 @@ function PivotLiveEventsPage({ tenants = [] }) {
       return;
     }
     const { event } = result.data.data;
-    setDraft({ eventId, isNew: false, card: liveCardFromDefinition(event.definition), pin: '', event });
+    setDraft({ eventId, isNew: false, card: liveCardFromDefinition(event.definition), pin: '', hours: liveHoursInputs(event.hours), event });
     setErrors([]);
     setDirty(false);
     refetch();
@@ -444,6 +482,28 @@ function PivotLiveEventsPage({ tenants = [] }) {
     setDraft((current) => ({ ...current, event: result.data.data.event }));
     refetch();
     addNotification({ title: 'Night reset', message: 'Calls, picks and names are cleared.', type: 'success' });
+  };
+
+  const closeNow = async () => {
+    if (!window.confirm(`Close ${draft.eventId} to phones now? Phones in it get a last word and are hung up on.`)) return;
+    const result = await authenticatedRequest(liveEventPaths(draft.eventId).close, { method: 'POST' });
+    if (!result.data?.success) {
+      addNotification({ title: 'Not closed', message: requestMessage(result, 'Try again.'), type: 'error' });
+      return;
+    }
+    const { event } = result.data.data;
+    setDraft((current) => ({ ...current, hours: liveHoursInputs(event.hours), event }));
+    refetch();
+    addNotification({ title: 'Closed to phones', message: 'New phones can’t join. Set new hours to open it again.', type: 'success' });
+  };
+
+  const unlockSpotter = async () => {
+    const result = await authenticatedRequest(liveEventPaths(draft.eventId).unlockSpotter, { method: 'POST' });
+    if (!result.data?.success) {
+      addNotification({ title: 'Not unlocked', message: requestMessage(result, 'Try again.'), type: 'error' });
+      return;
+    }
+    addNotification({ title: 'Spotter unlocked', message: 'The spotter can enter the PIN again.', type: 'success' });
   };
 
   const card = draft?.card;
@@ -468,7 +528,9 @@ function PivotLiveEventsPage({ tenants = [] }) {
               onClick={() => (dirty && !window.confirm('Discard unsaved changes?') ? null : openEvent(event.eventId))}
             >
               <span className="live-list__title">{event.title}</span>
-              <span className="live-list__meta">{event.eventId} · {event.matches} matches · {event.fans} fans</span>
+              <span className="live-list__meta">
+                {event.eventId} · {event.matches} matches · {event.fans} fans · {liveHoursStatus(event.hours).label.toLowerCase()}
+              </span>
               <PivotOpsStatus tone={event.status?.tone}>{event.status?.label}</PivotOpsStatus>
             </button>
           ))}
@@ -498,6 +560,14 @@ function PivotLiveEventsPage({ tenants = [] }) {
               ) : null}
             </div>
           </PivotOpsSection>
+
+          <HoursSection
+            hours={draft.hours}
+            event={saved ? draft.event : null}
+            onChange={(hours) => update({ hours })}
+            onClose={closeNow}
+            onUnlock={unlockSpotter}
+          />
 
           <PivotOpsSection title="Opening screen" description="What fans see first. Everything is optional.">
             <IntroEditor intro={card.intro} eventId={draft.eventId} saved={saved} onChange={(intro) => updateCard({ intro })} />
