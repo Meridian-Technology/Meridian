@@ -9,6 +9,7 @@ import PivotVoicePage from './PivotVoicePage';
 import PivotFleetGrowthPage from './PivotFleetGrowthPage';
 import PivotComputeJobs, { PIVOT_FLEET_COMPUTE_JOBS_PAGE } from './PivotComputeJobs';
 import PivotNotificationsPage from '../PivotNotifications/PivotNotificationsPage';
+import PivotLiveEventsPage from './PivotLiveEventsPage';
 import PivotTenantDropdown from './PivotTenantDropdown';
 import PivotJustGoLogo from './PivotJustGoLogo';
 import '../../Admin/Admin.scss';
@@ -33,7 +34,7 @@ function LegacyFleetAnalyticsRedirect() {
  * Route: /platform-admin/pivot?page=0|1|2|3|4|5
  * Voice is page=1; Growth is page=2 (overview, landing, acquisition); Compute
  * jobs is page=3; page=4 (former Analytics) redirects to Growth → Acquisition;
- * Notifications is page=5 (appended).
+ * Notifications is page=5 (appended). Live is page=6 (appended).
  */
 function PivotFleetDashboard() {
   const navigate = useNavigate();
@@ -98,6 +99,12 @@ function PivotFleetDashboard() {
         label: 'Notifications',
         icon: 'mdi:bell-ring-outline',
         element: <PivotNotificationsPage tenants={pivotTenants} />,
+      },
+      {
+        // Just Go Live nights: the card, the spotter PIN, the fan QR.
+        label: 'Live',
+        icon: 'mdi:microphone-variant',
+        element: <PivotLiveEventsPage tenants={pivotTenants} />,
       },
     ],
     [pivotTenants, tenants, loading, mobileEnvOverrides, refetch],

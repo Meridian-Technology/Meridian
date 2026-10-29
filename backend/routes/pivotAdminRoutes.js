@@ -230,6 +230,7 @@ router.use(pivotRequestLogger);
 router.use('/campaigns', require('./justGoCampaignAdminRoutes'));
 router.use('/tenants/:tenantKey/tags', require('./justGoTagAdminRoutes'));
 router.use('/tenants/:tenantKey/explore-themes', require('./pivotExploreThemeAdminRoutes'));
+router.use('/live-events', require('./justGoLiveAdminRoutes'));
 
 function sendCopyAdminResult(res, result) {
   if (result.error) {
