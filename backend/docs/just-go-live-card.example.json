@@ -1,0 +1,43 @@
+{
+  "eventId": "underground-6",
+  "title": "underground pro-wrestling 6",
+  "kicker": "iowa underground · live",
+  "accent": "#04FF16",
+  "intro": {
+    "layout": "backdrop",
+    "imageUrl": "https://example.com/REPLACE-underground-skull.png",
+    "imageEnd": 0.64,
+    "align": "center",
+    "color": "#04FF16",
+    "presenter": { "name": "iowa underground", "label": "{name} presents" },
+    "kicker": "no ring / no rules",
+    "title": "underground pro-wrestling 6",
+    "facts": [
+      { "label": "when", "value": "fri oct 30 · doors 7pm · bell 8pm" },
+      { "label": "where", "value": "the wright house · 910 s gilbert st, iowa city" }
+    ],
+    "body": "pick who wins each match, then cheer your corner.",
+    "showCard": false,
+    "cta": "step in"
+  },
+  "matches": [
+    {
+      "id": "m1",
+      "kicker": "opener",
+      "title": "PLACEHOLDER vs. PLACEHOLDER",
+      "sides": [
+        { "id": "red", "name": "Rex Rampage", "detail": "red corner", "color": "#FF4F1F", "imageUrl": "justgo-art://wrestler/rex" },
+        { "id": "blue", "name": "Vega Storm", "detail": "blue corner", "color": "#4AB5FF", "imageUrl": "justgo-art://wrestler/vega" }
+      ]
+    },
+    {
+      "id": "m2",
+      "title": "triple threat",
+      "sides": [
+        { "id": "ace", "name": "Ace", "color": "#FFD23F", "imageUrl": "justgo-art://wrestler/ace" },
+        { "id": "vex", "name": "Vex", "color": "#5FD068", "imageUrl": "justgo-art://wrestler/vex" },
+        { "id": "chaos", "name": "Chaos", "color": "#FF4F1F", "imageUrl": "justgo-art://wrestler/chaos" }
+      ]
+    }
+  ]
+}

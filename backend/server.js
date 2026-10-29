@@ -1,4 +1,5 @@
 const { createApp } = require('./app');
+const { getLiveHub } = require('./services/justGoLive/liveHub');
 const { startPivotCrewWeekStateScheduler } = require('./services/pivotCrewWeekStateScheduler');
 const { sweepPendingAutoApplyComputeJobs } = require('./services/pivotComputeAutoApplyService');
 const {
@@ -15,6 +16,13 @@ const PORT = process.env.NODE_ENV === 'production'
   : (process.env.MERIDIAN_API_PORT || process.env.PORT || 5001);
 
 const { server } = createApp();
+// Just Go Live's sockets share this server with socket.io. One dyno only:
+// each live event's state lives in this process.
+const liveHub = getLiveHub();
+liveHub.attach(server);
+process.once('SIGTERM', () => {
+  liveHub.stop().catch((error) => console.error('[live] stop failed', error.message));
+});
 server.listen(PORT, () => {
   console.log(`Backend server is running on http://localhost:${PORT}`);
   startPivotCrewWeekStateScheduler();
