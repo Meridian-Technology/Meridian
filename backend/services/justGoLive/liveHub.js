@@ -385,7 +385,48 @@ function createLiveHub({
     return { status: 200, view: view(entry), saved, undone: result.undone };
   }
 
-  return { attach, start, stop, tick, poll, post, spotterState, spotterCommand, loadEvent };
+  // --- Pivot admin ---------------------------------------------------------
+
+  /** A card saved from admin: phones already in the event see it at once. */
+  function refreshDefinition(eventId, definition) {
+    missing.delete(eventId);
+    const loading = events.get(eventId);
+    if (!loading) return;
+    loading.then((entry) => {
+      if (!entry) return;
+      entry.engine.setDefinition(definition);
+      broadcastSnapshots(entry);
+    }).catch(() => undefined);
+  }
+
+  /**
+   * After a reset: drop the event from memory and hang up its phones. They
+   * reconnect on their own and load the night fresh from the database.
+   */
+  async function forget(eventId) {
+    missing.delete(eventId);
+    const loading = events.get(eventId);
+    if (!loading) return;
+    events.delete(eventId);
+    const entry = await loading.catch(() => null);
+    if (!entry) return;
+    entry.dirtyFans.clear();
+    for (const ws of entry.sockets.keys()) ws.close(1012, 'reset');
+  }
+
+  return {
+    attach,
+    start,
+    stop,
+    tick,
+    poll,
+    post,
+    spotterState,
+    spotterCommand,
+    loadEvent,
+    refreshDefinition,
+    forget,
+  };
 }
 
 let hub = null;

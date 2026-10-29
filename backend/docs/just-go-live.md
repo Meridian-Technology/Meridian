@@ -13,16 +13,18 @@ The app speaks the protocol in `Meridian-Mobile/src/live/liveProtocol.ts`. Its o
 | `services/justGoLive/liveStore.js` | `justgo_live_events` (card, spotter state, PIN digest) and `justgo_live_fans` (names, picks). |
 | `routes/justGoLiveRoutes.js` | `GET /pivot/live/:id` (polling), `POST …/messages`, and the spotter's `/spot`, `/spot/state`, `/spot/command`. |
 | `services/justGoLive/spotterPage.js` | The spotter's phone page. |
-| `scripts/justGoLiveEvent.js` | Checks and loads a night's card, sets the spotter PIN. |
+| `services/justGoLive/liveAdminService.js`, `routes/justGoLiveAdminRoutes.js` | Pivot admin's Live page: cards, PIN, images (S3 `justgo-live/{eventId}`), reset. Platform admins only. |
+| `scripts/justGoLiveEvent.js` | Checks and loads a card from a terminal. |
 
 ## Run a night
 
-1. **Write the card.** Copy `docs/just-go-live-card.example.json`. Each match has 2–4 `sides`; each side needs an `id` and `name`, and can have `color`, `detail`, `badge`, `stats`, `members`, and an `imageUrl` (`https://` cut-out with `"imageCutout": true`, or the app's drawn fighters: `justgo-art://wrestler/rex`, `vega`, `ace`, `vex`, `chaos`). Images must be `https://`. Never use photos we don't have rights to.
-2. **Check it:** `node scripts/justGoLiveEvent.js check card.json`.
-3. **Load it with a PIN:** `node scripts/justGoLiveEvent.js load card.json --pin=4821 --ack-write` (global database). Loading again keeps the night's calls and picks; press **reload card** on the spotter page after. `--reset` clears them too: before doors only, then restart the dyno.
-4. **Print the QR codes:** `https://justgo.lol/clip/ic?live={eventId}&src={where-it-hangs}`.
-5. **Restart the dyno the morning of the show**, so the night starts on a fresh process.
-6. **Spotter:** open `https://www.meridian.study/pivot/live/{eventId}/spot` on a phone and enter the PIN.
+1. **Set up the card in Pivot admin → Just Go → Live** (fleet view, last item). **New event**: give it an id (it goes in the QR code and can't change), a title, and a spotter PIN. Add matches in running order; each has 2–4 corners with a name, colour, and an image: an upload (PNGs with transparency stay cut-outs), or one of the app's drawn fighters. The opening screen is optional. Save. Saving again mid-night keeps every call and pick, and phones in the event see the change at once.
+2. **Share**, on the same page: pick the city, optionally where the code hangs (`door`, `bar`), and download the QR. The fan link is `https://justgo.lol/clip/{city}?live={eventId}`.
+3. **Restart the dyno the morning of the show**, so the night starts on a fresh process.
+4. **Spotter:** open the spotter link from the Share section on a phone and enter the PIN.
+5. **After a rehearsal**, **Reset the night** at the bottom of the page clears the calls, picks and names (type the event id to confirm). Never during a show.
+
+Without admin, `scripts/justGoLiveEvent.js check|load card.json --pin=… --ack-write` loads a card JSON (see `docs/just-go-live-card.example.json`) the same way.
 
 During the night the spotter, for each match: **open picks** → **hold to ring the bell** → **hold: {name} wins** (or **no contest**). Optional: a bell countdown, pause/resume, a 20-second surge, knocking a fighter out of a 3–4 way, a notice line, a full-screen hold, switches for chat, #1 fans, moments and the install ask. After the last match, **hold to end the night** shows every phone its finale (the clip asks for the install). Anything can be undone for a minute; every press carries an id, so a retry on bad signal can't apply twice.
 
