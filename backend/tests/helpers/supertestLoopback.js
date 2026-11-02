@@ -11,7 +11,8 @@ const Test = require('supertest/lib/test');
 const { serverAddress } = Test.prototype;
 
 function loopbackUrl(url, address) {
-  return address === '::' ? url.replace('://127.0.0.1:', '://[::1]:') : url;
+  return address === '::' || address === '::1'
+    ? url.replace('://127.0.0.1:', '://[::1]:') : url;
 }
 
 Test.prototype.serverAddress = function serverAddressOnBoundLoopback(app, path) {
