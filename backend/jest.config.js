@@ -4,6 +4,8 @@ module.exports = {
   // Keep haste maps writable when verification and judge runs use different
   // sandboxes; Jest's shared macOS temporary cache may be read-only to one run.
   cacheDirectory: '<rootDir>/node_modules/.cache/jest',
+  // supertest reaches IPv6 test servers over ::1; see the helper.
+  setupFiles: ['<rootDir>/tests/helpers/supertestLoopback.js'],
   clearMocks: true,
   transform: {},
   testTimeout: 30000,

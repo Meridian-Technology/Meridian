@@ -79,6 +79,9 @@ describe('pivotComputeJobStore', () => {
       const models = getGlobalModels(req, 'PivotComputeJob', 'PivotComputeJobAttempt');
       expect(models.PivotComputeJob.collection.name).toBe('pivot_compute_jobs');
       expect(models.PivotComputeJobAttempt.collection.name).toBe('pivot_compute_job_attempts');
+      const again = getGlobalModels(req, 'PivotComputeJob', 'PivotComputeJobAttempt');
+      expect(again.PivotComputeJob).toBe(models.PivotComputeJob);
+      expect(again.PivotComputeJobAttempt).toBe(models.PivotComputeJobAttempt);
     });
 
     it('declares required unique and query indexes', () => {

@@ -578,7 +578,8 @@ function compareCandidates(a, b, sort, { pin = false } = {}) {
   if (cmp !== 0) return cmp;
   cmp = compareAsc(a.ref?.sourceTenantKey || a.sourceTenantKey, b.ref?.sourceTenantKey || b.sourceTenantKey);
   if (cmp !== 0) return cmp;
-  return compareDesc(String(a.ref?.eventId || a.eventId), String(b.ref?.eventId || b.eventId));
+  const compareIds = sort === 'date-asc' ? compareAsc : compareDesc;
+  return compareIds(String(a.ref?.eventId || a.eventId), String(b.ref?.eventId || b.eventId));
 }
 
 function cursorValueFor(candidate, sort) {
@@ -681,7 +682,7 @@ function chipsFromQuery(spec) {
   return chips;
 }
 
-function mergeSourcePages(sourceResults, spec) {
+function mergeSourcePages(sourceResults, spec, { pin = true } = {}) {
   const candidates = [];
   const sources = sourceResults.map((row) => ({
     tenantKey: row.tenantKey,
@@ -702,7 +703,7 @@ function mergeSourcePages(sourceResults, spec) {
     seen.add(key);
     unique.push(candidate);
   }
-  const pinFirst = !spec.cursor;
+  const pinFirst = pin && !spec.cursor;
   const pinned = pinFirst
     ? unique.filter((row) => editorialPin(row) > 0).sort((a, b) => compareCandidates(a, b, spec.sort, { pin: true }))
     : [];

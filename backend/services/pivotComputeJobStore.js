@@ -85,7 +85,7 @@ function serializeJob(doc, { includeApplyManifest = true } = {}) {
   if (!doc) return null;
   const value = typeof doc.toObject === 'function' ? doc.toObject() : doc;
   return {
-    id: String(value._id),
+    id: String(value._id ?? value.id),
     externalJobId: value.externalJobId,
     tenantKey: value.tenantKey,
     cityKey: value.cityKey,
@@ -121,6 +121,7 @@ function serializeJob(doc, { includeApplyManifest = true } = {}) {
       }
       : null,
     result: value.result ?? null,
+    ...(value.kind === 'carousel-compose' ? { composeOutcome: value.composeOutcome ?? null } : {}),
     exportArtifacts: value.exportArtifacts
       ? {
         attemptId: String(value.exportArtifacts.attemptId),
@@ -702,7 +703,7 @@ async function submitComputeJobResult(req, {
   const nextStatus = resolveResultSubmissionStatus({
     outcome: result.outcome,
     retryable,
-    requiresReview: job.kind === 'carousel-export' ? false : requiresReview,
+    requiresReview: job.kind === 'carousel-export' ? false : job.kind === 'carousel-compose' ? true : requiresReview,
   });
   assertComputeJobTransition(job.status, nextStatus);
 
@@ -1201,11 +1202,13 @@ async function listComputeJobAttempts(req, externalJobId) {
   return attempts.map(serializeAttempt);
 }
 
-async function updateComputeJobContextVersion(req, externalJobId, contextVersion) {
+async function updateComputeJobContextVersion(req, externalJobId, contextVersion, { composeContext, leaseToken } = {}) {
   const { PivotComputeJob } = await getModels(req);
   const job = await PivotComputeJob.findOneAndUpdate(
-    { externalJobId: trimString(externalJobId) },
-    { $set: { contextVersion: trimString(contextVersion) } },
+    { externalJobId: trimString(externalJobId), ...(composeContext ? {
+      kind: 'carousel-compose', status: { $in: ACTIVE_LEASE_STATUSES }, 'lease.token': leaseToken,
+    } : {}) },
+    { $set: { contextVersion: trimString(contextVersion), ...(composeContext ? { composeContext } : {}) } },
     { new: true },
   );
   if (!job) {

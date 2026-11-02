@@ -221,6 +221,8 @@ const pivotCarouselDeckSchema = new mongoose.Schema(
      * is exactly what it is. Nothing here is inferred from an existing row.
      */
     origin: { type: String, enum: ORIGINS, default: 'manual' },
+    // Internal provenance; the job also deterministically supplies the issue _id.
+    composeJobId: { type: String, maxlength: 128, immutable: true },
     // Null for manual issues: "Unapproved draft" is a generated-only state.
     reviewState: {
       type: String,

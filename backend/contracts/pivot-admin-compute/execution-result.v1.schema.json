@@ -5,7 +5,8 @@
   "oneOf": [
     { "$ref": "#/$defs/discoveryResult" },
     { "$ref": "#/$defs/refreshResult" },
-    { "$ref": "#/$defs/carouselResult" }
+    { "$ref": "#/$defs/carouselResult" },
+    { "$ref": "#/$defs/composeResult" }
   ],
   "$defs": {
     "resultEnvelope": {
@@ -435,6 +436,463 @@
           }
         }
       }
+    },
+    "composeEventRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sourceTenantKey",
+        "eventId"
+      ],
+      "properties": {
+        "sourceTenantKey": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 63,
+          "pattern": "^[a-z0-9][a-z0-9-]{0,62}$"
+        },
+        "eventId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 24,
+          "pattern": "^[0-9a-f]{24}$"
+        }
+      }
+    },
+    "composePosterRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "eventRef"
+      ],
+      "properties": {
+        "kind": {
+          "const": "event-poster"
+        },
+        "eventRef": {
+          "$ref": "#/$defs/composeEventRef"
+        }
+      }
+    },
+    "composeCoverAssetRef": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "eventRef"
+          ],
+          "properties": {
+            "kind": {
+              "const": "event-poster"
+            },
+            "eventRef": {
+              "$ref": "#/$defs/composeEventRef"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "assetId"
+          ],
+          "properties": {
+            "kind": {
+              "const": "unsplash"
+            },
+            "assetId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[a-zA-Z0-9:_-]+$"
+            }
+          }
+        }
+      ]
+    },
+    "composeCrop": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "focalX",
+        "focalY",
+        "scale"
+      ],
+      "properties": {
+        "focalX": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "focalY": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "scale": {
+          "type": "number",
+          "minimum": 1,
+          "maximum": 10
+        }
+      }
+    },
+    "composeCover": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "headline",
+        "subtitle",
+        "family",
+        "variation",
+        "assetRef",
+        "crop"
+      ],
+      "properties": {
+        "headline": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 300
+        },
+        "subtitle": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 500
+        },
+        "family": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[a-z0-9-]+$"
+        },
+        "variation": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 3
+        },
+        "assetRef": {
+          "$ref": "#/$defs/composeCoverAssetRef"
+        },
+        "crop": {
+          "$ref": "#/$defs/composeCrop"
+        },
+        "repeatReason": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 300
+        }
+      }
+    },
+    "composeEventSlide": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "eventRef",
+        "blurb",
+        "presetId",
+        "assetRef",
+        "crop"
+      ],
+      "properties": {
+        "eventRef": {
+          "$ref": "#/$defs/composeEventRef"
+        },
+        "blurb": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1000
+        },
+        "presetId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[a-z0-9-]+$"
+        },
+        "assetRef": {
+          "$ref": "#/$defs/composePosterRef"
+        },
+        "crop": {
+          "$ref": "#/$defs/composeCrop"
+        }
+      }
+    },
+    "composeClosingSlide": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "presetId",
+        "line"
+      ],
+      "properties": {
+        "presetId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[a-z0-9-]+$"
+        },
+        "kicker": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 500
+        },
+        "line": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 500
+        },
+        "sub": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 500
+        },
+        "end": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 500
+        },
+        "url": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048,
+          "pattern": "^https://",
+          "format": "uri"
+        }
+      }
+    },
+    "composeComposition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "selectedEventRefs",
+        "evidenceRefs",
+        "cover",
+        "eventSlides",
+        "socialCaption"
+      ],
+      "properties": {
+        "assessmentId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9:_-]+$"
+        },
+        "selectedEventRefs": {
+          "type": "array",
+          "minItems": 3,
+          "maxItems": 5,
+          "items": {
+            "$ref": "#/$defs/composeEventRef"
+          }
+        },
+        "evidenceRefs": {
+          "type": "array",
+          "minItems": 0,
+          "maxItems": 30,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[a-zA-Z0-9:._-]+$"
+          }
+        },
+        "cover": {
+          "$ref": "#/$defs/composeCover"
+        },
+        "eventSlides": {
+          "type": "array",
+          "minItems": 3,
+          "maxItems": 5,
+          "items": {
+            "$ref": "#/$defs/composeEventSlide"
+          }
+        },
+        "socialCaption": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2200,
+          "pattern": "\\S"
+        },
+        "optionalClosingSlide": {
+          "$ref": "#/$defs/composeClosingSlide"
+        }
+      }
+    },
+    "composeResult": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "contractVersion",
+            "jobId",
+            "scheduleOccurrenceId",
+            "kind",
+            "cityKey",
+            "implementationRevision",
+            "basedOnContextVersion",
+            "completedAt",
+            "outcome",
+            "idempotencyKey",
+            "editorialAccountKey",
+            "decision",
+            "composition"
+          ],
+          "properties": {
+            "contractVersion": {
+              "const": "1"
+            },
+            "jobId": {
+              "type": "string",
+              "minLength": 8,
+              "maxLength": 128,
+              "pattern": "^[a-zA-Z0-9:_-]+$"
+            },
+            "scheduleOccurrenceId": {
+              "oneOf": [
+                {
+                  "type": "string",
+                  "pattern": "^sched:[a-z0-9-]+@[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:.-]+Z$"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "kind": {
+              "const": "carousel-compose"
+            },
+            "cityKey": {
+              "type": "string",
+              "pattern": "^[a-z0-9][a-z0-9-]{0,62}$"
+            },
+            "implementationRevision": {
+              "type": "string",
+              "pattern": "^[a-zA-Z0-9@._+-]+$",
+              "maxLength": 128
+            },
+            "basedOnContextVersion": {
+              "type": "string",
+              "pattern": "^ctx:[a-zA-Z0-9._-]+$"
+            },
+            "completedAt": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "outcome": {
+              "const": "completed"
+            },
+            "idempotencyKey": {
+              "type": "string",
+              "minLength": 8,
+              "maxLength": 128,
+              "pattern": "^[a-zA-Z0-9:_-]+$"
+            },
+            "editorialAccountKey": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^[a-z0-9][a-z0-9._-]{0,63}$"
+            },
+            "decision": {
+              "const": "compose"
+            },
+            "composition": {
+              "$ref": "#/$defs/composeComposition"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "contractVersion",
+            "jobId",
+            "scheduleOccurrenceId",
+            "kind",
+            "cityKey",
+            "implementationRevision",
+            "basedOnContextVersion",
+            "completedAt",
+            "outcome",
+            "idempotencyKey",
+            "editorialAccountKey",
+            "decision",
+            "reason"
+          ],
+          "properties": {
+            "contractVersion": {
+              "const": "1"
+            },
+            "jobId": {
+              "type": "string",
+              "minLength": 8,
+              "maxLength": 128,
+              "pattern": "^[a-zA-Z0-9:_-]+$"
+            },
+            "scheduleOccurrenceId": {
+              "oneOf": [
+                {
+                  "type": "string",
+                  "pattern": "^sched:[a-z0-9-]+@[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:.-]+Z$"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "kind": {
+              "const": "carousel-compose"
+            },
+            "cityKey": {
+              "type": "string",
+              "pattern": "^[a-z0-9][a-z0-9-]{0,62}$"
+            },
+            "implementationRevision": {
+              "type": "string",
+              "pattern": "^[a-zA-Z0-9@._+-]+$",
+              "maxLength": 128
+            },
+            "basedOnContextVersion": {
+              "type": "string",
+              "pattern": "^ctx:[a-zA-Z0-9._-]+$"
+            },
+            "completedAt": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "outcome": {
+              "const": "completed"
+            },
+            "idempotencyKey": {
+              "type": "string",
+              "minLength": 8,
+              "maxLength": 128,
+              "pattern": "^[a-zA-Z0-9:_-]+$"
+            },
+            "editorialAccountKey": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^[a-z0-9][a-z0-9._-]{0,63}$"
+            },
+            "decision": {
+              "enum": [
+                "wait",
+                "needs-editor"
+              ]
+            },
+            "reason": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1000,
+              "pattern": "\\S"
+            }
+          }
+        }
+      ]
     }
   }
 }

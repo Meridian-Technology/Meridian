@@ -169,15 +169,18 @@ async function loadAccount(req, accountId) {
   return { account };
 }
 
-async function assertSources(req, account, sources) {
+async function assertSources(req, account, sources, trustedTenantKeys = null) {
   if (sources != null && !Array.isArray(sources)) return fail('Sources must be a list.', 422, 'INVALID_CURATION');
-  const allowed = new Set(account.sourceTenantKeys);
+  const allowed = new Set(trustedTenantKeys || account.sourceTenantKeys);
   for (const source of sources || []) {
     const key = String(source?.sourceTenantKey || '').trim().toLowerCase();
     if (!allowed.has(key)) {
       return fail('That source tenant is not allowed for this account.', 403, 'SOURCE_NOT_ALLOWED');
     }
-    const gate = await pivotTenant(req, key);
+    // Compose's fixed global policy includes every catalog tenant, including campuses.
+    const gate = trustedTenantKeys
+      ? (await require('./tenantConfigService').getTenantByKey(req, key) ? {} : { error: 'Source tenant not found.', status: 404, code: 'TENANT_NOT_FOUND' })
+      : await pivotTenant(req, key);
     if (gate.error) return gate;
   }
   return null;
@@ -254,7 +257,7 @@ async function listCarouselIssues(req, accountId, query = {}) {
   };
 }
 
-async function createIssue(req, accountId, body, origin) {
+async function createIssue(req, accountId, body, origin, trusted = {}) {
   const loaded = await loadAccount(req, accountId);
   if (loaded.error) return loaded;
   const name = text(body.name, 80);
@@ -264,7 +267,7 @@ async function createIssue(req, accountId, body, origin) {
   }
   const format = body.format || loaded.account.defaultFormat;
   if (!FORMATS.includes(format)) return fail('Unknown issue format.', 400, 'FORMAT_INVALID');
-  const sourceError = await assertSources(req, loaded.account, body.sources);
+  const sourceError = await assertSources(req, loaded.account, body.sources, trusted.sourceTenantKeys);
   if (sourceError) return sourceError;
   const slides = Array.isArray(body.slides) ? body.slides : [];
   if (slides.length > ISSUE_LIMITS.maxSlides) {
@@ -278,7 +281,7 @@ async function createIssue(req, accountId, body, origin) {
 
   const assetError = await require('./pivotCarouselAssetService').validateAssetOwnership(req, accountId, document);
   if (assetError) return assetError;
-  const documentSourceError = await assertSources(req, loaded.account, (document?.slides || []).map(slide => slide.source).filter(Boolean));
+  const documentSourceError = await assertSources(req, loaded.account, (document?.slides || []).map(slide => slide.source).filter(Boolean), trusted.sourceTenantKeys);
   if (documentSourceError) return documentSourceError;
   let socialCaption = '';
   if (body.socialCaption !== undefined) {
@@ -288,6 +291,7 @@ async function createIssue(req, accountId, body, origin) {
   }
   const { PivotCarouselDeck } = getGlobalModels(req, 'PivotCarouselDeck');
   const doc = await PivotCarouselDeck.create({
+    ...(trusted.issueId ? { _id: trusted.issueId, composeJobId: trusted.composeJobId } : {}),
     tenantKey: loaded.account.ownerTenantKey,
     title: name,
     name,
@@ -355,7 +359,14 @@ async function writeIssue(req, accountId, issueId, body, mutate, snapshotMeta = 
   const generated = doc.origin === 'agent-generated';
   const before = generated ? editorial.editorialFields(doc) : null;
   const account = (await loadAccount(req, accountId)).account;
-  const sourceError = await assertSources(req, account, body.sources);
+  let composeSources = null;
+  if (generated && doc.composeJobId) {
+    const definition = require('../constants/pivotCarouselEditorialAccounts').editorialAccountFor(String(account.handle || '').replace(/^@/, ''));
+    if (definition) composeSources = definition.sourceTenantKeys === 'all'
+      ? (await require('./tenantConfigService').getMergedTenants(req)).map(tenant => tenant.tenantKey)
+      : [...definition.sourceTenantKeys];
+  }
+  const sourceError = await assertSources(req, account, body.sources, composeSources);
   if (sourceError) return sourceError;
   if (body.document !== undefined) {
     const prepared = prepareDocument(body.document);
@@ -363,7 +374,7 @@ async function writeIssue(req, accountId, issueId, body, mutate, snapshotMeta = 
     const assetError = await require('./pivotCarouselAssetService').validateAssetOwnership(req, accountId, prepared.document);
     if (assetError) return assetError;
     const refs = (prepared.document?.slides || []).map(slide => slide.source).filter(Boolean);
-    const refError = await assertSources(req, account, refs);
+    const refError = await assertSources(req, account, refs, composeSources);
     if (refError) return refError;
     doc.document = prepared.document;
     doc.schemaVersion = prepared.document ? 2 : doc.schemaVersion;
@@ -374,7 +385,7 @@ async function writeIssue(req, accountId, issueId, body, mutate, snapshotMeta = 
     if (!curation || typeof curation !== 'object' || Array.isArray(curation)) return fail('Invalid curation metadata.', 422, 'INVALID_CURATION');
     const refs = curation.refs || [];
     if (!Array.isArray(refs) || !Array.isArray(curation.snapshots || []) || refs.length > 19) return fail('Invalid selection.', 422, 'INVALID_CURATION');
-    const scopeError = await assertSources(req, account, [...refs, ...(curation.snapshots || []).map(item => item.ref)]);
+    const scopeError = await assertSources(req, account, [...refs, ...(curation.snapshots || []).map(item => item.ref)], composeSources);
     if (scopeError) return scopeError;
     if (body.sources && JSON.stringify(body.sources) !== JSON.stringify(refs)) return fail('Sources must match the reviewed selection.', 422, 'INVALID_CURATION');
     if (curation.draftId && JSON.stringify(curation) !== JSON.stringify(doc.curation)) {
@@ -494,8 +505,8 @@ async function restoreCarouselIssue(req, accountId, issueId, body = {}) {
  * is creating their own work, and nothing a human types should be able to
  * claim it came from the editorial pipeline.
  */
-async function createGeneratedCarouselIssue(req, accountId, body = {}) {
-  return createIssue(req, accountId, body, 'agent-generated');
+async function createGeneratedCarouselIssue(req, accountId, body = {}, trusted = {}) {
+  return createIssue(req, accountId, body, 'agent-generated', trusted);
 }
 
 async function loadIssueForDecision(req, accountId, issueId) {

@@ -331,6 +331,13 @@ const pivotComputeJobSchema = new mongoose.Schema(
     lease: { type: leaseSchema, default: null },
     progress: { type: progressSchema, default: null },
     result: { type: storedResultSchema, default: null },
+    // Trusted context served to a compose worker; never supplied by its result.
+    composeContext: { type: mongoose.Schema.Types.Mixed, default: null },
+    composeOutcome: {
+      decision: { type: String, enum: ['compose', 'wait', 'needs-editor'] },
+      reason: { type: String, maxlength: 1000 },
+      issueId: { type: mongoose.Schema.Types.ObjectId, default: null },
+    },
     exportArtifacts: { type: exportArtifactsSchema, default: null },
     applicationAudit: { type: applicationAuditSchema, default: null },
     autoApply: { type: autoApplySchema, default: null },
@@ -356,6 +363,9 @@ pivotComputeJobSchema.pre('validate', function normalizeComputeJobFields() {
   }
   if (boundedByteLength(this.options, MAX_OPTIONS_BYTES) > MAX_OPTIONS_BYTES) {
     this.invalidate('options', `options exceed ${MAX_OPTIONS_BYTES} bytes`);
+  }
+  if (boundedByteLength(this.composeContext) > 2 * 1024 * 1024) {
+    this.invalidate('composeContext', 'compose context exceeds 2 MiB');
   }
   if (this.result?.mode === 'embedded' && this.result.embedded != null) {
     if (boundedByteLength(this.result.embedded, MAX_EMBEDDED_RESULT_BYTES) > MAX_EMBEDDED_RESULT_BYTES) {

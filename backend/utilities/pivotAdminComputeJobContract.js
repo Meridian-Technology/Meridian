@@ -7,6 +7,7 @@ const COMPUTE_JOB_KINDS = Object.freeze([
   'city-source-discovery',
   'city-curation-refresh',
   'carousel-export',
+  'carousel-compose',
 ]);
 
 const CAROUSEL_EXPORT_LIMITS = Object.freeze({
@@ -150,8 +151,9 @@ function matchesSchema(value, node, root = node) {
 
   if (node.type === 'null') return value === null;
   if (node.type === 'boolean') return typeof value === 'boolean';
-  if (node.type === 'integer') {
-    if (!Number.isInteger(value)) return false;
+  if (node.type === 'integer' || node.type === 'number') {
+    if (typeof value !== 'number' || !Number.isFinite(value)) return false;
+    if (node.type === 'integer' && !Number.isInteger(value)) return false;
     if (node.minimum != null && value < node.minimum) return false;
     if (node.maximum != null && value > node.maximum) return false;
     return true;
@@ -245,8 +247,9 @@ function collectSchemaErrors(value, node, root = node, trail = '$', found = []) 
     if (typeof value !== 'boolean') found.push(`${trail}: expected boolean`);
     return found;
   }
-  if (node.type === 'integer') {
-    if (!Number.isInteger(value)) found.push(`${trail}: expected integer`);
+  if (node.type === 'integer' || node.type === 'number') {
+    if (typeof value !== 'number' || !Number.isFinite(value)
+      || (node.type === 'integer' && !Number.isInteger(value))) found.push(`${trail}: expected ${node.type}`);
     else if (node.minimum != null && value < node.minimum) found.push(`${trail}: must be at least ${node.minimum}`);
     else if (node.maximum != null && value > node.maximum) found.push(`${trail}: must be at most ${node.maximum}`);
     return found;
@@ -340,12 +343,36 @@ function validateJobRequest(value) {
 }
 
 function validateContextSnapshot(value) {
-  return validateWithSchema(SCHEMAS.contextSnapshot, value);
+  return validateWithSchema(SCHEMAS.contextSnapshot, value, { importable: value?.kind === 'carousel-compose' });
+}
+
+function validateComposeResult(value) {
+  if (value.decision !== 'compose') return { valid: true };
+  const { selectedEventRefs, eventSlides } = value.composition;
+  const key = ref => `${ref.sourceTenantKey}:${ref.eventId}`;
+  const selected = new Set(selectedEventRefs.map(key));
+  const slides = new Set(eventSlides.map(slide => key(slide.eventRef)));
+  const errors = [];
+  if (selected.size !== selectedEventRefs.length) {
+    errors.push('$.composition.selectedEventRefs: events must be unique');
+  }
+  if (slides.size !== eventSlides.length || slides.size !== selected.size
+    || [...slides].some(ref => !selected.has(ref))) {
+    errors.push('$.composition.eventSlides: require exactly one slide for each selected event');
+  }
+  eventSlides.forEach((slide, index) => {
+    if (key(slide.assetRef.eventRef) !== key(slide.eventRef)) {
+      errors.push(`$.composition.eventSlides[${index}].assetRef: must use the event's own poster`);
+    }
+  });
+  return errors.length ? { valid: false, errors } : { valid: true };
 }
 
 function validateExecutionResult(value) {
   const validation = validateWithSchema(SCHEMAS.executionResult, value, { importable: true });
-  if (!validation.valid || value?.kind !== 'carousel-export') return validation;
+  if (!validation.valid) return validation;
+  if (value?.kind === 'carousel-compose') return validateComposeResult(value);
+  if (value?.kind !== 'carousel-export') return validation;
 
   const errors = [];
   const artifacts = Array.isArray(value.artifacts) ? value.artifacts : [];

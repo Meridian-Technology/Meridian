@@ -5,14 +5,15 @@ const { MongoMemoryServer } = require('mongodb-memory-server');
  * Create in-memory MongoDB connection(s) for tests.
  * @param {Object} [options]
  * @param {boolean} [options.withGlobalDb=false] - If true, also create a second connection for global/platform DB (multi-tenant identity)
+ * @param {Object} [options.connectionOptions={}] - Mongoose options for the tenant connection (inherited by useDb connections)
  * @returns {Promise<{mongoServer, connection, globalConnection?, cleanup, reset}>}
  */
 async function createMongoMemoryConnection(options = {}) {
-  const { withGlobalDb = false } = options;
+  const { withGlobalDb = false, connectionOptions = {} } = options;
 
   const mongoServer = await MongoMemoryServer.create();
   const uri = mongoServer.getUri('meridian_test');
-  const connection = await mongoose.createConnection(uri).asPromise();
+  const connection = await mongoose.createConnection(uri, connectionOptions).asPromise();
 
   let globalConnection = null;
   if (withGlobalDb) {

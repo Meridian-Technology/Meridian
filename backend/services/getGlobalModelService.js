@@ -52,159 +52,163 @@ const getGlobalModels = (req, ...names) => {
         throw new Error('req.globalDb is not set; ensure global DB middleware runs first');
     }
     const db = req.globalDb;
+    // Passing a schema and collection to connection.model() recompiles the model,
+    // even when it is already registered, and starts collection/index setup again.
+    const model = (name, schema, collection) =>
+        db.models?.[name] || db.model(name, schema, collection);
 
     const models = {
-        GlobalUser: db.model('GlobalUser', globalUserSchema, 'global_users'),
-        PlatformRole: db.model('PlatformRole', platformRoleSchema, 'platform_roles'),
-        PlatformAdminInvite: db.model(
+        GlobalUser: model('GlobalUser', globalUserSchema, 'global_users'),
+        PlatformRole: model('PlatformRole', platformRoleSchema, 'platform_roles'),
+        PlatformAdminInvite: model(
             'PlatformAdminInvite',
             platformAdminInviteSchema,
             'platform_admin_invites'
         ),
-        TenantMembership: db.model('TenantMembership', tenantMembershipSchema, 'tenant_memberships'),
-        Session: db.model('Session', globalSessionSchema, 'sessions'),
-        TenantConfig: db.model('TenantConfig', tenantConfigSchema, 'tenant_config'),
-        PivotReferralCode: db.model('PivotReferralCode', pivotReferralCodeSchema, 'pivot_referral_codes'),
-        PivotReferralRedemption: db.model(
+        TenantMembership: model('TenantMembership', tenantMembershipSchema, 'tenant_memberships'),
+        Session: model('Session', globalSessionSchema, 'sessions'),
+        TenantConfig: model('TenantConfig', tenantConfigSchema, 'tenant_config'),
+        PivotReferralCode: model('PivotReferralCode', pivotReferralCodeSchema, 'pivot_referral_codes'),
+        PivotReferralRedemption: model(
             'PivotReferralRedemption',
             pivotReferralRedemptionSchema,
             'pivot_referral_redemptions'
         ),
-        PivotUserInvite: db.model('PivotUserInvite', pivotUserInviteSchema, 'pivot_user_invites'),
-        PivotUserInviteAcceptance: db.model(
+        PivotUserInvite: model('PivotUserInvite', pivotUserInviteSchema, 'pivot_user_invites'),
+        PivotUserInviteAcceptance: model(
             'PivotUserInviteAcceptance',
             pivotUserInviteAcceptanceSchema,
             'pivot_user_invite_acceptances'
         ),
-        PivotWeeklySnapshot: db.model(
+        PivotWeeklySnapshot: model(
             'PivotWeeklySnapshot',
             pivotWeeklySnapshotSchema,
             'pivot_weekly_snapshots'
         ),
-        PivotLabNotes: db.model('PivotLabNotes', pivotLabNotesSchema, 'pivot_lab_notes'),
-        PivotTagCatalog: db.model('PivotTagCatalog', pivotTagCatalogSchema, 'pivot_tag_catalog'),
-        PivotPosterTemplate: db.model(
+        PivotLabNotes: model('PivotLabNotes', pivotLabNotesSchema, 'pivot_lab_notes'),
+        PivotTagCatalog: model('PivotTagCatalog', pivotTagCatalogSchema, 'pivot_tag_catalog'),
+        PivotPosterTemplate: model(
             'PivotPosterTemplate',
             pivotPosterTemplateSchema,
             'pivot_poster_templates'
         ),
-        PivotCurationJob: db.model(
+        PivotCurationJob: model(
             'PivotCurationJob',
             pivotCurationJobSchema,
             'pivot_curation_jobs'
         ),
-        PivotCurationRun: db.model(
+        PivotCurationRun: model(
             'PivotCurationRun',
             pivotCurationRunSchema,
             'pivot_curation_runs'
         ),
-        PivotCitySource: db.model(
+        PivotCitySource: model(
             'PivotCitySource',
             pivotCitySourceSchema,
             'pivot_city_sources'
         ),
-        PivotOrganizer: db.model(
+        PivotOrganizer: model(
             'PivotOrganizer',
             pivotOrganizerSchema,
             'pivot_organizers'
         ),
-        PivotSourceDiscoveryRun: db.model(
+        PivotSourceDiscoveryRun: model(
             'PivotSourceDiscoveryRun',
             pivotSourceDiscoveryRunSchema,
             'pivot_source_discovery_runs'
         ),
-        PivotContactHash: db.model(
+        PivotContactHash: model(
             'PivotContactHash',
             pivotContactHashSchema,
             'pivot_contact_hashes'
         ),
-        PivotCreatorGrant: db.model(
+        PivotCreatorGrant: model(
             'PivotCreatorGrant',
             pivotCreatorGrantSchema,
             'pivot_creator_grants'
         ),
-        PivotCopyPack: db.model(
+        PivotCopyPack: model(
             'PivotCopyPack',
             pivotCopyPackSchema,
             'pivot_copy_packs'
         ),
-        PivotCarouselAsset: db.model('PivotCarouselAsset', pivotCarouselAssetSchema, 'pivot_carousel_assets'),
-        PivotCarouselDeck: db.model(
+        PivotCarouselAsset: model('PivotCarouselAsset', pivotCarouselAssetSchema, 'pivot_carousel_assets'),
+        PivotCarouselDeck: model(
             'PivotCarouselDeck',
             pivotCarouselDeckSchema,
             'pivot_carousel_decks'
         ),
-        PivotCarouselVoice: db.model(
+        PivotCarouselVoice: model(
             'PivotCarouselVoice',
             pivotCarouselVoiceSchema,
             'pivot_carousel_voice'
         ),
-        PivotCarouselAccount: db.model(
+        PivotCarouselAccount: model(
             'PivotCarouselAccount',
             pivotCarouselAccountSchema,
             'pivot_carousel_accounts'
         ),
-        PivotCarouselSavedSearch: db.model(
+        PivotCarouselSavedSearch: model(
             'PivotCarouselSavedSearch',
             pivotCarouselSavedSearchSchema,
             'pivot_carousel_saved_searches'
         ),
-        PivotCarouselCurationDraft: db.model(
+        PivotCarouselCurationDraft: model(
             'PivotCarouselCurationDraft',
             pivotCarouselCurationDraftSchema,
             'pivot_carousel_curation_drafts'
         ),
-        PivotCarouselRevision: db.model(
+        PivotCarouselRevision: model(
             'PivotCarouselRevision',
             pivotCarouselRevisionSchema,
             'pivot_carousel_revisions'
         ),
-        JustGoLandingEvent: db.model(
+        JustGoLandingEvent: model(
             'JustGoLandingEvent',
             justGoLandingEventSchema,
             'justgo_landing_events'
         ),
-        JustGoWaitlist: db.model(
+        JustGoWaitlist: model(
             'JustGoWaitlist',
             justGoWaitlistSchema,
             'justgo_waitlist'
         ),
-        JustGoCityInterest: db.model(
+        JustGoCityInterest: model(
             'JustGoCityInterest',
             justGoCityInterestSchema,
             'justgo_city_interest'
         ),
-        JustGoLandingQr: db.model(
+        JustGoLandingQr: model(
             'JustGoLandingQr',
             justGoLandingQrSchema,
             'justgo_landing_qrs'
         ),
-        PivotComputeJob: db.model(
+        PivotComputeJob: model(
             'PivotComputeJob',
             pivotComputeJobSchema,
             'pivot_compute_jobs'
         ),
-        PivotComputeJobAttempt: db.model(
+        PivotComputeJobAttempt: model(
             'PivotComputeJobAttempt',
             pivotComputeJobAttemptSchema,
             'pivot_compute_job_attempts'
         ),
-        MeridianJobRun: db.model(
+        MeridianJobRun: model(
             'MeridianJobRun',
             meridianJobRunSchema,
             'meridian_job_runs'
         ),
-        MeridianJobAttempt: db.model(
+        MeridianJobAttempt: model(
             'MeridianJobAttempt',
             meridianJobAttemptSchema,
             'meridian_job_attempts'
         ),
-        MeridianJobDelivery: db.model(
+        MeridianJobDelivery: model(
             'MeridianJobDelivery',
             meridianJobDeliverySchema,
             'meridian_job_deliveries'
         ),
-        MeridianNotificationDefinition: db.model(
+        MeridianNotificationDefinition: model(
             'MeridianNotificationDefinition',
             meridianNotificationDefinitionSchema,
             'meridian_notification_definitions'

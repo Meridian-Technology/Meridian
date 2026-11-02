@@ -3,6 +3,7 @@ const {
   COMPUTE_JOB_KINDS,
   validateJobRequest,
   validateExecutionResult,
+  validateContextSnapshot,
 } = require('../utilities/pivotAdminComputeJobContract');
 const {
   COMPUTE_JOB_STATUSES,
@@ -18,6 +19,8 @@ const {
   cancelComputeJob,
   retryComputeJob,
   createManualUploadReviewJob,
+  beginComputeJobApply,
+  completeComputeJobApply,
 } = require('./pivotComputeJobStore');
 const { notifyComputeWorkerWake } = require('./pivotComputeWakeService');
 const { logPivot } = require('../utilities/pivotLogger');
@@ -147,6 +150,9 @@ function validateManualSubmitResult(resultInput) {
       'CAROUSEL_MANUAL_SUBMIT_UNSUPPORTED',
       409,
     );
+  }
+  if (resultInput.kind === 'carousel-compose') {
+    throw serviceError('Compose results require their worker-served context.', 'COMPOSE_MANUAL_SUBMIT_UNSUPPORTED', 409);
   }
   if (resultInput.outcome !== 'completed') {
     throw serviceError('Manual submit requires a completed compute result', 'MANUAL_SUBMIT_NOT_COMPLETED');
@@ -362,6 +368,97 @@ async function retryAdminComputeJob(req, {
   return { job: serializeAdminJob(retried), duplicate: false };
 }
 
+/** Apply an editorial decision, never approve, post, or overwrite an existing issue. */
+async function applyCarouselComposeJob(req, externalJobId, { tenantKey, actor = null, now = new Date() } = {}) {
+  const getGlobalModels = require('./getGlobalModelService');
+  const { PivotComputeJob, PivotCarouselDeck } = getGlobalModels(req, 'PivotComputeJob', 'PivotCarouselDeck');
+  const { composeIssueId, refKey, buildCompositionDocument } = require('./pivotCarouselCompositionService');
+  const { resolveEditorialAccount, postedHistory, composeWindow } = require('./pivotCarouselComposeContextService');
+  const { searchEditorialCatalogPage } = require('./pivotCarouselCurationQueryService');
+  const stored = await PivotComputeJob.findOne({ externalJobId }).lean();
+  if (!stored) throw serviceError('Compute job not found.', 'COMPUTE_JOB_NOT_FOUND', 404);
+  if (stored.kind !== 'carousel-compose') throw serviceError('Expected a compose job.', 'UNSUPPORTED_COMPUTE_JOB_KIND');
+  if (!trimString(tenantKey)) throw serviceError('A tenantKey is required to apply a compute job.', 'APPLY_TENANT_REQUIRED');
+  if (trimString(tenantKey).toLowerCase() !== stored.tenantKey) throw serviceError('Compute job belongs to another tenant.', 'COMPUTE_JOB_TENANT_MISMATCH', 409);
+  if (stored.status === 'completed' && stored.composeOutcome?.decision) return { job: serializeAdminJob(stored), duplicate: true };
+  const result = stored.result?.embedded;
+  const validation = validateExecutionResult(result);
+  if (!validation.valid) throw serviceError('The stored compose result is invalid.', 'INVALID_COMPUTE_EXECUTION_RESULT', 422);
+  if (result.kind !== stored.kind || result.jobId !== stored.externalJobId || result.cityKey !== stored.cityKey
+    || result.basedOnContextVersion !== stored.contextVersion
+    || result.scheduleOccurrenceId !== (stored.scheduleOccurrenceId || null)
+    || result.editorialAccountKey !== stored.options?.editorialAccountKey) {
+    throw serviceError('Compose result does not match the job.', 'COMPOSE_RESULT_BINDING_MISMATCH', 409);
+  }
+  const context = stored.composeContext;
+  const publication = new Date(stored.options?.proposedPublicationAt);
+  if (!validateContextSnapshot(context).valid || context.kind !== stored.kind || context.jobId !== stored.externalJobId
+    || context.contextVersion !== stored.contextVersion || context.editorialAccountKey !== result.editorialAccountKey
+    || !Number.isFinite(publication.getTime()) || context.proposedPublicationAt !== publication.toISOString()) {
+    throw serviceError('The worker-served compose context is unavailable.', 'COMPOSE_CONTEXT_MISSING', 409);
+  }
+  const key = `compose:apply:${composeIssueId(externalJobId)}`;
+  await beginComputeJobApply(req, { externalJobId, idempotencyKey: key, actor, now });
+  try {
+    let issueId = null;
+    if (result.decision === 'compose') {
+      issueId = composeIssueId(externalJobId);
+      const existing = await PivotCarouselDeck.findById(issueId).lean();
+      if (existing && (existing.composeJobId !== externalJobId || String(existing.accountId) !== context.account.id)) {
+        throw serviceError('Compose issue identity is already in use.', 'COMPOSE_ISSUE_CONFLICT', 409);
+      }
+      if (!existing) {
+        const resolved = await resolveEditorialAccount(req, result.editorialAccountKey);
+        if (resolved.error) throw serviceError(resolved.error, resolved.code, resolved.status);
+        if (String(resolved.account._id) !== context.account.id) throw serviceError('Editorial account changed.', 'COMPOSE_ACCOUNT_CHANGED', 409);
+        const expectedWindow = composeWindow(resolved.definition, stored.options.proposedPublicationAt, resolved.timezone);
+        if (!expectedWindow || ['from', 'to', 'toExclusive', 'timezone'].some(field => expectedWindow[field] !== context.window[field])
+          || resolved.account.ownerTenantKey !== context.account.ownerTenantKey) {
+          throw serviceError('The account publication window changed.', 'COMPOSE_ACCOUNT_CHANGED', 409);
+        }
+        const history = await postedHistory(req, resolved.account._id);
+        if (history.error) throw serviceError(history.error, history.code, history.status);
+        const selected = result.composition.selectedEventRefs;
+        if (selected.some(ref => history.used.has(refKey(ref)))) throw serviceError('A selected event has already been posted on this account.', 'COMPOSE_EVENT_ALREADY_POSTED', 422);
+        const requested = [...selected];
+        if (result.composition.cover.assetRef.kind === 'event-poster') requested.push(result.composition.cover.assetRef.eventRef);
+        if (requested.some(ref => !context.candidates.some(candidate => refKey(candidate.ref) === refKey(ref)))) {
+          throw serviceError('A selected event was not in the worker context.', 'COMPOSE_EVENT_INELIGIBLE', 422);
+        }
+        const candidates = [];
+        for (const sourceTenantKey of new Set(requested.map(ref => ref.sourceTenantKey))) {
+          const read = await searchEditorialCatalogPage(req, sourceTenantKey, {
+            dateFrom: context.window.from, dateTo: context.window.to, dateToExclusive: context.window.toExclusive,
+            timezone: context.window.timezone, sort: 'date-asc', limit: 24,
+          }, { now, onlyEventIds: requested.filter(ref => ref.sourceTenantKey === sourceTenantKey).map(ref => ref.eventId) });
+          if (read.error || read.data.sources.some(source => source.status !== 'ok')) throw serviceError('Could not recheck selected catalog events.', 'COMPOSE_CATALOG_UNAVAILABLE', 409);
+          candidates.push(...read.data.candidates);
+        }
+        const document = buildCompositionDocument(result.composition, { ...context, lastPostedIssues: history.recent }, candidates);
+        const { createGeneratedCarouselIssue } = require('./pivotCarouselIssueService');
+        const created = await createGeneratedCarouselIssue({ ...req, user: { ...req.user,
+          globalUserId: req.user?.globalUserId || actor } }, context.account.id, {
+          name: result.composition.cover.headline, format: context.account.format, document,
+          socialCaption: result.composition.socialCaption, sources: selected,
+          curation: { refs: selected, snapshots: candidates.filter(candidate => selected.some(ref => refKey(ref) === refKey(candidate.ref))) },
+        }, { issueId, composeJobId: externalJobId, sourceTenantKeys: context.account.sourceTenantKeys });
+        if (created.error) throw serviceError(created.error, created.code, created.status);
+      }
+    }
+    // A durable issue id survives a crash between issue creation and job completion.
+    await PivotComputeJob.updateOne({ externalJobId, status: 'applying' }, { $set: {
+      composeOutcome: { decision: result.decision, reason: result.reason || null, issueId },
+    } });
+    const job = await completeComputeJobApply(req, { externalJobId, actor, idempotencyKey: key,
+      summary: { creates: issueId ? 1 : 0 }, now });
+    return { job: serializeAdminJob(job), duplicate: false, decision: result.decision, issueId };
+  } catch (error) {
+    await completeComputeJobApply(req, { externalJobId, actor, idempotencyKey: key, outcome: 'rejected',
+      errorCode: error.code || 'COMPOSE_APPLY_FAILED', errorMessage: error.message, recordAppliedAt: false, now });
+    throw error;
+  }
+}
+
 async function createAdminCarouselArtifactDownload(req, {
   externalJobId,
   artifactId,
@@ -445,6 +542,7 @@ const STATUS_BY_CODE = Object.freeze({
   COMPUTE_JOB_OPTIONS_TOO_LARGE: 413,
   COMPUTE_RESULT_TOO_LARGE: 413,
   CAROUSEL_MANUAL_SUBMIT_UNSUPPORTED: 409,
+  COMPOSE_MANUAL_SUBMIT_UNSUPPORTED: 409,
   CAROUSEL_PREVIEW_UNSUPPORTED: 409,
   CAROUSEL_APPLY_UNSUPPORTED: 409,
   CAROUSEL_DOWNLOAD_UNSUPPORTED: 409,
@@ -475,6 +573,7 @@ module.exports = {
   submitManualComputeResult,
   cancelAdminComputeJob,
   retryAdminComputeJob,
+  applyCarouselComposeJob,
   createAdminCarouselArtifactDownload,
   handleAdminServiceError,
 };
