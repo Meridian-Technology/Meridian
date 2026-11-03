@@ -1,4 +1,13 @@
 /** Concept copy only. Photography is illustrative, not documentation of the sample issues. */
+const UNSPLASH = {
+  lanterns:
+    'https://images.unsplash.com/photo-1489580692268-d35aab289005?auto=format&fit=crop&w=1600&q=80',
+  dancefloor:
+    'https://images.unsplash.com/photo-1766650551665-45f1998bd671?auto=format&fit=crop&w=1600&q=80',
+  jazz:
+    'https://images.unsplash.com/photo-1629907451365-6731862a0d32?auto=format&fit=crop&w=1600&q=80',
+};
+
 export const EDITORIAL_DIRECTIONS = [
   {
     id: 'd', name: 'Double take', descriptor: 'A little elegance. A little audacity.',
@@ -22,7 +31,7 @@ export const EDITORIAL_STORIES = [
     id: 'moon', number: '01', kind: 'city', label: 'Mid-autumn / San Francisco',
     series: 'the city edit', location: 'san francisco', theme: 'the mid-autumn issue',
     detail: 'lantern walks, mooncakes & nights under the same moon.',
-    photo: '/justgo/cover-lab/lanterns.jpg', credit: 'Paul Pastourmatzis',
+    photo: UNSPLASH.lanterns, credit: 'Paul Pastourmatzis',
     source: 'https://unsplash.com/photos/red-japanese-hanging-lanterns-J0-DwclQQs8',
     alt: 'Red lanterns hanging over London Chinatown, used as thematic imagery',
   },
@@ -30,7 +39,7 @@ export const EDITORIAL_STORIES = [
     id: 'dance', number: '02', kind: 'missed', label: 'Sorry you missed it / After dark',
     series: 'sorry you missed it', location: 'around the world', theme: 'the after-dark issue',
     detail: 'a barbershop with a very different night shift.',
-    photo: '/justgo/cover-lab/dancefloor.jpg', credit: 'foto DIAL',
+    photo: UNSPLASH.dancefloor, credit: 'foto DIAL',
     source: 'https://unsplash.com/photos/crowd-dancing-in-a-dimly-lit-nightclub-ucOj9HnuSM4',
     alt: 'A crowded, red-lit night at a barbershop in Seoul',
   },
@@ -38,7 +47,7 @@ export const EDITORIAL_STORIES = [
     id: 'jazz', number: '03', kind: 'city', label: 'Jazz after dark / New York',
     series: 'the city edit', location: 'new york', theme: 'the jazz-after-dark issue',
     detail: 'small rooms, late sets & a very loose definition of bedtime.',
-    photo: '/justgo/cover-lab/jazz.jpg', credit: 'benjamin lehman',
+    photo: UNSPLASH.jazz, credit: 'benjamin lehman',
     source: 'https://unsplash.com/photos/brass-saxophone-in-black-background-0h2F-Ib2Zdo',
     alt: 'Close-up of a saxophone under warm stage lighting',
   },
@@ -46,7 +55,7 @@ export const EDITORIAL_STORIES = [
     id: 'encore', number: '04', kind: 'missed', label: 'Sorry you missed it / The encore',
     series: 'sorry you missed it', location: 'around the world', theme: 'the live-music issue',
     detail: 'for everyone who said “one more” and meant it.',
-    photo: '/justgo/cover-lab/jazz.jpg', credit: 'benjamin lehman',
+    photo: UNSPLASH.jazz, credit: 'benjamin lehman',
     source: 'https://unsplash.com/photos/brass-saxophone-in-black-background-0h2F-Ib2Zdo',
     alt: 'A warmly lit saxophone, illustrating a live-music retrospective',
   },

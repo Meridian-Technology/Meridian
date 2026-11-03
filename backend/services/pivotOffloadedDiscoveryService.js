@@ -224,9 +224,11 @@ async function executeOffloadedCitySourceDiscovery(options = {}) {
     },
   );
 
+  // Only an abort fails the run. A single timed-out map or scrape is recorded in
+  // failures, but the rest of the run's proposals are still good.
   const outcome = coreResult.data?.aborted?.code === 'CANCELLED'
     ? 'cancelled'
-    : (coreResult.data?.aborted || coreResult.data?.failures?.length ? 'failed' : 'completed');
+    : (coreResult.data?.aborted ? 'failed' : 'completed');
 
   const result = buildDiscoveryExecutionResult({
     contextSnapshot,

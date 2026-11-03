@@ -7,10 +7,43 @@ const { connectToDatabase } = require('../../connectionsManager');
 const { resolvePivotTenant } = require('../../services/pivotIngestPublishService');
 const {
   buildReviewMutation,
+  forgetLocationMemory,
   listLocationReviewCandidates,
+  resolveReviewPlace,
   reviewExplanation,
   reviewLocationCandidate,
+  searchReviewPlaces,
 } = require('../../services/pivotLocationReviewService');
+
+const CONSTRAINED_TENANT = {
+  tenantKey: 'nyc',
+  richLocationConstraints: {
+    countryCode: 'US',
+    bounds: { north: 40.92, south: 40.49, east: -73.7, west: -74.26 },
+  },
+};
+
+// Event.find serves both the paged review list and the unpaged waiting scan.
+function eventFind(pageEvents, waitingEvents = pageEvents) {
+  return jest.fn(() => ({
+    select: () => ({
+      sort: () => ({ limit: () => ({ lean: jest.fn().mockResolvedValue(pageEvents) }) }),
+      limit: () => ({ lean: jest.fn().mockResolvedValue(waitingEvents) }),
+    }),
+    lean: jest.fn().mockResolvedValue(waitingEvents),
+  }));
+}
+
+function memoryDoc(overrides = {}) {
+  return {
+    _id: '650000000000000000000001', tenantKey: 'nyc',
+    matchKey: 'never rewrite this source text', sourceText: 'Never rewrite this source text',
+    action: 'select_match', useCount: 2, richLocation: { mode: 'tbd',
+      publicDisplayLabel: 'Location TBD', resolutionStatus: 'not_applicable',
+      revealPolicy: 'public' },
+    ...overrides,
+  };
+}
 
 function physical(overrides = {}) {
   return {
@@ -93,12 +126,146 @@ describe('pivot location review', () => {
   test('lists review candidates with source and provider candidates', async () => {
     resolvePivotTenant.mockResolvedValue({ tenant: { tenantKey: 'nyc' } });
     connectToDatabase.mockResolvedValue({});
-    const lean = jest.fn().mockResolvedValue([event()]);
-    const find = jest.fn(() => ({ select: () => ({ sort: () => ({ limit: () => ({ lean }) }) }) }));
-    getModels.mockReturnValue({ Event: { find } });
+    getModels.mockReturnValue({ Event: { find: eventFind([event()]) } });
     const result = await listLocationReviewCandidates({}, { tenantKey: 'nyc' });
     expect(result.data.candidates[0]).toMatchObject({ eventId: 'event-1',
-      rawLocationText: 'Never rewrite this source text', candidateMatches: [{ id: 'candidate-1' }] });
+      rawLocationText: 'Never rewrite this source text', candidateMatches: [{ id: 'candidate-1' }],
+      matchingCount: 0, rememberedLocation: null });
+  });
+
+  test('counts other waiting events with the same text and surfaces a remembered match', async () => {
+    resolvePivotTenant.mockResolvedValue({ tenant: { tenantKey: 'nyc' } });
+    connectToDatabase.mockResolvedValue({});
+    const sibling = { ...event(), _id: 'event-2', customFields: { pivot: {
+      ...event().customFields.pivot, rawLocationText: 'NEVER rewrite this source text!' } } };
+    const memoryFind = jest.fn(() => ({ lean: jest.fn().mockResolvedValue([memoryDoc()]) }));
+    getModels.mockReturnValue({
+      Event: { find: eventFind([event()], [event(), sibling]) },
+      PivotLocationMemory: { find: memoryFind },
+    });
+    const result = await listLocationReviewCandidates({}, { tenantKey: 'nyc' });
+    expect(result.data.candidates[0]).toMatchObject({
+      matchKey: 'never rewrite this source text',
+      matchingCount: 1,
+      rememberedLocation: { id: '650000000000000000000001', useCount: 2,
+        richLocation: { mode: 'tbd' } },
+    });
+  });
+
+  test('remembers a decision and applies it to other waiting events with the same text', async () => {
+    resolvePivotTenant.mockResolvedValue({ tenant: { tenantKey: 'nyc' } });
+    connectToDatabase.mockResolvedValue({});
+    const selected = physical();
+    const sibling = { ...event(), _id: 'event-2', customFields: { pivot: {
+      ...event().customFields.pivot, rawLocationText: 'never rewrite this SOURCE text' } } };
+    const unrelated = { ...event(), _id: 'event-3', customFields: { pivot: {
+      ...event().customFields.pivot, rawLocationText: 'Somewhere else' } } };
+    const updateOne = jest.fn().mockResolvedValue({ modifiedCount: 1 });
+    const findOneAndUpdate = jest.fn(() => ({ lean: jest.fn().mockResolvedValue(memoryDoc()) }));
+    getModels.mockReturnValue({
+      Event: {
+        findOne: jest.fn(() => ({ lean: jest.fn().mockResolvedValue(event()) })),
+        findByIdAndUpdate: jest.fn(() => ({ lean: jest.fn().mockResolvedValue({
+          ...event(), richLocation: selected }) })),
+        find: jest.fn((query) => (query._id
+          ? { lean: jest.fn().mockResolvedValue([sibling]) }
+          : { select: () => ({ limit: () => ({ lean: jest.fn().mockResolvedValue(
+            [event(), sibling, unrelated]) }) }) })),
+        updateOne,
+      },
+      PivotLocationMemory: { findOneAndUpdate },
+    });
+    const result = await reviewLocationCandidate({ user: { globalUserId: 'admin-1' } }, {
+      tenantKey: 'nyc', eventId: 'event-1', action: 'select_match', richLocation: selected,
+      candidateSource: 'manual_search', remember: true, applyToMatching: true, now,
+    });
+    expect(result.data.matching).toEqual({ updated: 1, failed: 0 });
+    expect(result.data.memory).toMatchObject({ id: '650000000000000000000001' });
+    expect(result.data.decision.candidateSource).toBe('manual_search');
+    expect(findOneAndUpdate.mock.calls[0][0]).toEqual({ tenantKey: 'nyc',
+      matchKey: 'never rewrite this source text' });
+    const [filter, update] = updateOne.mock.calls[0];
+    expect(filter).toEqual({ _id: 'event-2',
+      'customFields.pivot.locationReview.status': 'needs_review' });
+    expect(update.$set.richLocation).toMatchObject({ googlePlaceId: 'ChIJ-review',
+      originalInput: 'never rewrite this SOURCE text' });
+    expect(update.$set['customFields.pivot.locationReview'].decisionHistory.at(-1))
+      .toMatchObject({ appliedFromEventId: 'event-1', candidateSource: 'matching_text' });
+  });
+
+  test('does not remember dismissed matches', async () => {
+    resolvePivotTenant.mockResolvedValue({ tenant: { tenantKey: 'nyc' } });
+    connectToDatabase.mockResolvedValue({});
+    const findOneAndUpdate = jest.fn();
+    getModels.mockReturnValue({
+      Event: {
+        findOne: jest.fn(() => ({ lean: jest.fn().mockResolvedValue(event()) })),
+        findByIdAndUpdate: jest.fn(() => ({ lean: jest.fn().mockResolvedValue(event()) })),
+      },
+      PivotLocationMemory: { findOneAndUpdate },
+    });
+    const result = await reviewLocationCandidate({}, { tenantKey: 'nyc', eventId: 'event-1',
+      action: 'reject_match', remember: true, applyToMatching: true, now });
+    expect(findOneAndUpdate).not.toHaveBeenCalled();
+    expect(result.data).toMatchObject({ memory: null, matching: { updated: 0 } });
+  });
+
+  test('searches Google biased to the city boundary', async () => {
+    resolvePivotTenant.mockResolvedValue({ tenant: CONSTRAINED_TENANT });
+    const autocompletePlaces = jest.fn().mockResolvedValue([{ placeId: 'ChIJ-1',
+      primaryText: 'Union Hall' }]);
+    const result = await searchReviewPlaces({}, { tenantKey: 'nyc', query: 'union hall',
+      googleAdapter: { autocompletePlaces } });
+    expect(result.data.suggestions).toHaveLength(1);
+    expect(autocompletePlaces).toHaveBeenCalledWith('union hall', expect.objectContaining({
+      regionCode: 'US',
+      locationBias: { rectangle: { low: { latitude: 40.49, longitude: -74.26 },
+        high: { latitude: 40.92, longitude: -73.7 } } },
+    }));
+    expect(autocompletePlaces.mock.calls[0][1]).not.toHaveProperty('locationRestriction');
+  });
+
+  test('requires a city boundary and a real query before searching', async () => {
+    resolvePivotTenant.mockResolvedValue({ tenant: { tenantKey: 'nyc' } });
+    expect(await searchReviewPlaces({}, { tenantKey: 'nyc', query: 'union' }))
+      .toMatchObject({ code: 'RICH_LOCATION_CITY_CONSTRAINTS_REQUIRED' });
+    resolvePivotTenant.mockResolvedValue({ tenant: CONSTRAINED_TENANT });
+    expect(await searchReviewPlaces({}, { tenantKey: 'nyc', query: 'u' }))
+      .toMatchObject({ code: 'LOCATION_SEARCH_QUERY_INVALID', status: 400 });
+  });
+
+  test('resolves a typed-in place and flags it when outside the city', async () => {
+    resolvePivotTenant.mockResolvedValue({ tenant: CONSTRAINED_TENANT });
+    const place = physical({ countryCode: 'US', placeTypes: ['bar'] });
+    const fetchPlaceDetails = jest.fn().mockResolvedValue(place);
+    const result = await resolveReviewPlace({}, { tenantKey: 'nyc', placeId: 'ChIJ-review',
+      originalInput: 'Bell House', googleAdapter: { fetchPlaceDetails }, now });
+    expect(result.data).toMatchObject({ inScope: true, place: { mode: 'physical',
+      originalInput: 'Bell House', googlePlaceId: 'ChIJ-review', revealPolicy: 'public' } });
+
+    fetchPlaceDetails.mockResolvedValue(physical({ countryCode: 'US',
+      coordinates: { type: 'Point', coordinates: [-118.24, 34.05] } }));
+    const outside = await resolveReviewPlace({}, { tenantKey: 'nyc', placeId: 'ChIJ-la',
+      googleAdapter: { fetchPlaceDetails }, now });
+    expect(outside.data).toMatchObject({ inScope: false, scopeReason: 'bounds' });
+
+    fetchPlaceDetails.mockRejectedValue({ code: 'GOOGLE_PLACE_NOT_FOUND' });
+    expect(await resolveReviewPlace({}, { tenantKey: 'nyc', placeId: 'ChIJ-gone',
+      googleAdapter: { fetchPlaceDetails } })).toMatchObject({ status: 404 });
+  });
+
+  test('forgets a remembered location', async () => {
+    resolvePivotTenant.mockResolvedValue({ tenant: { tenantKey: 'nyc' } });
+    connectToDatabase.mockResolvedValue({});
+    const findOneAndDelete = jest.fn(() => ({ lean: jest.fn().mockResolvedValue(memoryDoc()) }));
+    getModels.mockReturnValue({ PivotLocationMemory: { findOneAndDelete } });
+    expect(await forgetLocationMemory({}, { tenantKey: 'nyc', memoryId: 'bad' }))
+      .toMatchObject({ code: 'MEMORY_ID_INVALID' });
+    const result = await forgetLocationMemory({}, { tenantKey: 'nyc',
+      memoryId: '650000000000000000000001' });
+    expect(findOneAndDelete).toHaveBeenCalledWith({ _id: '650000000000000000000001',
+      tenantKey: 'nyc' });
+    expect(result.data.memory.sourceText).toBe('Never rewrite this source text');
   });
 
   test('explains ambiguity with confidence and candidate count', () => {

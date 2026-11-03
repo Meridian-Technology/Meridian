@@ -56,7 +56,8 @@ function reviewResult({
 
 /**
  * Convert a newly scraped legacy location into the same rich-location shape
- * used by the migration. Resolution is best-effort: ambiguous, low-confidence,
+ * used by the migration. Remembered reviewer decisions win over Google.
+ * Resolution is best-effort: ambiguous, low-confidence,
  * out-of-scope, and provider-failure results remain staged for an operator
  * instead of making the whole discovery/refresh job fail.
  */
@@ -80,6 +81,24 @@ async function resolveIngestRichLocation(options = {}) {
     ? options.now()
     : options.now || new Date();
   const now = nowValue instanceof Date ? nowValue : new Date(nowValue);
+
+  // A reviewer already decided what this exact source text means.
+  const remembered = options.locationMemoryLookup
+    ? await options.locationMemoryLookup(originalInput)
+    : null;
+  if (remembered?.richLocation) {
+    return {
+      outcome: 'applied',
+      richLocation: remembered.richLocation,
+      locationReview: {
+        status: 'approved',
+        source: 'location_memory',
+        memoryId: remembered.memoryId,
+        updatedAt: now.toISOString(),
+      },
+    };
+  }
+
   const classification = classifyLegacyLocation(originalInput, options.tenant);
 
   if (classification.kind === 'categorical') {

@@ -77,6 +77,7 @@ const pivotOrganizerBackfillRunSchema = require('../schemas/pivotOrganizerBackfi
 const pivotLocationBackfillRunSchema = require('../schemas/pivotLocationBackfillRun');
 const pivotLocationBackfillWeekRunSchema = require('../schemas/pivotLocationBackfillWeekRun');
 const pivotLocationMigrationLeaseSchema = require('../schemas/pivotLocationMigrationLease');
+const pivotLocationMemorySchema = require('../schemas/pivotLocationMemory');
 const pivotSafetyReportSchema = require('../schemas/pivotSafetyReport');
 const pivotUserBlockSchema = require('../schemas/pivotUserBlock');
 const pivotDropPushRunSchema = require('../schemas/pivotDropPushRun');
@@ -206,6 +207,11 @@ const MODEL_DEFINITIONS = Object.freeze({
         modelName: 'PivotLocationMigrationLease',
         schema: pivotLocationMigrationLeaseSchema,
         collection: 'pivotLocationMigrationLeases',
+    },
+    PivotLocationMemory: {
+        modelName: 'PivotLocationMemory',
+        schema: pivotLocationMemorySchema,
+        collection: 'pivotLocationMemories',
     },
     PivotSafetyReport: {
         modelName: 'PivotSafetyReport',

@@ -21,6 +21,8 @@ const {
   deletePivotCrew,
   rotatePivotCrewInviteLink,
   joinPivotCrew,
+  previewPivotCrew,
+  joinPivotCrewByCode,
   invitePivotCrewPlaceholders,
   addPivotCrewMember,
   listPivotCrewInvites,
@@ -158,6 +160,71 @@ describe('pivotCrewService (Task 1.2)', () => {
 
     const listed = await listPivotCrews(req);
     expect(listed.data.crews).toHaveLength(1);
+  });
+
+  describe('join codes', () => {
+    const CODE = /^[ABCDEFGHJKMNPQRSTUVWXYZ23456789]{6}$/;
+
+    it('gives a new crew a six-character code with no lookalikes', async () => {
+      const created = await createPivotCrew(req, { name: 'Code Crew' });
+      expect(created.data.crew.joinCode).toMatch(CODE);
+    });
+
+    it('keeps the code when the invite link is rotated', async () => {
+      const created = await createPivotCrew(req, { name: 'Code Crew' });
+      await rotatePivotCrewInviteLink(req, created.data.crew.id);
+      const detail = await getPivotCrewDetail(req, created.data.crew.id);
+      expect(detail.data.crew.joinCode).toBe(created.data.crew.joinCode);
+    });
+
+    it('gives a crew made before codes one when it is opened', async () => {
+      const created = await createPivotCrew(req, { name: 'Old Crew' });
+      const { PivotCrew } = getModels(req, 'PivotCrew');
+      await PivotCrew.updateOne({ _id: created.data.crew.id }, { $set: { joinCode: null } });
+      const detail = await getPivotCrewDetail(req, created.data.crew.id);
+      expect(detail.data.crew.joinCode).toMatch(CODE);
+    });
+
+    it('previews by code or invite link with names and photos only', async () => {
+      const created = await createPivotCrew(req, { name: 'Sunset Crew' });
+      const asMember = { ...req, user: { userId: memberId.toString() } };
+      const typed = created.data.crew.joinCode.toLowerCase().replace(/(...)/, '$1-');
+
+      const byCode = await previewPivotCrew(asMember, { code: typed });
+      expect(byCode.data).toEqual({
+        crew: { name: 'Sunset Crew', memberCount: 1 },
+        members: [{ name: 'Owner Person', picture: null }],
+        alreadyMember: false,
+      });
+
+      const token = decodeURIComponent(created.data.inviteLink.split('token=')[1]);
+      const byLink = await previewPivotCrew(asMember, { token });
+      expect(byLink.data.crew.name).toBe('Sunset Crew');
+
+      const owner = await previewPivotCrew(req, { code: created.data.crew.joinCode });
+      expect(owner.data.alreadyMember).toBe(true);
+    });
+
+    it('turns away a malformed or unknown code', async () => {
+      expect((await previewPivotCrew(req, { code: 'O0O0O0' })).code).toBe('INVALID_CODE');
+      expect((await previewPivotCrew(req, { code: 'ZZZZZZ' })).status).toBe(404);
+      expect((await previewPivotCrew(req, {})).code).toBe('CODE_REQUIRED');
+    });
+
+    it('joins by code', async () => {
+      const created = await createPivotCrew(req, { name: 'Sunset Crew' });
+      const asMember = { ...req, user: { userId: memberId.toString() } };
+      const joined = await joinPivotCrewByCode(asMember, { code: created.data.crew.joinCode });
+      expect(joined.data.roster.some((row) => row.userId === memberId.toString())).toBe(true);
+    });
+
+    it('does not find an archived crew by its code', async () => {
+      const created = await createPivotCrew(req, { name: 'Gone Crew' });
+      const { PivotCrew } = getModels(req, 'PivotCrew');
+      await PivotCrew.updateOne({ _id: created.data.crew.id }, { $set: { archivedAt: new Date() } });
+      const result = await previewPivotCrew(req, { code: created.data.crew.joinCode });
+      expect(result.status).toBe(404);
+    });
   });
 
   it('rejects crew detail for non-members', async () => {

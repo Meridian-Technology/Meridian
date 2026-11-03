@@ -261,6 +261,66 @@ describe('pivotOffloadedDiscoveryService (Phase 2, Step 2.2)', () => {
     expect(response.data).toBeUndefined();
   });
 
+  it('upgrades an http calendar page to https in source and job proposals', async () => {
+    mapSite.mockResolvedValue({ links: [{ url: 'http://example-theatre.org/events' }] });
+
+    const result = await runDiscovery();
+    expect(result.data?.result).toBeDefined();
+
+    const executionResult = result.data.result;
+    expect(validateExecutionResult(executionResult)).toEqual({ valid: true });
+    expect(executionResult.proposals.sources).toEqual([
+      expect.objectContaining({
+        url: 'https://example-theatre.org/events',
+        evidence: expect.objectContaining({ indexUrl: 'https://example-theatre.org/events' }),
+      }),
+    ]);
+    expect(executionResult.proposals.curationJobs).toEqual([
+      expect.objectContaining({ url: 'https://example-theatre.org/events' }),
+    ]);
+  });
+
+  it('completes with its proposals when one site map times out', async () => {
+    searchSites.mockResolvedValue({
+      results: [
+        { url: 'https://example-theatre.org/', title: 'Example Theatre' },
+        { url: 'https://slow-music-hall.org/', title: 'Slow Music Hall' },
+      ],
+    });
+    mapSite.mockImplementation(async ({ url }) => (url.includes('slow-music-hall.org')
+      ? { error: 'Website map timed out after 30 seconds.', status: 504, code: 'SITE_SCRAPE_TIMEOUT' }
+      : { links: [{ url: 'https://example-theatre.org/events' }] }));
+
+    const result = await runDiscovery();
+    expect(result.data?.result).toBeDefined();
+
+    const executionResult = result.data.result;
+    expect(validateExecutionResult(executionResult)).toEqual({ valid: true });
+    expect(executionResult.outcome).toBe('completed');
+    expect(executionResult.failure).toBeUndefined();
+    expect(executionResult.proposals.sources).toEqual(expect.arrayContaining([
+      expect.objectContaining({ host: 'example-theatre.org', status: 'qualified' }),
+    ]));
+    expect(executionResult.proposals.curationJobs).toHaveLength(1);
+    expect(executionResult.proposals.events).toHaveLength(1);
+  });
+
+  it('fails with a reason when a provider failure aborts the run', async () => {
+    mapSite.mockResolvedValue({
+      error: 'Firecrawl rejected the API key.',
+      status: 401,
+      code: 'SITE_SCRAPE_AUTH_FAILED',
+    });
+
+    const result = await runDiscovery();
+    const executionResult = result.data.result;
+    expect(executionResult.outcome).toBe('failed');
+    expect(executionResult.failure).toEqual({
+      code: 'SITE_SCRAPE_AUTH_FAILED',
+      message: 'Firecrawl rejected the API key.',
+    });
+  });
+
   it('includes rejected source proposals without creating curation jobs', async () => {
     scrapeSiteEvents.mockResolvedValue({
       listLabel: 'Empty Calendar',

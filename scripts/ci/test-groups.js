@@ -11,14 +11,14 @@ const testFilePattern = /\.(?:spec|test)\.(?:js|jsx|ts|tsx)$/;
 const groups = {
   backend: {
     'discovery-catalog': [
-      /\/unit\/(?:clusterPivotHostNames|eventPivotIndexes|pivotBatch|pivotCatalog|pivotCuration|pivotDiscovery|pivotEnrichment|pivotEventSimilarity|pivotExtraction|pivotFieldParsing|pivotHost|pivotIngest|pivotLocation|pivotMovie|pivotOffloaded|pivotOrganizer|pivotRichData|pivotScrape|pivotSite|pivotSource|pivotStructured|pivotTag)/,
+      /\/unit\/(?:clusterPivotHostNames|eventPivotIndexes|pivotBatch|pivotCatalog|pivotCuration|pivotDiscovery|pivotEnrichment|pivotEventPrice|pivotEventSimilarity|pivotExtraction|pivotFieldParsing|pivotHost|pivotIngest|pivotLocation|pivotMovie|pivotOffloaded|pivotOrganizer|pivotRichData|pivotScrape|pivotSite|pivotSource|pivotStructured|pivotTag)/,
     ],
     'compute-admin': [
       /\/unit\/(?:pivotAdmin|pivotCompute|pivotFleet|pivotGrowth|pivotLab|pivotTenantInsights|pivotTenantJourney|pivotTenantOps|pivotWeeklyBatchQuality|pivotWeeklyReport)/,
       /\/route-outcomes\/(?:pivotAdmin|pivotComputeWorker)/,
     ],
     'consumer-experience': [
-      /\/unit\/(?:ensureJustGo|eventRichLocation|justGo|publicEvent|pivotAcquisition|pivotClipDrop|pivotContact|pivotEntry|pivotExplore|pivotFeed|pivotFeedback|pivotFriend|pivotIntent|pivotInteraction|pivotLanding|pivotPlanVisibility|pivotProfile|pivotReferral|pivotRetention|pivotSafety|pivotSocial|pivotTimeSlots|pivotUserInvite)/,
+      /\/unit\/(?:ensureJustGo|eventRichLocation|justGo|publicEvent|pivotAcquisition|pivotClip|pivotContact|pivotEntry|pivotExplore|pivotFeed|pivotFeedback|pivotFriend|pivotIntent|pivotInteraction|pivotLanding|pivotPlanVisibility|pivotProfile|pivotReferral|pivotRetention|pivotSafety|pivotSocial|pivotTimeSlots|pivotUserInvite)/,
       /\/route-outcomes\/pivotRoutes/,
     ],
     'crews-weekly-drop': [

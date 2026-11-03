@@ -247,6 +247,27 @@ describe('runLocationBackfill', () => {
     return models;
   }
 
+  it('applies remembered decisions without a provider call', async () => {
+    const source = [eventDoc('Bell House')];
+    useEvents(source);
+    const adapter = { geocodeAddress: jest.fn() };
+    const locationMemoryLookup = jest.fn().mockResolvedValue({
+      memoryId: 'memory-1',
+      richLocation: { mode: 'tbd', originalInput: 'Bell House', publicDisplayLabel: 'Location TBD',
+        resolutionStatus: 'not_applicable', revealPolicy: 'public' },
+    });
+
+    const result = await run({ googleAdapter: adapter, locationMemoryLookup });
+
+    expect(adapter.geocodeAddress).not.toHaveBeenCalled();
+    expect(result.counts).toMatchObject({ applied: 1, remembered: 1, tbd: 1 });
+    expect(result.items[0]).toMatchObject({ outcome: 'applied', memoryId: 'memory-1' });
+    expect(source[0].richLocation).toMatchObject({ mode: 'tbd' });
+    expect(source[0].customFields.pivot.locationBackfill).toMatchObject({
+      outcome: 'applied', memoryId: 'memory-1',
+    });
+  });
+
   it('produces a bounded dry-run without changing events or checkpoints', async () => {
     const source = [eventDoc('First Hall'), eventDoc('Second Hall'), eventDoc('Third Hall')];
     useEvents(source);

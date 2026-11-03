@@ -3,6 +3,8 @@ import { useSearchParams } from 'react-router-dom';
 import PivotTenantViewTabs from './PivotTenantViewTabs';
 import PivotTenantCurationPage from './PivotTenantCurationPage';
 import PivotTenantCatalogPage from './PivotTenantCatalogPage';
+import PivotTenantClipPage from './PivotTenantClipPage';
+import PivotTenantExploreThemesPage from './PivotTenantExploreThemesPage';
 import PivotTenantLocationMigrationPage, {
   RICH_LOCATION_MIGRATION_UI_ENABLED,
 } from './PivotTenantLocationMigrationPage';
@@ -10,13 +12,17 @@ import PivotTenantLocationMigrationPage, {
 /*
  * `content` URL param. Events is the default and has no param. Events and
  * Sources are one page component (shared week state); Organizers is the city
- * catalog; Locations only exists while the rich-location UI flag is on.
+ * catalog; Locations only exists while the rich-location UI flag is on; App
+ * Clip is the clip's deck, wording, and conversion, independent of the week.
+ * Explore themes are dated takeovers of the app's discover page.
  */
 const ALL_CONTENT_VIEWS = Object.freeze([
   { id: 'events', label: 'Events' },
   { id: 'sources', label: 'Sources' },
   { id: 'organizers', label: 'Organizers' },
   { id: 'locations', label: 'Locations', flag: () => RICH_LOCATION_MIGRATION_UI_ENABLED },
+  { id: 'clip', label: 'App Clip' },
+  { id: 'themes', label: 'Explore themes' },
 ]);
 
 export function contentViews() {
@@ -31,8 +37,8 @@ const CURATION_VIEWS = new Set(['events', 'sources']);
 
 /**
  * Per-tenant Content: the week's events (review queue), where they come from
- * (sources and saved crawl jobs), the city's organizers, and — behind a flag —
- * location migration. Replaces the former Curation (1), Catalog (4), and
+ * (sources and saved crawl jobs), the city's organizers, the App Clip, and —
+ * behind a flag — location migration. Replaces the former Curation (1), Catalog (4), and
  * Location migration (7) panels; 4 and 7 redirect here.
  */
 function PivotTenantContentPage({ tenantKey, cityDisplayName, onTenantUpdated }) {
@@ -67,6 +73,26 @@ function PivotTenantContentPage({ tenantKey, cityDisplayName, onTenantUpdated })
   if (view === 'organizers') {
     return (
       <PivotTenantCatalogPage
+        tenantKey={tenantKey}
+        cityDisplayName={cityDisplayName}
+        title="Content"
+        nav={nav}
+      />
+    );
+  }
+  if (view === 'clip') {
+    return (
+      <PivotTenantClipPage
+        tenantKey={tenantKey}
+        cityDisplayName={cityDisplayName}
+        title="Content"
+        nav={nav}
+      />
+    );
+  }
+  if (view === 'themes') {
+    return (
+      <PivotTenantExploreThemesPage
         tenantKey={tenantKey}
         cityDisplayName={cityDisplayName}
         title="Content"

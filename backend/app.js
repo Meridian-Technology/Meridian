@@ -330,6 +330,7 @@ function createApp() {
   const shuttleConfigRoutes = require('./routes/shuttleConfigRoutes.js');
   const noticeRoutes = require('./routes/noticeRoutes.js');
   const pivotRoutes = require('./routes/pivotRoutes.js');
+  const { createJustGoLiveRouter } = require('./routes/justGoLiveRoutes.js');
   const pivotAdminRoutes = require('./routes/pivotAdminRoutes.js');
   const { createPivotComputeWorkerRouter } = require('./routes/pivotComputeWorkerRoutes.js');
   const pivotAdminComputeJobsRoutes = require('./routes/pivotAdminComputeJobsRoutes.js');
@@ -373,6 +374,8 @@ function createApp() {
   app.use('/api/resources', resourcesRoutes);
   app.use('/api/shuttle-config', shuttleConfigRoutes);
   app.use('/api/notice', noticeRoutes);
+  // Before /pivot, so the live game's paths never reach the main router.
+  app.use('/pivot/live', createJustGoLiveRouter());
   app.use('/pivot', pivotRoutes);
   app.use('/admin/pivot', pivotAdminRoutes);
   app.use('/admin/pivot/compute-jobs', pivotAdminComputeJobsRoutes);

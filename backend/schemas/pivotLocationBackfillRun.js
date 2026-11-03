@@ -15,6 +15,7 @@ const outcomeCountsSchema = new mongoose.Schema(
     tbd: { type: Number, default: 0 },
     registrationGated: { type: Number, default: 0 },
     ambiguous: { type: Number, default: 0 },
+    remembered: { type: Number, default: 0 },
   },
   { _id: false },
 );

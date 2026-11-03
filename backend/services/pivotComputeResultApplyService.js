@@ -1153,7 +1153,7 @@ function previewDiscoveryProposals(result, identities) {
   for (const proposal of result.proposals?.events || []) {
     const current = identities.eventBySourceUrl.get(proposal.sourceUrl) || null;
     const currentDoc = identities.eventDocBySourceUrl.get(proposal.sourceUrl) || null;
-    rows.push(classifyVersionedProposal({
+    const row = classifyVersionedProposal({
       entityType: 'event',
       key: eventRowKey(proposal.sourceUrl),
       proposalAction: proposal.action,
@@ -1161,7 +1161,10 @@ function previewDiscoveryProposals(result, identities) {
       current,
       proposalMaterial: eventProposalMaterial(proposal),
       currentMaterial: currentDoc ? eventDocToProposalMaterial(currentDoc) : null,
-    }));
+    });
+    const price = trimString(proposal.draft?.price).slice(0, 300);
+    if (price) row.price = price;
+    rows.push(row);
   }
 
   return rows;
@@ -1188,7 +1191,7 @@ function previewRefreshProposals(result, identities) {
   for (const proposal of result.proposals?.events || []) {
     const current = identities.eventBySourceUrl.get(proposal.sourceUrl) || null;
     const currentDoc = identities.eventDocBySourceUrl.get(proposal.sourceUrl) || null;
-    rows.push(classifyVersionedProposal({
+    const row = classifyVersionedProposal({
       entityType: 'event',
       key: eventRowKey(proposal.sourceUrl),
       proposalAction: proposal.action,
@@ -1196,7 +1199,10 @@ function previewRefreshProposals(result, identities) {
       current,
       proposalMaterial: eventProposalMaterial(proposal),
       currentMaterial: currentDoc ? eventDocToProposalMaterial(currentDoc) : null,
-    }));
+    });
+    const price = trimString(proposal.draft?.price).slice(0, 300);
+    if (price) row.price = price;
+    rows.push(row);
   }
 
   return rows;
@@ -1526,6 +1532,7 @@ async function applyEventRow(req, result, proposal, identities) {
       ingestStatus,
       timeSlots: draft.timeSlots,
       parsed: draft.parsed,
+      details: draft.details,
     },
   });
 

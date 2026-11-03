@@ -64,7 +64,11 @@ function pivotRequestContext(req) {
     host: req.headers?.host || undefined,
     userId: req.user?.userId ? String(req.user.userId) : undefined,
     method: req.method,
-    path: req.originalUrl || req.url,
+    // Invitation URLs are bearer credentials; never persist them in logs.
+    path: (req.originalUrl || req.url || '').replace(
+      /(\/campaign-invites\/)[^/?#]+/gi,
+      '$1[redacted]',
+    ),
   };
 }
 

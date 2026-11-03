@@ -27,6 +27,10 @@ function RegisterForm() {
     const [errorText, setErrorText] = useState("");
     const [email, setEmail] = useState(false);
     const [inviteData, setInviteData] = useState(null);
+    // Set when the email already has a Meridian account and needs a code to finish sign-up
+    const [verification, setVerification] = useState(null);
+    const [verificationCode, setVerificationCode] = useState('');
+    const [verifyBusy, setVerifyBusy] = useState(false);
 
     const googleLogo = generalIcons.google;
 
@@ -141,14 +145,14 @@ function RegisterForm() {
                 payload.invite_token = inviteToken;
             }
             const response = await axios.post('/register', payload, { withCredentials: true });
+            if (response.data?.code === 'EMAIL_VERIFICATION_REQUIRED') {
+                setErrorText('');
+                setVerificationCode('');
+                setVerification({ ...response.data.data, message: response.data.message });
+                return;
+            }
             if (response.data?.success) {
-                addNotification({ title: 'Registered successfully', type: 'success' });
-                await validateToken();
-                if (response.data?.data?.user?.roles?.includes('admin')) {
-                    window.location.href = '/admin';
-                } else {
-                    navigate(from, { replace: true });
-                }
+                await finishRegistration(response);
             }
         } catch (error) {
             if (error.response?.status === 400) {
@@ -162,6 +166,40 @@ function RegisterForm() {
             }
         }
     }
+
+    const finishRegistration = async (response) => {
+        addNotification({ title: 'Registered successfully', type: 'success' });
+        await validateToken();
+        if (response.data?.data?.user?.roles?.includes('admin')) {
+            window.location.href = '/admin';
+        } else {
+            navigate(from, { replace: true });
+        }
+    };
+
+    const handleVerificationSubmit = async (e) => {
+        e.preventDefault();
+        if (!verificationCode) return;
+        try {
+            setVerifyBusy(true);
+            const response = await axios.post('/register/verify', {
+                verificationId: verification.verificationId,
+                code: verificationCode.trim(),
+            }, { withCredentials: true });
+            if (response.data?.success) {
+                await finishRegistration(response);
+            }
+        } catch (error) {
+            const code = error.response?.data?.code;
+            setErrorText(error.response?.data?.message || 'Verification failed. Please try again.');
+            if (code === 'VERIFICATION_INVALID') {
+                setVerification(null);
+            }
+        } finally {
+            setVerifyBusy(false);
+        }
+    };
+
     const handleGoogleClick = () => {
         google();
     };
@@ -236,6 +274,44 @@ function RegisterForm() {
 
     if (isWww() && !(process.env.NODE_ENV !== 'production' && typeof window !== 'undefined' && localStorage.getItem('devTenantOverride'))) {
         return <Navigate to="/select-school" replace />;
+    }
+
+    if (verification) {
+        return (
+            <form onSubmit={handleVerificationSubmit} className='form'>
+                <TenantSelectorBanner />
+                <h1>Confirm your email</h1>
+                {errorText !== "" &&
+                    <Flag text={errorText} img={circleWarning} color={"#FD5858"} primary={"rgba(250, 117, 109, 0.16)"} accent={"#FD5858"} />
+                }
+                <div className="form-content">
+                    <div className="email">
+                        <p style={{ opacity: 0.8, fontSize: '0.9rem' }}>{verification.message}</p>
+                    </div>
+                    <div className="email">
+                        <p>Verification Code</p>
+                        <input
+                            type="text"
+                            inputMode="numeric"
+                            autoComplete="one-time-code"
+                            maxLength={6}
+                            value={verificationCode}
+                            onChange={(event) => setVerificationCode(event.target.value)}
+                            placeholder="123456"
+                            required
+                        />
+                    </div>
+                    <button type="submit" className="button active" disabled={verifyBusy}>
+                        {verifyBusy ? 'Verifying...' : 'Verify and Create Account'}
+                    </button>
+                    <p className="already">
+                        <Link to={location.pathname + location.search} onClick={() => { setVerification(null); setErrorText(''); }}>
+                            Use a different email
+                        </Link>
+                    </p>
+                </div>
+            </form>
+        );
     }
 
     return (

@@ -15,6 +15,7 @@ import {
 import AdminPlatformMetricChart from '../../Admin/General/AdminPlatformAnalytics/AdminPlatformMetricChart';
 import PivotTenantPage from './PivotTenantPage';
 import PivotLandingQrManager from './PivotLandingQrManager';
+import PivotTenantTagsPanel from './PivotTenantTagsPanel';
 import PivotGrowthOverview from './PivotGrowthOverview';
 import PivotTenantViewTabs from './PivotTenantViewTabs';
 import { toUtcMonth } from './PivotAnalyticsMonthPicker';
@@ -37,6 +38,7 @@ export const GROWTH_VIEWS = Object.freeze([
   { id: 'landing', label: 'Landing' },
   { id: 'waitlist', label: 'Waitlist' },
   { id: 'qr', label: 'QR codes' },
+  { id: 'tags', label: 'Dog tags' },
   { id: 'acquisition', label: 'Acquisition' },
 ]);
 const VIEW_IDS = new Set(GROWTH_VIEWS.map((view) => view.id));
@@ -128,6 +130,7 @@ function PivotTenantGrowthPage({ tenantKey, cityDisplayName }) {
   const savingModeRef = useRef(false);
   const exportingCsvRef = useRef(false);
   const refetchQrsRef = useRef(null);
+  const refetchTagsRef = useRef(null);
   const refetchOverviewRef = useRef(null);
 
   const launchUrl = tenantKey && (view === 'landing' || view === 'qr')
@@ -371,6 +374,10 @@ function PivotTenantGrowthPage({ tenantKey, cityDisplayName }) {
       refetchWaitlist();
       return;
     }
+    if (view === 'tags') {
+      refetchTagsRef.current?.();
+      return;
+    }
     refetchLaunch();
     if (view === 'qr') refetchQrsRef.current?.();
   };
@@ -393,7 +400,7 @@ function PivotTenantGrowthPage({ tenantKey, cityDisplayName }) {
             className="linear-btn linear-btn--secondary"
             onClick={refreshView}
             disabled={
-              view === 'overview'
+              view === 'overview' || view === 'tags'
                 ? !tenantKey
                 : view === 'waitlist'
                   ? !waitlistUrl || waitlistLoading
@@ -684,6 +691,14 @@ function PivotTenantGrowthPage({ tenantKey, cityDisplayName }) {
 
           <PivotLandingQrManager tenantKey={tenantKey} refetchRef={refetchQrsRef} />
         </>
+      ) : null}
+
+      {view === 'tags' ? (
+        <PivotTenantTagsPanel
+          tenantKey={tenantKey}
+          cityDisplayName={displayCity}
+          refetchRef={refetchTagsRef}
+        />
       ) : null}
 
       {view === 'acquisition' ? (

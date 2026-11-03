@@ -151,7 +151,11 @@ describe('releaseOutcomeNotification', () => {
 
 describe('locationReviewHref', () => {
   it('deep-links Content → Locations', () => {
-    expect(locationReviewHref('sf', '2026-W38'))
+    expect(locationReviewHref('sf', '2026-W38', true))
       .toBe('/platform-admin/pivot/sf?page=1&content=locations&batchWeek=2026-W38');
+  });
+
+  it('has nowhere to link while the Locations tab is disabled', () => {
+    expect(locationReviewHref('sf', '2026-W38', false)).toBeNull();
   });
 });

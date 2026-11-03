@@ -39,6 +39,27 @@ describe('PivotComputeJobRunStatus', () => {
     expect(screen.getByText('Waiting for a Mini')).toBeInTheDocument();
   });
 
+  it('shows a development job running on this machine', () => {
+    render(
+      <PivotComputeJobRunStatus
+        job={{
+          ...BASE_JOB,
+          status: 'running',
+          startedAt: '2026-09-10T07:00:05.000Z',
+          lease: { workerId: 'dev-local' },
+        }}
+        wake={{ status: 'local' }}
+        tenantKey="iowacity"
+      />,
+    );
+
+    expect(screen.getByText('Local compute job')).toBeInTheDocument();
+    expect(screen.getByText('Local runner')).toBeInTheDocument();
+    expect(screen.getByText('This machine runs the scrape in process. The Mini is not woken.')).toBeInTheDocument();
+    expect(screen.getByText('Claimed on this machine')).toBeInTheDocument();
+    expect(screen.getByText('Running here')).toBeInTheDocument();
+  });
+
   it('identifies the worker after execution starts', () => {
     render(
       <PivotComputeJobRunStatus

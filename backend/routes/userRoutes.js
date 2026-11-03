@@ -1,4 +1,5 @@
 const express = require('express');
+const mongoose = require('mongoose');
 const { verifyToken, verifyTokenOptional, authorizeRoles } = require('../middlewares/verifyToken');
 const { requireAdmin } = require('../middlewares/requireAdmin');
 const cron = require('node-cron');
@@ -9,6 +10,7 @@ const { findNext } = require('../helpers.js');
 const { sendDiscordMessage } = require('../services/discordWebookService');
 const BadgeGrant = require('../schemas/badgeGrant');
 const getModels = require('../services/getModelService');
+const { PUBLIC_USER_FIELDS } = require('../constants/publicUserFields');
 const { uploadImageToS3, deleteAndUploadImageToS3 } = require('../services/imageUploadService');
 const { sendRoomCheckinEvent } = require('../inngest/events');
 const multer = require('multer');
@@ -412,7 +414,10 @@ router.get("/get-user", async (req, res) => {
     const { User } = getModels(req, 'User');
     const userId = req.query.userId;
     try {
-        const user = await User.findById(userId);
+        if (typeof userId !== 'string' || !mongoose.isObjectIdOrHexString(userId)) {
+            return res.status(400).json({ success: false, message: 'Invalid userId' });
+        }
+        const user = await User.findById(userId).select(PUBLIC_USER_FIELDS);
         console.log(`GET: /get-user ${req.query.userId} successful`);
         return res.status(200).json({ success: true, message: 'User retrieved', user });
     } catch (error) {
@@ -421,12 +426,21 @@ router.get("/get-user", async (req, res) => {
     }
 });
 
+const MAX_PUBLIC_USER_LOOKUP = 200;
+
 //route to get mulitple users, specified in array
 router.get("/get-users", async (req, res) => {
     const { User } = getModels(req, 'User');
     const userIds = req.query.userIds;
+    if (
+        !Array.isArray(userIds) ||
+        userIds.length > MAX_PUBLIC_USER_LOOKUP ||
+        !userIds.every((id) => typeof id === 'string' && mongoose.isObjectIdOrHexString(id))
+    ) {
+        return res.status(400).json({ success: false, message: 'Invalid userIds' });
+    }
     try {
-        const users = await User.find({ _id: { $in: userIds } });
+        const users = await User.find({ _id: { $in: userIds } }).select(PUBLIC_USER_FIELDS);
         console.log(`GET: /get-users ${req.query.userId} successful`);
         return res.status(200).json({ success: true, message: 'Users retrieved', users });
     } catch (error) {

@@ -525,6 +525,9 @@ function createGoogleLocationAdapter(options = {}) {
           ...(requestOptions.locationRestriction
             ? { locationRestriction: requestOptions.locationRestriction }
             : {}),
+          ...(requestOptions.locationBias && !requestOptions.locationRestriction
+            ? { locationBias: requestOptions.locationBias }
+            : {}),
         },
       }),
       (providerResponse) => (

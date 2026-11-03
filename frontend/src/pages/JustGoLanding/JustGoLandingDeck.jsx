@@ -7,6 +7,7 @@ import {
   useJustGoLandingCopy,
 } from './justGoLandingCopy';
 import JustGoLandingStoreLink from './JustGoLandingStoreLink';
+import { recordLandingStoreClick } from './justGoLandingTracking';
 import {
   formatLandingWhen,
   landingPosterStack,
@@ -218,6 +219,16 @@ function LeavingCard({
   );
 }
 
+/** Swiping the last card does what its CTA does: App Store, or the waitlist form. */
+function openDownloadTarget({ tenantKey, waitlistMode, onWaitlistOpen }) {
+  if (waitlistMode) {
+    onWaitlistOpen?.();
+    return;
+  }
+  recordLandingStoreClick({ tenantKey, store: 'ios' });
+  window.location.assign(JUSTGO_IOS_STORE_URL);
+}
+
 function SwipeTopCard({
   card,
   empty,
@@ -228,7 +239,7 @@ function SwipeTopCard({
   onSwiped,
 }) {
   const copy = useJustGoLandingCopy();
-  const locked = card.kind === 'download';
+  const download = card.kind === 'download';
   const rest = landingPosterStack(1, stackIndex);
   const [{ x, rot, scale }, api] = useSpring(() => ({
     x: 0,
@@ -268,7 +279,13 @@ function SwipeTopCard({
 
   const commit = useCallback(
     (direction) => {
-      if (locked || gone.current) return;
+      if (gone.current) return;
+      if (download) {
+        api.start({ x: 0, rot: 0, scale: 1 });
+        pos.current = { x: 0, rot: 0 };
+        openDownloadTarget({ tenantKey, waitlistMode, onWaitlistOpen });
+        return;
+      }
       gone.current = true;
       onSwiped({
         direction,
@@ -277,12 +294,12 @@ function SwipeTopCard({
         card,
       });
     },
-    [card, locked, onSwiped],
+    [api, card, download, onSwiped, onWaitlistOpen, tenantKey, waitlistMode],
   );
 
   const onPointerDown = useCallback(
     (event) => {
-      if (locked || gone.current) return;
+      if (gone.current) return;
       if (event.button != null && event.button !== 0) return;
       start.current = { x: event.clientX, y: event.clientY };
       axis.current = null;
@@ -290,12 +307,12 @@ function SwipeTopCard({
       lastMove.current = { t: event.timeStamp, x: event.clientX };
       velocity.current = 0;
     },
-    [locked],
+    [],
   );
 
   const onPointerMove = useCallback(
     (event) => {
-      if (locked || gone.current || !start.current) return;
+      if (gone.current || !start.current) return;
       if (pointerId.current != null && event.pointerId !== pointerId.current) return;
       const mx = event.clientX - start.current.x;
       const my = event.clientY - start.current.y;
@@ -319,7 +336,7 @@ function SwipeTopCard({
       pos.current = { x: mx, rot: nextRot };
       api.start({ x: mx, rot: nextRot, scale: 1, immediate: true });
     },
-    [api, locked, resetGesture],
+    [api, resetGesture],
   );
 
   const onPointerUp = useCallback(
@@ -329,7 +346,7 @@ function SwipeTopCard({
       const wasSwipe = axis.current === 'x';
       const flick = velocity.current;
       resetGesture(event.currentTarget, event.pointerId);
-      if (!wasSwipe || locked || gone.current) return;
+      if (!wasSwipe || gone.current) return;
       const width = screenWidth();
       const shouldGo =
         Math.abs(mx) > width * SWIPE_COMMIT_FRACTION || Math.abs(flick) > SWIPE_VELOCITY;
@@ -341,7 +358,7 @@ function SwipeTopCard({
       api.start({ x: 0, rot: 0, scale: 1 });
       pos.current = { x: 0, rot: 0 };
     },
-    [api, commit, locked, resetGesture],
+    [api, commit, resetGesture],
   );
 
   const onPointerCancel = useCallback(
@@ -364,32 +381,36 @@ function SwipeTopCard({
     <>
       <animated.div
         className="justgo-landing-deck__card justgo-landing-deck__card--top"
-        onPointerDown={locked ? undefined : onPointerDown}
-        onPointerMove={locked ? undefined : onPointerMove}
-        onPointerUp={locked ? undefined : onPointerUp}
-        onPointerCancel={locked ? undefined : onPointerCancel}
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
+        onPointerCancel={onPointerCancel}
         style={{
           x,
           rotate: rot.to((value) => `${value}deg`),
           scale,
         }}
       >
-        <animated.div
-          className="justgo-landing-deck__overlay justgo-landing-deck__overlay--pass"
-          style={{ opacity: passOpacity }}
-        >
-          <span className="justgo-landing-deck__overlay-chip">{copy.deckPass}</span>
-          <span className="justgo-landing-deck__overlay-hint">{copy.deckPassHint}</span>
-        </animated.div>
-        <animated.div
-          className="justgo-landing-deck__overlay justgo-landing-deck__overlay--save"
-          style={{ opacity: saveOpacity }}
-        >
-          <span className="justgo-landing-deck__overlay-chip">{copy.deckInterested}</span>
-          <span className="justgo-landing-deck__overlay-hint">
-            {copy.deckInterestedHint}
-          </span>
-        </animated.div>
+        {!download ? (
+          <>
+            <animated.div
+              className="justgo-landing-deck__overlay justgo-landing-deck__overlay--pass"
+              style={{ opacity: passOpacity }}
+            >
+              <span className="justgo-landing-deck__overlay-chip">{copy.deckPass}</span>
+              <span className="justgo-landing-deck__overlay-hint">{copy.deckPassHint}</span>
+            </animated.div>
+            <animated.div
+              className="justgo-landing-deck__overlay justgo-landing-deck__overlay--save"
+              style={{ opacity: saveOpacity }}
+            >
+              <span className="justgo-landing-deck__overlay-chip">{copy.deckInterested}</span>
+              <span className="justgo-landing-deck__overlay-hint">
+                {copy.deckInterestedHint}
+              </span>
+            </animated.div>
+          </>
+        ) : null}
         {card.kind === 'event' ? (
           <EventFace event={card.event} />
         ) : (
@@ -401,7 +422,7 @@ function SwipeTopCard({
           />
         )}
       </animated.div>
-      {!locked ? (
+      {!download ? (
         <div className="justgo-landing-deck__actions">
           <button type="button" onClick={() => commit(-1)}>
             {copy.deckPass}

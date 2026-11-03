@@ -21,6 +21,7 @@ const {
   resolvePivotCoverImageUrl,
 } = require('../utilities/pivotMovieMetadata');
 const { serializePivotEnrichment } = require('../utilities/pivotEnrichment');
+const { eventDetailsForFeed } = require('../utilities/pivotEventPrice');
 const { logPivot, pivotRequestContext } = require('../utilities/pivotLogger');
 const {
   normalizeDeckSnapshotRefresh,
@@ -241,6 +242,7 @@ function serializePivotFeedEvent(event, extras) {
   const coverImageUrl = resolvePivotCoverImageUrl(event);
   const movie = serializePivotMovie(pivot.movie);
   const enrichment = serializePivotEnrichment(pivot);
+  const details = eventDetailsForFeed(pivot);
   const normalizedSlots = normalizePivotTimeSlots(pivot.timeSlots);
   const timeSlots = normalizedSlots.length
     ? serializePivotTimeSlots(normalizedSlots, extras.socialByTimeSlot)
@@ -263,6 +265,7 @@ function serializePivotFeedEvent(event, extras) {
     ...(timeSlots ? { timeSlots } : {}),
     ...(movie ? { movie } : {}),
     ...(enrichment ? { enrichment } : {}),
+    ...(details ? { details } : {}),
     displayHost: extras.displayHost,
     userIntent: extras.userIntent,
     ...(extras.userTimeSlotId ? { userTimeSlotId: extras.userTimeSlotId } : {}),
@@ -1567,6 +1570,7 @@ async function getPivotEventFriends(req, eventId) {
 
 module.exports = {
   getPivotFeed,
+  PUBLISHED_CATALOG_BASE_QUERY,
   getPivotEventFriends,
   getPilotWindow,
   getFeedPilotWindowFilter,

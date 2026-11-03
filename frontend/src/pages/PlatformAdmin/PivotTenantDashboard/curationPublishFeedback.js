@@ -1,4 +1,5 @@
 import { PIVOT_TENANT_PAGES } from './pivotTenantPageRoutes';
+import { RICH_LOCATION_MIGRATION_UI_ENABLED } from './richLocationMigrationFlag';
 
 const LOCATION_REVIEW_COPY = {
   ambiguous_provider_matches: [
@@ -57,8 +58,104 @@ export function locationReviewBlock(event) {
   return { reason, title: copy[0], detail: copy[1] };
 }
 
-export function locationReviewHref(tenantKey, batchWeek) {
-  if (!tenantKey) return null;
+function finiteOrNull(value) {
+  if (value == null || value === '') return null;
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
+}
+
+function isResolvedGoogleMatch(place) {
+  const point = place?.coordinates?.coordinates;
+  return Boolean(place?.googlePlaceId && place?.formattedAddress
+    && Array.isArray(point) && point.length === 2);
+}
+
+/** Google's top suggestion for an event waiting on location review, if any. */
+export function locationReviewGoogleMatch(event) {
+  if (!locationReviewBlock(event)) return null;
+  const [top] = Array.isArray(event.locationReview.candidateMatches)
+    ? event.locationReview.candidateMatches
+    : [];
+  return isResolvedGoogleMatch(top) ? top : null;
+}
+
+/** How sure Google was about its top match, as a 0–100 whole percentage. */
+export function locationReviewConfidencePercent(event) {
+  if (!locationReviewBlock(event)) return null;
+  const confidence = finiteOrNull(event.locationReview.confidence)
+    ?? finiteOrNull(event.locationReview.candidateMatches?.[0]?.resolutionConfidence);
+  return confidence == null ? null : Math.round(Math.min(Math.max(confidence, 0), 1) * 100);
+}
+
+/**
+ * Events in a selection that can take Google's top match without opening the
+ * resolver. Out-of-scope matches stay manual: the suggestion is outside the city.
+ */
+export function bulkGoogleLocationEvents(events = []) {
+  return events.filter((event) => locationReviewGoogleMatch(event)
+    && locationReviewBlock(event).reason !== 'out_of_scope');
+}
+
+/** The select_match body that accepts an event's top Google match as-is. */
+export function googleMatchReviewRequest(event) {
+  const match = locationReviewGoogleMatch(event);
+  if (!match) return null;
+  return {
+    action: 'select_match',
+    richLocation: {
+      ...match,
+      mode: 'physical',
+      originalInput: event.rawLocationText || match.originalInput || event.location || '',
+      revealPolicy: 'public',
+    },
+    candidateSource: 'provider_candidate',
+    remember: true,
+  };
+}
+
+/**
+ * Shape a curation catalog event like a `/rich-location-migration/reviews`
+ * candidate so PivotLocationReviewInspector can resolve it in place.
+ */
+export function locationReviewCandidate(event) {
+  const block = locationReviewBlock(event);
+  if (!block) return null;
+  const review = event.locationReview;
+  return {
+    eventId: String(event._id),
+    name: event.name,
+    startTime: event.start_time || null,
+    image: event.image || null,
+    legacyLocation: event.location || '',
+    rawLocationText: event.rawLocationText || event.richLocation?.originalInput || event.location || '',
+    richLocation: event.richLocation || null,
+    candidateMatches: Array.isArray(review.candidateMatches) ? review.candidateMatches : [],
+    review,
+    whyReview: {
+      reason: block.reason,
+      title: block.title,
+      detail: block.detail,
+      confidence: finiteOrNull(review.confidence),
+      candidateCount: finiteOrNull(review.candidateCount),
+    },
+    batchWeek: event.batchWeek || null,
+    source: event.source || null,
+    sourceUrl: event.sourceUrl || event.externalLink || null,
+  };
+}
+
+/** Notification copy after a review save, including any events it also resolved. */
+export function locationReviewSavedMessage(result = {}) {
+  const name = result?.candidate?.name || '';
+  const updated = Number(result?.matching?.updated) || 0;
+  const parts = [name];
+  if (updated) parts.push(`${updated} more ${updated === 1 ? 'event' : 'events'} with the same text`);
+  if (result?.memory) parts.push('remembered for next time');
+  return parts.filter(Boolean).join(' · ');
+}
+
+export function locationReviewHref(tenantKey, batchWeek, enabled = RICH_LOCATION_MIGRATION_UI_ENABLED) {
+  if (!tenantKey || !enabled) return null;
   const params = new URLSearchParams({
     page: String(PIVOT_TENANT_PAGES.content),
     content: 'locations',

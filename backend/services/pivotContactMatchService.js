@@ -110,7 +110,7 @@ async function matchPivotContacts(req, body = {}) {
 
   const tenantKey = typeof req.school === 'string' ? req.school.trim().toLowerCase() : '';
   if (!tenantKey) {
-    return { data: { users: [], matchedHashCount: 0, submittedHashCount: 0 } };
+    return { data: { users: [], matchedHashCount: 0, submittedHashCount: 0, matchedHashes: [] } };
   }
 
   const submittedHashes = (Array.isArray(body.hashes)
@@ -125,6 +125,7 @@ async function matchPivotContacts(req, body = {}) {
         users: [],
         matchedHashCount: 0,
         submittedHashCount: 0,
+        matchedHashes: [],
       },
     };
   }
@@ -157,6 +158,7 @@ async function matchPivotContacts(req, body = {}) {
         users: [],
         matchedHashCount: 0,
         submittedHashCount: submittedHashes.length,
+        matchedHashes: [],
       },
     };
   }
@@ -181,6 +183,7 @@ async function matchPivotContacts(req, body = {}) {
         users: [],
         matchedHashCount,
         submittedHashCount: submittedHashes.length,
+        matchedHashes: [],
       },
     };
   }
@@ -195,6 +198,7 @@ async function matchPivotContacts(req, body = {}) {
         users: [],
         matchedHashCount,
         submittedHashCount: submittedHashes.length,
+        matchedHashes: [],
       },
     };
   }
@@ -220,6 +224,25 @@ async function matchPivotContacts(req, body = {}) {
         : friendship.requester.toString();
     friendshipByOtherId.set(otherId, friendship);
   }
+
+  // Which of the submitted hashes belong to someone visible here (friends
+  // included), so the app can leave them out of its "invite" list. Only
+  // people this user could already see; never blocked users or other cities.
+  const globalIdByTenantUserId = new Map(
+    memberships.map((row) => [row.tenantUserId?.toString(), row.globalUserId.toString()]),
+  );
+  const visibleGlobalIds = new Set(
+    users
+      .map((row) => globalIdByTenantUserId.get(row._id.toString()))
+      .filter(Boolean),
+  );
+  const matchedHashes = [
+    ...new Set(
+      matchedRows
+        .filter((row) => visibleGlobalIds.has(row.globalUserId.toString()))
+        .map((row) => `${row.identifierType}:${row.hash}`),
+    ),
+  ];
 
   const results = [];
   for (const tenantUserId of visibleTenantUserIds) {
@@ -248,6 +271,7 @@ async function matchPivotContacts(req, body = {}) {
       users: results,
       matchedHashCount,
       submittedHashCount: submittedHashes.length,
+      matchedHashes,
     },
   };
 }

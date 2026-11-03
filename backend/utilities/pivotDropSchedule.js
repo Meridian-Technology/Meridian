@@ -75,7 +75,9 @@ function getTimeZoneOffsetMs(timeZone, date) {
     hour: '2-digit',
     minute: '2-digit',
     second: '2-digit',
-    hour12: false,
+    // h23, not hour12: false: some ICU builds render midnight as hour 24,
+    // which would push the result a whole day forward.
+    hourCycle: 'h23',
   });
 
   const parts = Object.fromEntries(

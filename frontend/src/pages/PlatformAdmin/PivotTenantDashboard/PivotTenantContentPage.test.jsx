@@ -33,6 +33,26 @@ jest.mock('./PivotTenantCatalogPage', () => ({
   ),
 }));
 
+jest.mock('./PivotTenantClipPage', () => ({
+  __esModule: true,
+  default: ({ title, nav }) => (
+    <div>
+      {nav}
+      <p>clip:{title}</p>
+    </div>
+  ),
+}));
+
+jest.mock('./PivotTenantExploreThemesPage', () => ({
+  __esModule: true,
+  default: ({ title, nav }) => (
+    <div>
+      {nav}
+      <p>themes:{title}</p>
+    </div>
+  ),
+}));
+
 jest.mock('./PivotTenantLocationMigrationPage', () => ({
   __esModule: true,
   default: ({ title, nav }) => (
@@ -66,7 +86,7 @@ describe('PivotTenantContentPage', () => {
     mockLocationsEnabled = true;
   });
 
-  it('opens on Events with the four Content tabs', () => {
+  it('opens on Events with the six Content tabs', () => {
     renderContent();
 
     expect(screen.getByText('curation:events:Content')).toBeInTheDocument();
@@ -75,6 +95,8 @@ describe('PivotTenantContentPage', () => {
       'Sources',
       'Organizers',
       'Locations',
+      'App Clip',
+      'Explore themes',
     ]);
     expect(screen.getByRole('tab', { name: 'Events' })).toHaveAttribute('aria-selected', 'true');
   });
@@ -115,11 +137,31 @@ describe('PivotTenantContentPage', () => {
     expect(screen.getByText('locations:Content')).toBeInTheDocument();
   });
 
+  it('opens the App Clip tab and clears Events filters on the way', () => {
+    renderContent('?page=1&batchWeek=2026-W40&filter=draft&source=luma');
+
+    fireEvent.click(screen.getByRole('tab', { name: 'App Clip' }));
+
+    expect(screen.getByText('clip:Content')).toBeInTheDocument();
+    const search = screen.getByTestId('search').textContent;
+    expect(search).toContain('content=clip');
+    expect(search).not.toMatch(/filter=|source=/);
+  });
+
   it('hides Locations while its flag is off', () => {
     mockLocationsEnabled = false;
     renderContent('?page=1&content=locations');
 
     expect(screen.queryByRole('tab', { name: 'Locations' })).toBeNull();
     expect(screen.getByText('curation:events:Content')).toBeInTheDocument();
+  });
+});
+
+describe('Explore themes tab', () => {
+  it('opens Explore themes under Content', () => {
+    renderContent();
+    fireEvent.click(screen.getByRole('tab', { name: 'Explore themes' }));
+    expect(screen.getByText('themes:Content')).toBeInTheDocument();
+    expect(screen.getByTestId('search')).toHaveTextContent('content=themes');
   });
 });

@@ -44,6 +44,13 @@
   }
 }
 
+.popup-overlay .popup-content.pivot-curation-location-popup {
+  width: min(860px, calc(100vw - 24px));
+  max-height: min(92dvh, 900px);
+  padding: 18px;
+  overflow-y: auto;
+}
+
 .popup-overlay .popup-content.pivot-curation-publish-confirm-popup {
   width: min(420px, calc(100vw - 24px));
   padding: 18px 18px 14px;
@@ -92,8 +99,19 @@
       line-height: 1.35;
     }
 
+    > div {
+      flex: 1;
+      min-width: 0;
+    }
+
+    > .linear-btn {
+      flex-shrink: 0;
+    }
+
     &.is-blocked {
-      opacity: 0.72;
+      > div {
+        opacity: 0.72;
+      }
 
       span {
         color: #8a5a00;

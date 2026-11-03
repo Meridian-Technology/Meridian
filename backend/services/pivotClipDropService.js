@@ -5,19 +5,30 @@
  *
  * Curated with internal `customFields.pivot.clipDrop`. Falls back to the
  * landing's featured segment, then to last week. Neither flag is returned.
- * No ticket links: the clip is a no-account preview, like the landing.
+ * A city can instead pin its own list from any week (`pivotClipConfig`,
+ * `deckSource: 'custom'`), played in the admin's order.
+ * No ticket links: the clip is a no-account preview, like the landing. Cards
+ * carry the feed's details, movie, and showtimes for the clip's detail sheet.
  * Carries the city's Voice overrides for the pack's text (`copy`).
  */
 
 const { connectToDatabase } = require('../connectionsManager');
 const getModels = require('./getModelService');
-const { shiftIsoWeek } = require('../utilities/pivotIsoWeek');
+const {
+  batchWeekToDropCycleUtcRange,
+  shiftIsoWeek,
+} = require('../utilities/pivotIsoWeek');
 const {
   resolvePivotLiveBatchWeek,
   resolvePivotDropInstant,
 } = require('../utilities/pivotDropSchedule');
 const { mergePivotDeckConfig } = require('../utilities/pivotDeckConfig');
-const { buildPublishedCatalogQuery } = require('./pivotFeedService');
+const {
+  PUBLISHED_CATALOG_BASE_QUERY,
+  buildPublishedCatalogQuery,
+  isUpcomingPivotEvent,
+} = require('./pivotFeedService');
+const { mergePivotClipConfig, PIVOT_CLIP_CONFIG_DEFAULTS } = require('../utilities/pivotClipConfig');
 const { isRichLocationCapabilityEnabled } = require('../utilities/justGoRichLocationControls');
 const {
   LANDING_EVENT_FIELDS,
@@ -27,8 +38,15 @@ const {
   serializeLandingDropEvent,
 } = require('./pivotLandingDropService');
 const { getClipDropCopy } = require('./pivotCopyService');
+const { eventDetailsForFeed } = require('../utilities/pivotEventPrice');
+const { serializePivotMovie } = require('../utilities/pivotMovieMetadata');
+const {
+  normalizePivotTimeSlots,
+  serializePivotTimeSlots,
+} = require('../utilities/pivotTimeSlots');
 
-const CLIP_DROP_LIMIT = 12;
+/** Default deck size; a city's `pivotClipConfig.cardLimit` overrides it. */
+const CLIP_DROP_LIMIT = PIVOT_CLIP_CONFIG_DEFAULTS.cardLimit;
 const CLIP_DESCRIPTION_MAX = 600;
 const CLIP_EVENT_FIELDS = `${LANDING_EVENT_FIELDS} description end_time`;
 
@@ -60,12 +78,19 @@ function serializeClipDropEvent(event, options = {}) {
       .map((tag) => tag.trim())
     : [];
   const description = clipDescription(event);
+  const pivot = event.customFields?.pivot || {};
+  const details = eventDetailsForFeed(pivot);
+  const movie = serializePivotMovie(pivot.movie);
+  const slots = normalizePivotTimeSlots(pivot.timeSlots);
 
   return {
     ...card,
     ...(event.end_time ? { endTime: event.end_time } : {}),
     ...(description ? { description } : {}),
     ...(tags.length ? { tags } : {}),
+    ...(details ? { details } : {}),
+    ...(movie ? { movie } : {}),
+    ...(slots.length ? { timeSlots: serializePivotTimeSlots(slots) } : {}),
   };
 }
 
@@ -79,22 +104,10 @@ function nextDropAtAfter(tenant, liveWeek, now) {
   }
 }
 
-async function getPivotClipDrop(req, options = {}) {
-  const resolved = await resolvePublicDropTenant(req, options.tenantKey);
-  if (resolved.error) return resolved;
-  const { tenant } = resolved;
-
-  const now = options.now || new Date();
-  const liveWeek = resolvePivotLiveBatchWeek(tenant, now);
+/** The live week's clip cards, then featured, then the same for last week. */
+async function loadClipWeekDeck(Event, tenant, liveWeek, now) {
   const deckConfig = mergePivotDeckConfig(tenant.pivotDeckConfig);
-
-  const db = await connectToDatabase(tenant.tenantKey);
-  const scopedReq = { db, school: tenant.tenantKey };
-  const { Event } = getModels(scopedReq, 'Event');
-
   const weeks = [liveWeek, shiftIsoWeek(liveWeek, -1)].filter(Boolean);
-  let loaded = null;
-  let segment = null;
   for (const week of weeks) {
     for (const candidate of CLIP_SEGMENTS) {
       const result = await loadDropSegmentWeek(Event, tenant, week, now, deckConfig, {
@@ -102,12 +115,60 @@ async function getPivotClipDrop(req, options = {}) {
         fields: CLIP_EVENT_FIELDS,
       });
       if (result.ranked.length > 0) {
-        loaded = result;
-        segment = candidate.segment;
-        break;
+        return { ...result, segment: candidate.segment };
       }
     }
-    if (loaded) break;
+  }
+  return null;
+}
+
+/**
+ * The city's pinned list, any batch week, in the admin's order. Unpublished
+ * or deleted events drop out; ended ones too unless the city keeps them.
+ */
+async function loadClipCuratedEvents(Event, clipConfig, now) {
+  const ids = clipConfig.curatedEventIds || [];
+  if (!ids.length) return [];
+  const events = await Event.find({
+    ...PUBLISHED_CATALOG_BASE_QUERY,
+    _id: { $in: ids },
+  })
+    .select(CLIP_EVENT_FIELDS)
+    .lean();
+  const byId = new Map(events.map((event) => [String(event._id), event]));
+  return ids
+    .map((id) => byId.get(id))
+    .filter((event) => event && (!clipConfig.hidePastEvents || isUpcomingPivotEvent(event, now)));
+}
+
+/**
+ * The clip payload for a resolved city. The public route gates on an active
+ * city first; the admin preview calls this directly.
+ */
+async function buildPivotClipDrop(req, tenant, options = {}) {
+  const now = options.now || new Date();
+  const liveWeek = resolvePivotLiveBatchWeek(tenant, now);
+  const clipConfig = mergePivotClipConfig(tenant.pivotClipConfig);
+
+  const db = await connectToDatabase(tenant.tenantKey);
+  const scopedReq = { db, school: tenant.tenantKey };
+  const { Event } = getModels(scopedReq, 'Event');
+
+  let loaded = null;
+  if (clipConfig.deckSource === 'custom') {
+    const curated = await loadClipCuratedEvents(Event, clipConfig, now);
+    if (curated.length > 0 || !clipConfig.fallbackToWeek) {
+      // Swipes key off the live week so the app imports them with this week's.
+      loaded = {
+        batchWeek: liveWeek,
+        dropAt: resolvePivotDropInstant(tenant, liveWeek, now).dropAt,
+        ranked: curated,
+        segment: curated.length > 0 ? 'custom' : null,
+      };
+    }
+  }
+  if (!loaded) {
+    loaded = await loadClipWeekDeck(Event, tenant, liveWeek, now);
   }
 
   const nextDropAt = nextDropAtAfter(tenant, liveWeek, now);
@@ -124,11 +185,11 @@ async function getPivotClipDrop(req, options = {}) {
       batchWeek: loaded ? loaded.batchWeek : liveWeek,
       liveWeek,
       fallback: Boolean(loaded && loaded.batchWeek !== liveWeek),
-      segment,
+      segment: loaded ? loaded.segment : null,
       dropAt: dropAt.toISOString(),
       ...(nextDropAt ? { nextDropAt: nextDropAt.toISOString() } : {}),
       events: loaded
-        ? loaded.ranked.slice(0, CLIP_DROP_LIMIT).map((event) =>
+        ? loaded.ranked.slice(0, clipConfig.cardLimit).map((event) =>
           serializeClipDropEvent(event, { readsEnabled }))
         : [],
       /** Voice overrides for the pack's text; the clip has no account to fetch them. */
@@ -137,8 +198,75 @@ async function getPivotClipDrop(req, options = {}) {
   };
 }
 
+/**
+ * Everything on in a city this drop week, for the onboarding journey's
+ * haystack ("in a week in san francisco, there are 171 events"): every
+ * event starting in the live week's drop cycle that isn't deleted, whatever
+ * its curation status, since the point is the whole week, not the deck. And
+ * how many sites those events came from (by link host, else the platform).
+ * No event fields are returned.
+ */
+async function getPivotCityWeekCounts(req, options = {}) {
+  const resolved = await resolvePublicDropTenant(req, options.tenantKey);
+  if (resolved.error) return resolved;
+  const { tenant } = resolved;
+  const now = options.now || new Date();
+  const liveWeek = resolvePivotLiveBatchWeek(tenant, now);
+  const { start, end } = batchWeekToDropCycleUtcRange(
+    liveWeek,
+    tenant.pivotDropDayOfWeek,
+  );
+
+  const db = await connectToDatabase(tenant.tenantKey);
+  const { Event } = getModels({ db, school: tenant.tenantKey }, 'Event');
+  const events = await Event.find({
+    isDeleted: { $ne: true },
+    $or: [
+      { start_time: { $gte: start, $lt: end } },
+      { 'customFields.pivot.timeSlots': { $elemMatch: { start_time: { $gte: start, $lt: end } } } },
+    ],
+  })
+    .select('customFields.pivot.sourceUrl customFields.pivot.source')
+    .lean();
+
+  const sites = new Set();
+  for (const event of events) {
+    const site = eventSourceSite(event);
+    if (site) sites.add(site);
+  }
+  return {
+    data: {
+      tenantKey: tenant.tenantKey,
+      batchWeek: liveWeek,
+      eventCount: events.length,
+      sourceCount: sites.size,
+    },
+  };
+}
+
+function eventSourceSite(event) {
+  const pivot = event?.customFields?.pivot || {};
+  try {
+    if (pivot.sourceUrl) {
+      return new URL(pivot.sourceUrl).hostname.replace(/^www\./, '').toLowerCase();
+    }
+  } catch {
+    // Not a URL; fall back to the platform name.
+  }
+  const source = String(pivot.source || '').trim().toLowerCase();
+  return source || null;
+}
+
+async function getPivotClipDrop(req, options = {}) {
+  const resolved = await resolvePublicDropTenant(req, options.tenantKey);
+  if (resolved.error) return resolved;
+  return buildPivotClipDrop(req, resolved.tenant, options);
+}
+
 module.exports = {
   getPivotClipDrop,
+  getPivotCityWeekCounts,
+  buildPivotClipDrop,
   serializeClipDropEvent,
   buildClipDropQuery,
   CLIP_DROP_LIMIT,

@@ -16,6 +16,7 @@ const axios = require('axios');
  */
 
 const { enrichIngestDraft, parseEventDateTime } = require('../utilities/pivotFieldParsingUtils');
+const { priceTextFromListing } = require('../utilities/pivotEventPrice');
 const { identityFromDisplayName } = require('../utilities/pivotHostIdentity');
 const { mergeExtractionHints } = require('../utilities/pivotExtractionHints');
 const { activeRuleHints, applyStructuredRules } = require('../utilities/pivotStructuredExtractionRules');
@@ -107,7 +108,8 @@ const SITE_EVENT_SCHEMA = {
           },
           price: {
             type: 'string',
-            description: 'Ticket price as shown, e.g. Free, $10-15, $25 suggested donation.',
+            description:
+              'Ticket price exactly as shown. Cover free events, single prices, ranges, suggested or sliding-scale amounts, and pay-what-you-can. Examples: Free, $10-15, £20, €15–€40, $25 suggested donation, Pay what you can. Leave empty when the page states no price.',
           },
           ageRestriction: {
             type: 'string',
@@ -379,7 +381,9 @@ function buildSiteEventDraft(row, { pageUrl, timezone, now, extractionRules = []
       sourceUrl,
       source: 'generic-site',
       sourceTags: normalizeSourceTags(row?.tags),
-      price: trimString(row?.price) || null,
+      price: trimString(row?.price)
+        || priceTextFromListing(row?.description, row?.name)
+        || null,
       ageRestriction: trimString(row?.ageRestriction) || null,
     },
     { timezone, now },

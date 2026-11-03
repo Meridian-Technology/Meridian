@@ -100,6 +100,18 @@ const pivotMobileConfigSchema = new mongoose.Schema(
   { _id: false }
 );
 
+/** Per-city App Clip deck (stored whole; defaults in utilities/pivotClipConfig). */
+const pivotClipConfigSchema = new mongoose.Schema(
+  {
+    deckSource: { type: String, enum: ['week', 'custom'] },
+    cardLimit: { type: Number, min: 1, max: 24 },
+    hidePastEvents: { type: Boolean },
+    fallbackToWeek: { type: Boolean },
+    curatedEventIds: { type: [String], default: undefined },
+  },
+  { _id: false }
+);
+
 /** Per-city event discovery pipeline (sparse overrides; defaults in pivotDiscoveryConfig). */
 const pivotDiscoveryConfigSchema = new mongoose.Schema(
   {
@@ -231,6 +243,7 @@ const tenantEntrySchema = new mongoose.Schema(
     pivotCrewConfig: { type: pivotCrewConfigSchema, default: undefined },
     pivotDeckConfig: { type: pivotDeckConfigSchema, default: undefined },
     pivotMobileConfig: { type: pivotMobileConfigSchema, default: undefined },
+    pivotClipConfig: { type: pivotClipConfigSchema, default: undefined },
     creatorPublish: { type: creatorPublishConfigSchema, default: undefined },
     pivotDiscovery: { type: pivotDiscoveryConfigSchema, default: undefined },
     pivotComputeApply: { type: pivotComputeApplySchema, default: undefined },

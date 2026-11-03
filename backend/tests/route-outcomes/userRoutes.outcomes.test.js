@@ -210,4 +210,50 @@ describe('user route outcome tests', () => {
     expect(updated.pushAppEdition).toBe('pivot');
     expect(updated.pushAppProduct).toBe('justgo');
   });
+  test('GET /get-user returns only public profile fields', async () => {
+    const alice = await new User({
+      username: 'alicepublic',
+      name: 'Alice',
+      email: 'alice_public@example.com',
+      password: 'password123',
+      refreshToken: 'secret-refresh-token',
+    }).save();
+
+    const response = await request(app).get('/get-user').query({ userId: alice._id.toString() });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.body.user.username).toBe('alicepublic');
+    expect(response.body.user.name).toBe('Alice');
+    for (const field of ['email', 'password', 'refreshToken', 'adminMfa', 'roles']) {
+      expect(response.body.user).not.toHaveProperty(field);
+    }
+  });
+
+  test('GET /get-user rejects query operators in userId', async () => {
+    await new User({ username: 'victim', email: 'victim@example.com', password: 'password123' }).save();
+
+    const response = await request(app).get('/get-user?userId[$gt]=000000000000000000000000');
+
+    expect(response.statusCode).toBe(400);
+    expect(response.body.user).toBeUndefined();
+  });
+
+  test('GET /get-users returns only public profile fields and rejects operators', async () => {
+    const alice = await new User({ username: 'alicemany', email: 'alice_many@example.com', password: 'password123' }).save();
+    const bob = await new User({ username: 'bobmany', email: 'bob_many@example.com', password: 'password123' }).save();
+
+    const response = await request(app)
+      .get('/get-users')
+      .query({ userIds: [alice._id.toString(), bob._id.toString()] });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.body.users).toHaveLength(2);
+    for (const user of response.body.users) {
+      expect(user).not.toHaveProperty('email');
+      expect(user).not.toHaveProperty('password');
+    }
+
+    const injected = await request(app).get('/get-users?userIds[$ne]=000000000000000000000000');
+    expect(injected.statusCode).toBe(400);
+  });
 });

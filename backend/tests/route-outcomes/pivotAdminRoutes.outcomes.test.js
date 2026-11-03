@@ -176,6 +176,12 @@ jest.mock('../../services/pivotLandingService', () => ({
   updateTenantLandingMode: jest.fn(),
 }));
 
+jest.mock('../../services/pivotClipAdminService', () => ({
+  getTenantClipAdmin: jest.fn(),
+  updateTenantClipConfig: jest.fn(),
+  searchClipCandidateEvents: jest.fn(),
+}));
+
 jest.mock('../../services/pivotLandingWaitlistService', () => ({
   listTenantWaitlist: jest.fn(),
   exportTenantWaitlistCsv: jest.fn(),
@@ -289,6 +295,11 @@ const {
   exportTenantWaitlistCsv,
   deleteTenantWaitlistRow,
 } = require('../../services/pivotLandingWaitlistService');
+const {
+  getTenantClipAdmin,
+  updateTenantClipConfig,
+  searchClipCandidateEvents,
+} = require('../../services/pivotClipAdminService');
 const {
   listTenantLandingQrs,
   createTenantLandingQr,
@@ -3193,6 +3204,91 @@ describe('pivotAdminRoutes launch APIs (Task 4.1)', () => {
 
     expect(response.status).toBe(403);
     expect(getFleetLaunchStats).not.toHaveBeenCalled();
+  });
+});
+
+describe('pivotAdminRoutes App Clip', () => {
+  beforeEach(() => {
+    getTenantClipAdmin.mockReset();
+    updateTenantClipConfig.mockReset();
+    searchClipCandidateEvents.mockReset();
+    requirePlatformAdmin.mockImplementation((req, res, next) => next());
+  });
+
+  it('GET /admin/pivot/tenants/:tenantKey/clip returns settings and preview', async () => {
+    getTenantClipAdmin.mockResolvedValue({
+      data: { tenantKey: 'nyc', config: { deckSource: 'week' }, curated: [], preview: null },
+    });
+
+    const response = await request(buildApp()).get('/admin/pivot/tenants/nyc/clip');
+
+    expect(response.status).toBe(200);
+    expect(response.body.data.config.deckSource).toBe('week');
+    expect(getTenantClipAdmin).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ tenantKey: 'nyc' }),
+    );
+  });
+
+  it('PUT /admin/pivot/tenants/:tenantKey/clip passes the config through', async () => {
+    updateTenantClipConfig.mockResolvedValue({
+      data: { tenantKey: 'nyc', config: { deckSource: 'custom' } },
+    });
+
+    const response = await request(buildApp())
+      .put('/admin/pivot/tenants/nyc/clip')
+      .send({ config: { deckSource: 'custom' } });
+
+    expect(response.status).toBe(200);
+    expect(updateTenantClipConfig).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ tenantKey: 'nyc', config: { deckSource: 'custom' } }),
+    );
+  });
+
+  it('PUT /admin/pivot/tenants/:tenantKey/clip returns 400 for an invalid config', async () => {
+    updateTenantClipConfig.mockResolvedValue({
+      error: 'cardLimit must be a whole number from 1 to 24.',
+      status: 400,
+      code: 'INVALID_CLIP_CONFIG',
+    });
+
+    const response = await request(buildApp())
+      .put('/admin/pivot/tenants/nyc/clip')
+      .send({ config: { cardLimit: 0 } });
+
+    expect(response.status).toBe(400);
+    expect(response.body.code).toBe('INVALID_CLIP_CONFIG');
+  });
+
+  it('GET /admin/pivot/tenants/:tenantKey/clip/events forwards the search', async () => {
+    searchClipCandidateEvents.mockResolvedValue({ data: { events: [{ id: 'e1' }] } });
+
+    const response = await request(buildApp())
+      .get('/admin/pivot/tenants/nyc/clip/events')
+      .query({ q: 'film', includePast: 'true', limit: '10' });
+
+    expect(response.status).toBe(200);
+    expect(response.body.data.events).toHaveLength(1);
+    expect(searchClipCandidateEvents).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ tenantKey: 'nyc', q: 'film', includePast: 'true', limit: '10' }),
+    );
+  });
+
+  it('clip routes return 403 for non-admin', async () => {
+    requirePlatformAdmin.mockImplementation((_req, res) =>
+      res.status(403).json({ success: false, message: 'Platform admin required.' }),
+    );
+
+    const app = buildApp();
+    expect((await request(app).get('/admin/pivot/tenants/nyc/clip')).status).toBe(403);
+    expect((await request(app).put('/admin/pivot/tenants/nyc/clip').send({ config: {} })).status)
+      .toBe(403);
+    expect((await request(app).get('/admin/pivot/tenants/nyc/clip/events')).status).toBe(403);
+    expect(getTenantClipAdmin).not.toHaveBeenCalled();
+    expect(updateTenantClipConfig).not.toHaveBeenCalled();
+    expect(searchClipCandidateEvents).not.toHaveBeenCalled();
   });
 });
 

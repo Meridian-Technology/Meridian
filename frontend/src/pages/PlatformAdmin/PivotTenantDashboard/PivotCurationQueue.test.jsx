@@ -8,6 +8,7 @@ jest.mock('../PivotLab/PivotManualImportModal', () => ({
   isTypingTarget: () => false,
 }));
 jest.mock('../PivotLab/PivotImportThumb', () => () => <span>thumb</span>);
+jest.mock('../../../hooks/useFetch', () => ({ authenticatedRequest: jest.fn() }));
 jest.mock('../PivotLab/PivotTagMultiSelect', () => () => null);
 jest.mock('../../../components/Select/Select', () => () => null);
 jest.mock('./useCurationImmersiveScroll', () => ({
@@ -92,6 +93,7 @@ function queueProps(overrides = {}) {
     onBulkUnfeature: jest.fn(),
     onToggleFeatured: jest.fn(),
     onEditorialChange: jest.fn(),
+    onLocationReview: jest.fn(),
     onBulkEditorial: jest.fn(),
     ...overrides,
   };
@@ -198,10 +200,9 @@ describe('PivotCurationQueue catalog', () => {
     expect(screen.queryByText('Mission brunch')).not.toBeInTheDocument();
     expect(screen.getByRole('complementary', { name: 'Oakland disco details' })).toBeInTheDocument();
     expect(screen.getByText(/outside the city boundary/i)).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Open location review' })).toHaveAttribute(
-      'href',
-      '/platform-admin/pivot/sf?page=1&content=locations&batchWeek=2026-W38',
-    );
+    expect(screen.getByRole('button', { name: 'Resolve location' })).toBeInTheDocument();
+    // The Locations tab is flag-gated; without it there is nowhere to link to.
+    expect(screen.queryByRole('link', { name: 'All location reviews' })).not.toBeInTheDocument();
     expect(document.querySelector('.popup-overlay')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Publish' })).toBeDisabled();
     expect(screen.getByText('No cover image')).toBeInTheDocument();
@@ -210,6 +211,108 @@ describe('PivotCurationQueue catalog', () => {
     expect(document.querySelector('.popup-overlay')).toBeInTheDocument();
     expect(document.querySelector('.pivot-curation-inspect-popup')).toBeInTheDocument();
     expect(screen.getByRole('complementary', { name: 'Oakland disco dossier' })).toBeInTheDocument();
+  });
+
+  it('shows match confidence on the location review tag', () => {
+    mockMatchMedia(false);
+    const events = catalogEvents();
+    events[0].locationReview = {
+      status: 'needs_review',
+      reason: 'confidence_below_auto_apply',
+      confidence: 0.76,
+      candidateMatches: [{ venueName: 'Fox Oakland', formattedAddress: '1807 Telegraph Ave',
+        googlePlaceId: 'ChIJ-fox', coordinates: { type: 'Point', coordinates: [-122.27, 37.81] } }],
+    };
+    renderQueue({ events });
+    const flag = within(eventRow('Oakland disco')).getByText('Location review · 76%');
+    expect(flag).toHaveAttribute('title', expect.stringContaining("Google's top match: Fox Oakland (76% confidence)"));
+  });
+
+  it('offers a bulk Google location action for selected events with a match', () => {
+    mockMatchMedia(false);
+    const onBulkResolveLocation = jest.fn();
+    const events = catalogEvents();
+    events[0].locationReview = {
+      status: 'needs_review',
+      reason: 'ambiguous_provider_matches',
+      candidateMatches: [{ venueName: 'Fox Oakland', formattedAddress: '1807 Telegraph Ave',
+        googlePlaceId: 'ChIJ-fox', coordinates: { type: 'Point', coordinates: [-122.27, 37.81] } }],
+    };
+    renderQueue({ events, onBulkResolveLocation, selectedIds: new Set(['1', '2']) });
+    fireEvent.click(screen.getByRole('button', { name: 'Use Google location (1)' }));
+    expect(onBulkResolveLocation).toHaveBeenCalled();
+  });
+
+  it('hides the bulk Google action when no selected event has a usable match', () => {
+    mockMatchMedia(false);
+    renderQueue({ onBulkResolveLocation: jest.fn(), selectedIds: new Set(['1', '2']) });
+    expect(screen.queryByRole('button', { name: /Use Google location/ })).not.toBeInTheDocument();
+  });
+
+  it('resolves a location review in place without leaving curation', () => {
+    mockMatchMedia(false);
+    const onLocationReview = jest.fn();
+    const onStage = jest.fn();
+    const events = catalogEvents();
+    events[0].locationReview = {
+      status: 'needs_review',
+      reason: 'ambiguous_provider_matches',
+      candidateCount: 2,
+      candidateMatches: [
+        { mode: 'physical', venueName: 'Oakland Arena', formattedAddress: '7000 Coliseum Way' },
+        { mode: 'physical', venueName: 'Fox Oakland', formattedAddress: '1807 Telegraph Ave' },
+      ],
+    };
+    const { rerender } = renderQueue({ events, onLocationReview, onStage });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Resolve location' }));
+    const popup = document.querySelector('.pivot-curation-location-popup');
+    expect(popup).toBeInTheDocument();
+    expect(within(popup).getByText('Google found multiple plausible places')).toBeInTheDocument();
+
+    // Queue shortcuts stay quiet while the resolver is open.
+    fireEvent.keyDown(window, { key: 's' });
+    expect(onStage).not.toHaveBeenCalled();
+
+    fireEvent.click(within(popup).getByRole('button', { name: /Fox Oakland/ }));
+    fireEvent.click(within(popup).getByRole('button', { name: 'Save location' }));
+    expect(onLocationReview).toHaveBeenCalledWith(
+      '1',
+      'select_match',
+      expect.objectContaining({ venueName: 'Fox Oakland' }),
+      expect.objectContaining({ candidateSource: 'provider_candidate' }),
+    );
+
+    // Once the refreshed event no longer needs review, the resolver closes.
+    const resolved = catalogEvents();
+    resolved[0].locationReview = { status: 'approved' };
+    rerender(<PivotCurationQueue {...queueProps({ events: resolved, onLocationReview })} />);
+    expect(document.querySelector('.pivot-curation-location-popup')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Resolve location' })).not.toBeInTheDocument();
+  });
+
+  it('opens the location resolver from a blocked publish review and closes it with Escape', async () => {
+    mockMatchMedia(false);
+    const onLocationReview = jest.fn();
+    renderQueue({ onLocationReview });
+
+    fireEvent.keyDown(window, { key: 'p' });
+    expect(await screen.findByRole('heading', { name: 'This event is not ready' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Resolve' }));
+    expect(screen.queryByRole('heading', { name: 'This event is not ready' })).not.toBeInTheDocument();
+    expect(document.querySelector('.pivot-curation-location-popup')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('radio', { name: 'TBD' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Save location' }));
+    expect(onLocationReview).toHaveBeenCalledWith(
+      '1',
+      'correct_representation',
+      expect.objectContaining({ mode: 'tbd' }),
+      expect.objectContaining({ remember: true }),
+    );
+
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(document.querySelector('.pivot-curation-location-popup')).not.toBeInTheDocument();
   });
 
   it('opens true fullscreen over the dashboard and exits with Escape', () => {
@@ -462,5 +565,55 @@ describe('PivotCurationQueue catalog', () => {
     fireEvent.keyDown(window, { key: 'd' });
     expect(onDraft).toHaveBeenCalledWith(expect.objectContaining({ _id: '1', ingestStatus: 'staged' }));
     await waitFor(() => expect(onDraft).toHaveBeenCalled());
+  });
+});
+
+describe('pick mode', () => {
+  it('borrows the catalog without its status, feature, weight or edit controls', () => {
+    mockMatchMedia(false);
+    renderQueue({ mode: 'pick', selectedIds: new Set(['2']), title: 'Catalog · pick' });
+
+    expect(screen.getByText('Catalog · pick')).toBeInTheDocument();
+    expect(screen.getByRole('searchbox', { name: 'Search catalog' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Unpublished' })).toBeInTheDocument();
+    expect(screen.getByRole('complementary', { name: 'Oakland disco details' })).toBeInTheDocument();
+    for (const name of ['Publish', 'Edit', 'Feature', 'Delete', 'Draft', 'Fullscreen', 'Resolve location']) {
+      expect(screen.queryByRole('button', { name })).not.toBeInTheDocument();
+    }
+    expect(screen.queryByText('Use selection as exact set')).not.toBeInTheDocument();
+    expect(screen.getByText('1 selected')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^Unpublish \(/ })).not.toBeInTheDocument();
+  });
+
+  it('adds a clicked row to the picks instead of replacing them', () => {
+    mockMatchMedia(false);
+    const onSelectedIdsChange = jest.fn();
+    renderQueue({ mode: 'pick', selectedIds: new Set(['elsewhere']), onSelectedIdsChange });
+
+    fireEvent.pointerDown(eventRow('Mission brunch'), { button: 0, pointerId: 1 });
+
+    expect(onSelectedIdsChange).toHaveBeenLastCalledWith(new Set(['elsewhere', '2']));
+  });
+
+  it('ignores status hotkeys and keeps picks when moving focus', () => {
+    mockMatchMedia(false);
+    const onStage = jest.fn();
+    const onSelectedIdsChange = jest.fn();
+    renderQueue({
+      mode: 'pick',
+      onStage,
+      onSelectedIdsChange,
+      selectedIds: new Set(['elsewhere']),
+      events: [
+        { _id: '3', name: 'Draft disco', organizerName: 'Nico', ingestStatus: 'draft' },
+        { _id: '4', name: 'Draft brunch', organizerName: 'Ada', ingestStatus: 'draft' },
+      ],
+    });
+
+    fireEvent.keyDown(window, { key: 's' });
+    fireEvent.keyDown(screen.getByRole('grid', { name: 'Curation catalog' }), { key: 'ArrowDown' });
+
+    expect(onStage).not.toHaveBeenCalled();
+    expect(onSelectedIdsChange).not.toHaveBeenCalled();
   });
 });

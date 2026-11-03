@@ -30,12 +30,15 @@ import {
   padDropUnit,
   pickLandingCity,
   readStoredLandingCity,
+  landingTenantKeyForTimeZone,
+  resolveLandingLockedTenantKey,
   resolveLandingCountdownDropAt,
   scopeLandingCities,
   splitLandingDropCountdown,
   writeStoredLandingCity,
   justGoLegalPath,
 } from './justGoLandingUtils';
+import { getBrowserTimeZone } from './justGoPosterTzHop';
 import { projectJustGoPublicLandingEvent } from './justGoPublicLocation';
 import { useJustGoLandingMotion } from './justGoLandingMotion';
 import { isJustGoHost } from '../../config/tenantRedirect';
@@ -201,13 +204,23 @@ function JustGoWaitlistDialog({ copy, children, handleClose }) {
 function JustGoLanding() {
   const { tenantKey: tenantKeyParam } = useParams();
   const [searchParams] = useSearchParams();
-  const lockedTenantKey = landingTenantKeyFromParam(tenantKeyParam);
+  const routeTenantKey = landingTenantKeyFromParam(tenantKeyParam);
+  const timeZoneTenantKey = useMemo(
+    () => (routeTenantKey ? '' : landingTenantKeyForTimeZone(getBrowserTimeZone())),
+    [routeTenantKey],
+  );
   const desktop = useIsDesktop();
   const storeUrl = JUSTGO_IOS_STORE_URL;
   const { ref: ctaRef, visible: ctaVisible } = useHeroCtaVisible();
   const flyersRef = useRef(null);
   const [cities, setCities] = useState([]);
   const [citiesState, setCitiesState] = useState('loading');
+  const lockedTenantKey = resolveLandingLockedTenantKey({
+    routeTenantKey,
+    timeZoneTenantKey,
+    cities,
+    citiesState,
+  });
   const [selectedTenantKey, setSelectedTenantKey] = useState('');
   const [copy, setCopy] = useState(justGoLandingCopy);
   const [billboardEvents, setBillboardEvents] = useState([]);
@@ -225,13 +238,13 @@ function JustGoLanding() {
     if (qrQuery) search.set('qr', qrQuery);
     if (refQuery) search.set('ref', refQuery);
     recordLandingView({
-      tenantKey: lockedTenantKey,
+      tenantKey: routeTenantKey,
       search,
     });
     if (qrQuery) {
       void scanLandingQr({ name: qrQuery, search });
     }
-  }, [lockedTenantKey, srcQuery, qrQuery, refQuery]);
+  }, [routeTenantKey, srcQuery, qrQuery, refQuery]);
 
   useEffect(() => {
     analytics.screen('Just Go Landing');
@@ -257,7 +270,7 @@ function JustGoLanding() {
   }, [copy.documentTitle, copy.metaDescription]);
 
   useEffect(() => {
-    const href = justGoPublicLandingUrl(lockedTenantKey);
+    const href = justGoPublicLandingUrl(routeTenantKey);
     let link = document.querySelector('link[rel="canonical"][data-justgo-canonical]');
     if (!link) {
       link = document.createElement('link');
@@ -269,7 +282,7 @@ function JustGoLanding() {
     return () => {
       link.remove();
     };
-  }, [lockedTenantKey]);
+  }, [routeTenantKey]);
 
   useEffect(() => {
     const aliasHost = !isJustGoHost();
@@ -292,8 +305,8 @@ function JustGoLanding() {
 
   useEffect(() => {
     let cancelled = false;
-    const options = lockedTenantKey
-      ? { method: 'GET', params: { tenantKey: lockedTenantKey } }
+    const options = routeTenantKey
+      ? { method: 'GET', params: { tenantKey: routeTenantKey } }
       : { method: 'GET' };
     apiRequest('/pivot/landing/config', null, options)
       .then((res) => {
@@ -311,7 +324,7 @@ function JustGoLanding() {
     return () => {
       cancelled = true;
     };
-  }, [lockedTenantKey]);
+  }, [routeTenantKey]);
 
   useEffect(() => {
     let cancelled = false;

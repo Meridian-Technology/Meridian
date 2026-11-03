@@ -2,6 +2,7 @@ const getGlobalModels = require('./getGlobalModelService');
 const { createCurationJob, updateCurationJob } = require('./pivotCurationJobService');
 const { startCurationBatch } = require('./pivotCurationBatchService');
 const { toIsoWeek } = require('../utilities/pivotIsoWeek');
+const { normalizeEventDetails } = require('../utilities/pivotEventPrice');
 
 function trimString(value) {
   return typeof value === 'string' ? value.trim() : '';
@@ -36,6 +37,20 @@ function safeHttpsUrl(value, maxLength = 2048) {
   }
 }
 
+// Site maps sometimes link a calendar over plain http; the result contract only
+// accepts https, so upgrade those instead of failing the whole discovery run.
+function httpsProposalUrl(value, maxLength = 2048) {
+  const normalized = trimString(value);
+  if (!normalized) return null;
+  try {
+    const parsed = new URL(normalized);
+    if (parsed.protocol === 'http:') parsed.protocol = 'https:';
+    return safeHttpsUrl(parsed.href, maxLength);
+  } catch {
+    return null;
+  }
+}
+
 function createProposalCollector() {
   return {
     sources: [],
@@ -60,10 +75,11 @@ function contextJobToRuntime(job) {
 
 function buildSourceProposal(existing, outcome, seedTags) {
   const host = outcome.candidate.host;
+  const url = httpsProposalUrl(outcome.url) || httpsProposalUrl(`https://${host}/`);
   return {
     action: existing ? 'update' : 'create',
     host,
-    url: outcome.url,
+    url,
     label: trimString(outcome.label) || null,
     provider: outcome.provider,
     status: outcome.status,
@@ -73,7 +89,7 @@ function buildSourceProposal(existing, outcome, seedTags) {
     basedOnRecordVersion: existing?.recordVersion || null,
     evidence: {
       eventCount: outcome.eventCount || 0,
-      indexUrl: outcome.url,
+      indexUrl: url,
       discoveredVia: outcome.candidate.discoveredVia || null,
     },
   };
@@ -83,7 +99,7 @@ function buildCurationJobProposal(existing, { label, url, provider, defaultTags,
   return {
     action: existing ? 'update' : 'create',
     label,
-    url: url || null,
+    url: httpsProposalUrl(url),
     provider,
     enabled: existing?.enabled !== false,
     defaultTags: sortedTags(defaultTags),
@@ -134,6 +150,8 @@ function buildEventProposalFromEntry(entry, {
       sourceUrl,
       hostName: boundedString(draft.hostName || draft.host?.name, 300),
       hostProfileUrl: safeHttpsUrl(draft.hostProfileUrl || draft.host?.profileUrl),
+      ...(boundedString(draft.price, 300) ? { price: boundedString(draft.price, 300) } : {}),
+      ...(normalizeEventDetails(draft.details) ? { details: normalizeEventDetails(draft.details) } : {}),
       tags,
       ...(draft.scrapeEvidence ? { scrapeEvidence: {
         imageCandidates: [...new Set((draft.scrapeEvidence.imageCandidates || [])

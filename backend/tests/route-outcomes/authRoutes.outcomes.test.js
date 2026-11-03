@@ -40,6 +40,11 @@ jest.mock('../../services/autoClaimEventRegistrationsService', () => ({
   runAutoClaimAsync: jest.fn(),
 }));
 
+const mockSendEmail = jest.fn();
+jest.mock('../../services/resendClient', () => ({
+  getResend: jest.fn(() => ({ emails: { send: mockSendEmail } })),
+}));
+
 jest.mock('../../services/adminMfaService', () => ({
   isAdminLevelAccount: jest.fn(() => false),
   getMfaStatus: jest.fn(() => ({ configured: false, totpEnabled: false, passkeysCount: 0 })),
@@ -74,9 +79,16 @@ jest.mock('../../services/getModelService.js', () => {
   };
 });
 
+const bcrypt = require('bcrypt');
 const { isProfane } = require('../../services/profanityFilterService');
 const { createSession, createGlobalSession } = require('../../utilities/sessionUtils');
+const getGlobalModels = require('../../services/getGlobalModelService');
 const authRoutes = require('../../routes/authRoutes');
+
+function sentCode(callIndex = 0) {
+  const html = mockSendEmail.mock.calls[callIndex][0].html;
+  return html.match(/<strong>(\d{6})<\/strong>/)[1];
+}
 
 describe('auth route outcome tests', () => {
   let mongo;
@@ -198,5 +210,128 @@ describe('auth route outcome tests', () => {
     expect(response.statusCode).toBe(400);
     expect(response.body.success).toBe(false);
     expect(response.body.code).toBe('INVITE_EMAIL_MISMATCH');
+  });
+
+  describe('sign-up with an email that already has a GlobalUser', () => {
+    let GlobalUser;
+    let PlatformRole;
+    let PendingRegistration;
+    let TenantMembership;
+    let victim;
+
+    beforeEach(async () => {
+      isProfane.mockReturnValue(false);
+      mockSendEmail.mockResolvedValue({ data: { id: 'email-1' }, error: null });
+      ({ GlobalUser, PlatformRole, PendingRegistration, TenantMembership } = getGlobalModels(
+        { globalDb: mongo.globalConnection },
+        'GlobalUser',
+        'PlatformRole',
+        'PendingRegistration',
+        'TenantMembership'
+      ));
+      victim = await new GlobalUser({ email: 'victim@example.com', name: 'Victim' }).save();
+    });
+
+    const signup = {
+      username: 'Attacker123',
+      email: 'Victim@example.com',
+      password: 'attacker-pass',
+    };
+
+    test('holds the sign-up and emails a code to the account address', async () => {
+      const response = await request(app).post('/register').send(signup);
+
+      expect(response.statusCode).toBe(202);
+      expect(response.body.success).toBe(false);
+      expect(response.body.code).toBe('EMAIL_VERIFICATION_REQUIRED');
+      expect(response.body.data.verificationId).toEqual(expect.any(String));
+      expect(response.body.data.sentTo).toBe('v***@example.com');
+      expect(response.body.data.accessToken).toBeUndefined();
+      expect(response.headers['set-cookie']).toBeUndefined();
+
+      expect(await User.countDocuments()).toBe(0);
+      expect(createGlobalSession).not.toHaveBeenCalled();
+      expect(mockSendEmail).toHaveBeenCalledTimes(1);
+      expect(mockSendEmail.mock.calls[0][0].to).toEqual(['victim@example.com']);
+
+      const pending = await PendingRegistration.findOne({ email: 'victim@example.com' }).lean();
+      expect(pending.globalUserId.toString()).toBe(victim._id.toString());
+      expect(pending.passwordHash).not.toContain('attacker-pass');
+      expect(pending.codeHash).not.toBe(sentCode());
+    });
+
+    test('sends the code for a platform admin identity to the platform approver', async () => {
+      await new PlatformRole({ globalUserId: victim._id, roles: ['platform_admin'] }).save();
+
+      const response = await request(app).post('/register').send(signup);
+
+      expect(response.statusCode).toBe(202);
+      expect(response.body.data.requiresAdminApproval).toBe(true);
+      expect(response.body.data.sentTo).toBeNull();
+      expect(mockSendEmail).toHaveBeenCalledTimes(1);
+      expect(mockSendEmail.mock.calls[0][0].to).toEqual(['james@meridian.study']);
+      expect(mockSendEmail.mock.calls[0][0].html).toContain('victim@example.com');
+    });
+
+    test('rate-limits resending the code', async () => {
+      await request(app).post('/register').send(signup);
+      const again = await request(app).post('/register').send(signup);
+
+      expect(again.statusCode).toBe(429);
+      expect(again.body.code).toBe('VERIFICATION_RESEND_TOO_SOON');
+      expect(mockSendEmail).toHaveBeenCalledTimes(1);
+    });
+
+    test('locks the sign-up after too many wrong codes', async () => {
+      const held = await request(app).post('/register').send(signup);
+      const { verificationId } = held.body.data;
+      const code = sentCode();
+      const wrong = code === '000000' ? '111111' : '000000';
+
+      for (let i = 0; i < 5; i += 1) {
+        const attempt = await request(app).post('/register/verify').send({ verificationId, code: wrong });
+        expect(attempt.statusCode).toBe(400);
+      }
+      const correct = await request(app).post('/register/verify').send({ verificationId, code });
+
+      expect(correct.statusCode).toBe(400);
+      expect(correct.body.code).toBe('VERIFICATION_INVALID');
+      expect(await User.countDocuments()).toBe(0);
+    });
+
+    test('rejects non-string codes', async () => {
+      const held = await request(app).post('/register').send(signup);
+      const response = await request(app)
+        .post('/register/verify')
+        .send({ verificationId: held.body.data.verificationId, code: { $ne: null } });
+
+      expect(response.statusCode).toBe(400);
+      expect(response.body.code).toBe('VERIFICATION_INVALID');
+    });
+
+    test('creates the account and links the GlobalUser once the code is entered', async () => {
+      const held = await request(app).post('/register').send(signup);
+      const { verificationId } = held.body.data;
+
+      const response = await request(app).post('/register/verify').send({ verificationId, code: sentCode() });
+
+      expect(response.statusCode).toBe(201);
+      expect(response.body.success).toBe(true);
+      expect(response.headers['set-cookie']).toEqual(
+        expect.arrayContaining([expect.stringContaining('accessToken=')])
+      );
+
+      const savedUser = await User.findOne({ username: signup.username }).lean();
+      expect(savedUser.email).toBe('victim@example.com');
+      expect(await bcrypt.compare(signup.password, savedUser.password)).toBe(true);
+
+      const membership = await TenantMembership.findOne({ globalUserId: victim._id, tenantKey: 'rpi' }).lean();
+      expect(membership.tenantUserId.toString()).toBe(savedUser._id.toString());
+      expect(await PendingRegistration.countDocuments()).toBe(0);
+
+      const replay = await request(app).post('/register/verify').send({ verificationId, code: sentCode() });
+      expect(replay.statusCode).toBe(400);
+      expect(await User.countDocuments()).toBe(1);
+    });
   });
 });

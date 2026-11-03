@@ -282,8 +282,16 @@ describe('PivotTenantDashboard city operations shell', () => {
     renderDashboard('/platform-admin/pivot/nyc?page=12');
 
     expect(await screen.findByText('cover-lab-page:nyc')).toBeInTheDocument();
-    expect(screen.getByTestId('menu-8')).toHaveAttribute('data-selected', 'true');
-    expect(screen.queryByTestId('menu-12')).toBeNull();
+    expect(screen.getByTestId('menu-12')).toHaveTextContent('Cover lab (temp)');
+    expect(screen.getByTestId('menu-12')).toHaveAttribute('data-selected', 'true');
+    expect(screen.getByTestId('menu-8')).toHaveAttribute('data-selected', 'false');
+  });
+
+  it('shows Cover lab in the city nav when design review is enabled', () => {
+    mockDesignReviewEnabled = true;
+    renderDashboard('/platform-admin/pivot/nyc?page=8');
+
+    expect(screen.getByTestId('menu-12')).toHaveTextContent('Cover lab (temp)');
   });
 
   it('opens Carousels at the existing bookmark', () => {

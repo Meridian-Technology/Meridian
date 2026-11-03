@@ -1,0 +1,356 @@
+.pivot-clip {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+
+  &__muted {
+    font-size: 13px;
+    color: var(--pivot-ops-ink-muted);
+  }
+
+  &__error {
+    margin: 0 0 12px;
+    font-size: 13px;
+    color: var(--pivot-ops-danger);
+  }
+
+  &__subhead {
+    margin: 0 0 8px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--pivot-ops-ink);
+  }
+
+  &__check {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    color: var(--pivot-ops-ink);
+
+    input:disabled + * {
+      opacity: 0.5;
+    }
+  }
+
+  input[type='text'],
+  input[type='search'],
+  input[type='number'] {
+    min-width: 0;
+    padding: 8px 10px;
+    font: inherit;
+    font-size: 13px;
+    color: var(--pivot-ops-ink);
+    background: var(--pivot-ops-surface);
+    border: 1px solid var(--pivot-ops-border);
+    border-radius: var(--pivot-ops-radius-control);
+
+    &:focus {
+      outline: none;
+      border-color: var(--pivot-ops-accent);
+    }
+  }
+
+  code {
+    font-size: 12px;
+  }
+}
+
+.pivot-clip-status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+
+  &__summary {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  &__title {
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--pivot-ops-ink);
+  }
+
+  &__link {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+
+    code {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      padding: 6px 10px;
+      background: var(--pivot-ops-surface-subtle);
+      border-radius: var(--pivot-ops-radius-chip);
+    }
+  }
+
+  &__hint {
+    margin: 8px 0 0;
+  }
+}
+
+.pivot-clip-preview,
+.pivot-clip-pins,
+.pivot-clip-search__results,
+.pivot-clip-text__list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.pivot-clip-event {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 6px 8px;
+  border: 1px solid var(--pivot-ops-border);
+  border-radius: var(--pivot-ops-radius-control);
+  background: var(--pivot-ops-surface);
+
+  &__thumb {
+    flex-shrink: 0;
+    width: 40px;
+    height: 40px;
+    object-fit: cover;
+    border-radius: 8px;
+
+    &--empty {
+      background: var(--pivot-ops-surface-subtle);
+    }
+  }
+
+  &__copy {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    min-width: 0;
+  }
+
+  &__name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--pivot-ops-ink);
+  }
+
+  &__meta {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 12px;
+    color: var(--pivot-ops-ink-muted);
+  }
+}
+
+.pivot-clip-conversion {
+  margin-top: 12px;
+
+  &__metric .pivot-ops-metric__value {
+    color: var(--pivot-ops-ink-soft);
+  }
+}
+
+.pivot-clip-config {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+
+  &__source {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 10px 12px;
+    border: 1px solid var(--pivot-ops-border);
+    border-radius: var(--pivot-ops-radius-control);
+    cursor: pointer;
+
+    &:has(input:checked) {
+      border-color: var(--pivot-ops-accent);
+      background: var(--pivot-ops-accent-soft);
+    }
+
+    > span {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+  }
+
+  &__label {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--pivot-ops-ink);
+  }
+
+  &__grid {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 12px 24px;
+    margin-top: 16px;
+  }
+
+  &__field {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+
+    input {
+      width: 72px;
+    }
+  }
+}
+
+.pivot-clip-curation {
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid var(--pivot-ops-border);
+}
+
+.pivot-clip-pins {
+  margin-bottom: 16px;
+
+  &__row.is-skipped {
+    opacity: 0.55;
+  }
+
+  &__index {
+    flex-shrink: 0;
+    width: 20px;
+    text-align: right;
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+    color: var(--pivot-ops-ink-soft);
+  }
+
+  &__state {
+    flex-shrink: 0;
+    padding: 2px 8px;
+    font-size: 11px;
+    font-weight: 600;
+    border-radius: var(--pivot-ops-radius-chip);
+    color: var(--pivot-ops-warn);
+    background: var(--pivot-ops-warn-soft);
+
+    &--missing,
+    &--unpublished {
+      color: var(--pivot-ops-danger);
+      background: var(--pivot-ops-danger-soft);
+    }
+  }
+
+  &__actions {
+    display: flex;
+    flex-shrink: 0;
+    gap: 2px;
+  }
+
+  &__cap {
+    padding: 0 8px;
+    font-size: 12px;
+  }
+}
+
+.pivot-clip-search {
+  &__controls {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 12px;
+
+    input[type='search'] {
+      flex: 1 1 260px;
+    }
+  }
+
+  &__results {
+    max-height: 360px;
+    overflow-y: auto;
+  }
+}
+
+.pivot-clip-text {
+  &__group + &__group {
+    margin-top: 16px;
+  }
+
+  &__list {
+    gap: 10px;
+    margin-top: 0;
+  }
+
+  &__row {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+
+    &.is-override .pivot-clip-text__key {
+      color: var(--pivot-ops-accent);
+    }
+  }
+
+  &__meta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 8px;
+  }
+
+  &__key {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--pivot-ops-ink);
+  }
+
+  &__params {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 11px;
+    color: var(--pivot-ops-ink-soft);
+  }
+
+  &__badge {
+    padding: 1px 6px;
+    font-size: 11px;
+    font-weight: 600;
+    border-radius: var(--pivot-ops-radius-chip);
+    color: var(--pivot-ops-accent);
+    background: var(--pivot-ops-accent-soft);
+  }
+
+  &__edit {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+
+    input {
+      flex: 1;
+    }
+  }
+
+  &__hint {
+    margin: 0;
+    font-size: 12px;
+    color: var(--pivot-ops-ink-muted);
+
+    &.is-error {
+      color: var(--pivot-ops-danger);
+    }
+  }
+}

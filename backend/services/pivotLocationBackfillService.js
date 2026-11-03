@@ -1,5 +1,6 @@
 const getModels = require('./getModelService');
 const googleLocationService = require('./googleLocationService');
+const { createLocationMemoryLookup } = require('./pivotLocationMemoryService');
 const { preciseLocationInScope } = require('./justGoRichLocationWriteService');
 const {
   validateJustGoLocationConstraints,
@@ -112,6 +113,7 @@ function emptyCounts() {
     tbd: 0,
     registrationGated: 0,
     ambiguous: 0,
+    remembered: 0,
   };
 }
 
@@ -408,6 +410,11 @@ async function runLocationBackfill(params = {}) {
   const pacer = createProviderPacer(params);
   const adapter = params.googleAdapter || googleLocationService;
   const dryRun = Boolean(params.dryRun);
+  const memoryLookup = params.locationMemoryLookup || createLocationMemoryLookup({
+    db: params.db,
+    tenantKey,
+    recordUse: !dryRun,
+  });
   const dateNow = () => {
     const value = params.now ? params.now() : new Date();
     return new Date(value);
@@ -505,8 +512,43 @@ async function runLocationBackfill(params = {}) {
     const originalInput = trimString(
       event.customFields?.pivot?.rawLocationText || event.location,
     );
-    const classification = classifyLegacyLocation(originalInput, params.tenant);
     const now = dateNow();
+    const remembered = await memoryLookup(originalInput);
+    if (remembered?.richLocation) {
+      const { mode } = remembered.richLocation;
+      counts.applied += 1;
+      counts.remembered += 1;
+      if (mode === 'registration_gated') counts.registrationGated += 1;
+      else if (Object.prototype.hasOwnProperty.call(counts, mode)) counts[mode] += 1;
+      items.push({
+        eventId: String(event._id),
+        outcome: 'applied',
+        mode,
+        memoryId: remembered.memoryId,
+      });
+      if (!dryRun) {
+        const set = appliedSet(originalInput, remembered.richLocation, now, scope, batchWeek);
+        set['customFields.pivot.locationBackfill'].memoryId = remembered.memoryId;
+        const result = await Event.updateOne(
+          backfillEventFilter(event._id),
+          { $set: set },
+          { runValidators: true },
+        );
+        if (!result.modifiedCount) counts.skipped += 1;
+      }
+      checkpoint = event._id;
+      if (!dryRun) {
+        await persistCheckpoint(
+          RunModel,
+          stateFilter,
+          checkpoint,
+          addCounts(priorRun?.cumulativeCounts, counts),
+        );
+      }
+      continue;
+    }
+
+    const classification = classifyLegacyLocation(originalInput, params.tenant);
 
     if (classification.kind === 'categorical') {
       const richLocation = categoricalLocation(

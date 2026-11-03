@@ -26,6 +26,7 @@ const {
   mergePivotMobileConfigOverrides,
   validatePivotMobileConfigPatch,
 } = require('../utilities/pivotMobileConfig');
+const { validatePivotClipConfig } = require('../utilities/pivotClipConfig');
 const {
   validatePivotDiscoveryConfigPatch,
 } = require('../utilities/pivotDiscoveryConfig');
@@ -323,6 +324,12 @@ function normalizeTenantOverride(row = {}) {
     if (mobileValidation.patch && Object.keys(mobileValidation.patch).length > 0) {
       out.pivotMobileConfig = mobileValidation.patch;
     }
+  }
+
+  // Stored whole. An invalid value drops only this field, not the city's overrides.
+  if (row.pivotClipConfig !== undefined && row.pivotClipConfig !== null) {
+    const clipValidation = validatePivotClipConfig(row.pivotClipConfig);
+    if (clipValidation.config) out.pivotClipConfig = clipValidation.config;
   }
 
   if (row.creatorPublish !== undefined && row.creatorPublish !== null) {

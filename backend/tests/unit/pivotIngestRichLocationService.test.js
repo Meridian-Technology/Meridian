@@ -48,6 +48,30 @@ function resolver(overrides = {}) {
 }
 
 describe('resolveIngestRichLocation', () => {
+  it('applies a remembered reviewer decision before classifying or calling Google', async () => {
+    const geocodeAddress = jest.fn();
+    const locationMemoryLookup = jest.fn().mockResolvedValue({
+      memoryId: 'memory-1',
+      richLocation: { mode: 'online', originalInput: 'Online', publicDisplayLabel: 'Online',
+        resolutionStatus: 'not_applicable', revealPolicy: 'public' },
+    });
+    const result = await resolver({ location: 'the chapel sf', locationMemoryLookup,
+      googleAdapter: { geocodeAddress } });
+
+    expect(locationMemoryLookup).toHaveBeenCalledWith('the chapel sf');
+    expect(geocodeAddress).not.toHaveBeenCalled();
+    expect(result).toMatchObject({
+      outcome: 'applied',
+      richLocation: { mode: 'online' },
+      locationReview: { status: 'approved', source: 'location_memory', memoryId: 'memory-1' },
+    });
+  });
+
+  it('falls through to Google when nothing is remembered', async () => {
+    const result = await resolver({ locationMemoryLookup: jest.fn().mockResolvedValue(null) });
+    expect(result).toMatchObject({ outcome: 'applied', richLocation: { mode: 'physical' } });
+  });
+
   it.each([
     ['Online', 'online'],
     ['Venue TBD', 'tbd'],

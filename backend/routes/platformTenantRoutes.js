@@ -68,6 +68,10 @@ const {
 const {
   listLocationReviewCandidates,
   reviewLocationCandidate,
+  searchReviewPlaces,
+  resolveReviewPlace,
+  listLocationMemories,
+  forgetLocationMemory,
 } = require('../services/pivotLocationReviewService');
 
 const router = express.Router();
@@ -265,11 +269,12 @@ router.get(
   },
 );
 
+// Not gated on the migration UI flag: ingest blocks publishing on
+// `needs_review` regardless, so curation must be able to resolve it in place.
 router.post(
   '/admin/platform/tenants/:tenantKey/rich-location-migration/reviews/:eventId',
   verifyToken,
   requirePlatformAdmin,
-  requireRichLocationMigrationUi,
   async (req, res) => {
     try {
       const tenant = await migrationTenant(req, res);
@@ -281,6 +286,9 @@ router.post(
         candidateId: req.body?.candidateId,
         richLocation: req.body?.richLocation,
         notes: req.body?.notes,
+        candidateSource: req.body?.candidateSource,
+        remember: req.body?.remember === true,
+        applyToMatching: req.body?.applyToMatching === true,
       });
       if (result.error) {
         return res.status(result.status || 400).json({
@@ -295,6 +303,75 @@ router.post(
       return sendMigrationError(res, error, 'Unable to save rich-location review.');
     }
   },
+);
+
+function locationReviewRoute(label, fallbackMessage, handler) {
+  return async (req, res) => {
+    try {
+      const tenant = await migrationTenant(req, res);
+      if (!tenant) return undefined;
+      const result = await handler(req, tenant);
+      if (result.error) {
+        return res.status(result.status || 400).json({
+          success: false,
+          message: result.error,
+          code: result.code,
+        });
+      }
+      return res.json({ success: true, data: result.data });
+    } catch (error) {
+      console.error(`${label} failed:`, error.code || error.message);
+      return sendMigrationError(res, error, fallbackMessage);
+    }
+  };
+}
+
+// Reviewer tools for the location review inspector. Like the review POST,
+// these are not gated on the migration UI flag because curation uses them.
+router.get(
+  '/admin/platform/tenants/:tenantKey/rich-location-migration/places/search',
+  verifyToken,
+  requirePlatformAdmin,
+  locationReviewRoute('GET location review place search', 'Unable to search Google.',
+    (req, tenant) => searchReviewPlaces(req, {
+      tenantKey: tenant.tenantKey,
+      query: req.query?.q,
+    })),
+);
+
+router.get(
+  '/admin/platform/tenants/:tenantKey/rich-location-migration/places/:placeId',
+  verifyToken,
+  requirePlatformAdmin,
+  locationReviewRoute('GET location review place', 'Unable to load that Google place.',
+    (req, tenant) => resolveReviewPlace(req, {
+      tenantKey: tenant.tenantKey,
+      placeId: req.params.placeId,
+      originalInput: req.query?.originalInput,
+    })),
+);
+
+router.get(
+  '/admin/platform/tenants/:tenantKey/rich-location-migration/memories',
+  verifyToken,
+  requirePlatformAdmin,
+  locationReviewRoute('GET remembered locations', 'Unable to load remembered locations.',
+    (req, tenant) => listLocationMemories(req, {
+      tenantKey: tenant.tenantKey,
+      query: req.query?.q,
+      limit: req.query?.limit,
+    })),
+);
+
+router.delete(
+  '/admin/platform/tenants/:tenantKey/rich-location-migration/memories/:memoryId',
+  verifyToken,
+  requirePlatformAdmin,
+  locationReviewRoute('DELETE remembered location', 'Unable to forget that location.',
+    (req, tenant) => forgetLocationMemory(req, {
+      tenantKey: tenant.tenantKey,
+      memoryId: req.params.memoryId,
+    })),
 );
 
 router.post('/admin/platform/tenants', verifyToken, requirePlatformAdmin, async (req, res) => {

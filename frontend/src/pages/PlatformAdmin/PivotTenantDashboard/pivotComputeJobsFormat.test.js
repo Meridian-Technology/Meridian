@@ -1,4 +1,5 @@
 import {
+  describeComputeJobWake,
   formatAge,
   formatComputeJobKind,
   formatComputeJobOrigin,
@@ -11,6 +12,17 @@ import {
 } from './pivotComputeJobsFormat';
 
 describe('pivotComputeJobsFormat', () => {
+  it('describes a development run separately from a Mini wake', () => {
+    const messages = {
+      local: 'local',
+      accepted: 'accepted',
+      queued: 'queued',
+    };
+    expect(describeComputeJobWake({ status: 'local' }, messages)).toBe('local');
+    expect(describeComputeJobWake({ status: 'accepted' }, messages)).toBe('accepted');
+    expect(describeComputeJobWake({ status: 'failed' }, messages)).toBe('queued');
+  });
+
   it('labels discovery, refresh, and carousel kinds', () => {
     expect(formatComputeJobKind('city-source-discovery')).toBe('Source discovery');
     expect(formatComputeJobKind('city-curation-refresh')).toBe('Curation refresh');

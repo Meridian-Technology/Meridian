@@ -10,6 +10,7 @@ const {
 } = require('./pivotWeeklySnapshotService');
 const { serializePivotMovie } = require('../utilities/pivotMovieMetadata');
 const { serializePivotEnrichment } = require('../utilities/pivotEnrichment');
+const { eventDetailsForFeed } = require('../utilities/pivotEventPrice');
 const { projectEventRichLocation } = require('./justGoRichLocationProjectionService');
 const { isRichLocationCapabilityEnabled } = require('../utilities/justGoRichLocationControls');
 const { readRankingOverride } = require('../utilities/pivotEditorialPolicy');
@@ -54,6 +55,7 @@ function serializeLabEvent(event, intentStatsByEventId, options = {}) {
   const richLocation = projectEventRichLocation(event, undefined, {
     readsEnabled: options.richLocationReadsEnabled,
   });
+  const details = eventDetailsForFeed(pivot);
   const missingRichData = [];
   if (!event.description?.trim?.()) missingRichData.push('description');
   if (!event.image?.trim?.()) missingRichData.push('image');
@@ -90,6 +92,11 @@ function serializeLabEvent(event, intentStatsByEventId, options = {}) {
     ...(pivot.duplicateRollup ? { duplicateRollup: pivot.duplicateRollup } : {}),
     ...(pivot.rawLocationText ? { rawLocationText: pivot.rawLocationText } : {}),
     ...(pivot.locationReview ? { locationReview: pivot.locationReview } : {}),
+    ...(pivot.parsed?.price ? {
+      price: pivot.parsed.price.raw || '',
+      parsedPrice: pivot.parsed.price,
+    } : {}),
+    ...(details ? { details } : {}),
     organizerName: host.name || '',
     organizerImageUrl: host.imageUrl || null,
     organizerProfileUrl: host.profileUrl || null,

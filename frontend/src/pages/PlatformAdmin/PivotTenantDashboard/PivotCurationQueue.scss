@@ -793,6 +793,18 @@ html.is-curation-chrome-fullscreen {
   color: #8a5a00;
 }
 
+.pivot-curation-sheet__review-flag.is-likely {
+  background: rgba(22, 128, 61, 0.12);
+  border-color: rgba(22, 128, 61, 0.4);
+  color: #146c34;
+}
+
+.pivot-curation-sheet__review-flag.is-weak {
+  background: rgba(180, 35, 24, 0.1);
+  border-color: rgba(180, 35, 24, 0.4);
+  color: #9b2117;
+}
+
 .pivot-curation-sheet__broken-flag {
   display: inline-flex;
   margin: 4px 6px 0 0;
@@ -1114,6 +1126,13 @@ html.is-curation-chrome-fullscreen {
     line-height: 1.4;
     color: var(--pivot-ops-ink-muted);
   }
+}
+
+.pivot-curation-sheet__review-callout-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
 }
 
 .pivot-curation-sheet__inspect-kpis {

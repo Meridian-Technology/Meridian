@@ -307,8 +307,8 @@ function PivotTenantDashboard() {
     // In production, the old design-review bookmark returns to Carousels.
     items.push({
       key: 'coverLab',
-      hideFromNav: true,
-      navParentIndex: PIVOT_TENANT_PAGES.carousel,
+      hideFromNav: !DESIGN_REVIEW_ENABLED,
+      navParentIndex: DESIGN_REVIEW_ENABLED ? undefined : PIVOT_TENANT_PAGES.carousel,
       label: 'Cover lab (temp)',
       icon: 'mdi:palette-outline',
       element: DESIGN_REVIEW_ENABLED ? (

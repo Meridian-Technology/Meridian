@@ -48,6 +48,8 @@ const PIVOT_COPY_REMOTE_SECTIONS = Object.freeze([
   'notifications',
   // Just Go App Clip (overlay rides on GET /pivot/clip/drop)
   'clip',
+  // Just Go onboarding journey
+  'journey',
 ]);
 
 const PIVOT_COPY_DENIED_SECTIONS = Object.freeze([

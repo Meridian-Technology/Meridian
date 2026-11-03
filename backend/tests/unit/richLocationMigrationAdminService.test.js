@@ -222,6 +222,37 @@ describe('richLocationMigrationAdminService', () => {
     expect(result.cells.some((cell) => cell.count >= 2)).toBe(true);
   });
 
+  test('grids the city instead of stretching to far-off events', async () => {
+    const Event = {
+      find: jest.fn(() => ({
+        select: jest.fn().mockReturnThis(),
+        limit: jest.fn().mockReturnThis(),
+        lean: jest.fn().mockResolvedValue([
+          { richLocation: { coordinates: { coordinates: [-74.0, 40.7] } } },
+          { richLocation: { coordinates: { coordinates: [-118.2, 34.0] } } },
+        ]),
+      })),
+      countDocuments: jest.fn().mockResolvedValue(0),
+    };
+    getModels.mockReturnValue({ Event });
+
+    const result = await getHistoricLocationHeatmap({ tenant: TENANT });
+
+    expect(result.bounds).toEqual({ north: 41.5, south: 39.5, east: -72, west: -76 });
+    expect(result.cells).toEqual([expect.objectContaining({ count: 1 })]);
+    expect(result).toMatchObject({ pointCount: 2, outsideCount: 1 });
+  });
+
+  test('drops points outside the grid instead of clamping them to an edge', () => {
+    const { cells } = binHistoricPoints(
+      [{ latitude: 40.5, longitude: -74 }, { latitude: 34, longitude: -118 }],
+      { north: 41, south: 40, east: -73, west: -75 },
+      10,
+      10,
+    );
+    expect(cells).toEqual([{ x: 5, y: 5, count: 1 }]);
+  });
+
   test('places denser points into the same heatmap cell', () => {
     const { cells, maxCount } = binHistoricPoints(
       [

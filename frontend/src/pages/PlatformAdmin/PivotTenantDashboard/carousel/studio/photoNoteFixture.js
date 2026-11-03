@@ -81,7 +81,7 @@ export function createPhotoNoteDocument() {
         rotation: 2,
         crop: { focalX: 0.6, focalY: 0.5, scale: 1 },
         asset: {
-          src: '/justgo/cover-lab/lanterns.jpg',
+          src: 'https://images.unsplash.com/photo-1489580692268-d35aab289005?auto=format&fit=crop&w=1600&q=80',
           alt: 'Red lanterns hanging over a street, used as thematic imagery',
           credit: 'Paul Pastourmatzis',
         },

@@ -2,6 +2,7 @@ const globalUserSchema = require('../schemas/globalUser');
 const platformRoleSchema = require('../schemas/platformRole');
 const platformAdminInviteSchema = require('../schemas/platformAdminInvite');
 const tenantMembershipSchema = require('../schemas/tenantMembership');
+const pendingRegistrationSchema = require('../schemas/pendingRegistration');
 const globalSessionSchema = require('../schemas/globalSession');
 const tenantConfigSchema = require('../schemas/tenantConfig');
 const pivotReferralCodeSchema = require('../schemas/pivotReferralCode');
@@ -31,6 +32,13 @@ const justGoLandingEventSchema = require('../schemas/justGoLandingEvent');
 const justGoWaitlistSchema = require('../schemas/justGoWaitlist');
 const justGoCityInterestSchema = require('../schemas/justGoCityInterest');
 const justGoLandingQrSchema = require('../schemas/justGoLandingQr');
+const justGoCampaignSchema = require('../schemas/justGoCampaign');
+const justGoCampaignInviteSchema = require('../schemas/justGoCampaignInvite');
+const justGoAdmissionSchema = require('../schemas/justGoAdmission');
+const justGoTagSchema = require('../schemas/justGoTag');
+const justGoLiveEventSchema = require('../schemas/justGoLiveEvent');
+const justGoLiveFanSchema = require('../schemas/justGoLiveFan');
+const pivotExploreThemeSchema = require('../schemas/pivotExploreTheme');
 const pivotComputeJobSchema = require('../schemas/pivotComputeJob');
 const pivotComputeJobAttemptSchema = require('../schemas/pivotComputeJobAttempt');
 const meridianJobRunSchema = require('../schemas/meridianJobRun');
@@ -58,6 +66,13 @@ const getGlobalModels = (req, ...names) => {
         db.models?.[name] || db.model(name, schema, collection);
 
     const models = {
+        JustGoCampaign: model('JustGoCampaign', justGoCampaignSchema, 'justgo_campaigns'),
+        JustGoCampaignInvite: model('JustGoCampaignInvite', justGoCampaignInviteSchema, 'justgo_campaign_invites'),
+        JustGoAdmission: model('JustGoAdmission', justGoAdmissionSchema, 'justgo_admissions'),
+        JustGoTag: model('JustGoTag', justGoTagSchema, 'justgo_tags'),
+        JustGoLiveEvent: model('JustGoLiveEvent', justGoLiveEventSchema, 'justgo_live_events'),
+        JustGoLiveFan: model('JustGoLiveFan', justGoLiveFanSchema, 'justgo_live_fans'),
+        PivotExploreTheme: model('PivotExploreTheme', pivotExploreThemeSchema, 'pivot_explore_themes'),
         GlobalUser: model('GlobalUser', globalUserSchema, 'global_users'),
         PlatformRole: model('PlatformRole', platformRoleSchema, 'platform_roles'),
         PlatformAdminInvite: model(
@@ -66,6 +81,11 @@ const getGlobalModels = (req, ...names) => {
             'platform_admin_invites'
         ),
         TenantMembership: model('TenantMembership', tenantMembershipSchema, 'tenant_memberships'),
+        PendingRegistration: model(
+            'PendingRegistration',
+            pendingRegistrationSchema,
+            'pending_registrations'
+        ),
         Session: model('Session', globalSessionSchema, 'sessions'),
         TenantConfig: model('TenantConfig', tenantConfigSchema, 'tenant_config'),
         PivotReferralCode: model('PivotReferralCode', pivotReferralCodeSchema, 'pivot_referral_codes'),

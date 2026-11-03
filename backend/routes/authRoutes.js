@@ -12,6 +12,7 @@ const { verifyToken } = require('../middlewares/verifyToken.js');
 const { authenticateWithGoogle, authenticateWithApple, loginUser, registerUser, authenticateWithGoogleIdToken } = require('../services/userServices.js');
 const { sendUserRegisteredEvent } = require('../inngest/events.js');
 const getGlobalModels = require('../services/getGlobalModelService.js');
+const { startRegistrationVerification, checkRegistrationCode } = require('../services/registrationVerificationService');
 
 function getModels(req, ...names) {
     return require('../services/getModelService.js')(req, ...names);
@@ -217,6 +218,60 @@ function validateUsername(username) { //keeping logic external, for easier testi
     return regex.test(username);
 }
 
+/**
+ * Create the tenant user for a sign-up and accept its org invite. Pass either a
+ * raw `password` (hashed by the schema hook) or a `passwordHash` from a
+ * verified pending registration.
+ */
+async function createRegisteredUser(req, res, { username, email, password, passwordHash, inviteToken }) {
+    const { User, OrgInvite, OrgMember } = getModels(req, 'User', 'OrgInvite', 'OrgMember');
+
+    const user = new User(passwordHash ? { username, email } : { username, email, password });
+    await user.save();
+    if (passwordHash) {
+        // updateOne skips the pre-save hook, which would hash the hash again.
+        await User.updateOne({ _id: user._id }, { $set: { password: passwordHash } });
+    }
+
+    const { runAutoClaimAsync } = require('../services/autoClaimEventRegistrationsService');
+    runAutoClaimAsync(req, user._id.toString(), user.email);
+
+    // Process org invite if present
+    if (inviteToken) {
+        const invite = await OrgInvite.findOne({ token: inviteToken, status: 'pending' });
+        if (invite && new Date() <= invite.expires_at) {
+            const inviteEmail = invite.email?.toLowerCase();
+            const userEmail = user.email?.toLowerCase();
+            if (inviteEmail === userEmail) {
+                const existingMember = await OrgMember.findOne({ org_id: invite.org_id, user_id: user._id });
+                if (!existingMember) {
+                    const member = new OrgMember({
+                        org_id: invite.org_id,
+                        user_id: user._id,
+                        role: invite.role,
+                        status: 'active',
+                        assignedBy: invite.invited_by
+                    });
+                    await member.save();
+                    if (!user.clubAssociations) user.clubAssociations = [];
+                    if (!user.clubAssociations.some(c => c.toString() === invite.org_id)) {
+                        user.clubAssociations.push(invite.org_id);
+                        await user.save();
+                    }
+                    invite.status = 'accepted';
+                    invite.user_id = user._id;
+                    await invite.save();
+                    const { checkAndAutoApproveOrg } = require('../services/orgApprovalService');
+                    await checkAndAutoApproveOrg(req, invite.org_id);
+                }
+            }
+            res.clearCookie('org_invite_token', { path: '/' });
+        }
+    }
+
+    return user;
+}
+
 // Registration endpoint
 router.post('/register', async (req, res) => {
     // When on www, require school in body so we use the correct tenant DB (landing is www-only; app is tenant-only)
@@ -234,7 +289,7 @@ router.post('/register', async (req, res) => {
     const inviteToken = bodyInviteToken || req.cookies?.org_invite_token;
 
     try {
-        const { User, OrgInvite, OrgMember } = getModels(req, 'User', 'OrgInvite', 'OrgMember');
+        const { User, OrgInvite } = getModels(req, 'User', 'OrgInvite');
 
         if (inviteToken) {
             const invite = await OrgInvite.findOne({ token: inviteToken, status: 'pending' });
@@ -276,49 +331,25 @@ router.post('/register', async (req, res) => {
             return res.status(400).json({ success: false, message });
         }
 
-        // condition ? if true : if false;
-
-        // Create and save the new user
-        const user = new User({
-            username: username, email: email, password: password,
-        });
-        await user.save();
-
-        const { runAutoClaimAsync } = require('../services/autoClaimEventRegistrationsService');
-        runAutoClaimAsync(req, user._id.toString(), user.email);
-
-        // Process org invite if present
-        if (inviteToken) {
-            const invite = await OrgInvite.findOne({ token: inviteToken, status: 'pending' });
-            if (invite && new Date() <= invite.expires_at) {
-                const inviteEmail = invite.email?.toLowerCase();
-                const userEmail = user.email?.toLowerCase();
-                if (inviteEmail === userEmail) {
-                    const existingMember = await OrgMember.findOne({ org_id: invite.org_id, user_id: user._id });
-                    if (!existingMember) {
-                        const member = new OrgMember({
-                            org_id: invite.org_id,
-                            user_id: user._id,
-                            role: invite.role,
-                            status: 'active',
-                            assignedBy: invite.invited_by
-                        });
-                        await member.save();
-                        if (!user.clubAssociations) user.clubAssociations = [];
-                        if (!user.clubAssociations.some(c => c.toString() === invite.org_id)) {
-                            user.clubAssociations.push(invite.org_id);
-                            await user.save();
-                        }
-                        invite.status = 'accepted';
-                        invite.user_id = user._id;
-                        await invite.save();
-                        const { checkAndAutoApproveOrg } = require('../services/orgApprovalService');
-                        await checkAndAutoApproveOrg(req, invite.org_id);
-                    }
-                }
-                res.clearCookie('org_invite_token', { path: '/' });
-            }
+        // getOrCreateGlobalUser links by email, so registering an email that already
+        // has a GlobalUser would hand over that identity on every tenant. Hold the
+        // sign-up until the email (or, for platform admins, the approver) confirms it.
+        const { GlobalUser } = getGlobalModels(req, 'GlobalUser');
+        const existingGlobalUser = await GlobalUser.findOne({ email: String(email).trim().toLowerCase() });
+        if (existingGlobalUser) {
+            await new User({ username, email, password }).validate();
+            const held = await startRegistrationVerification(req, {
+                globalUser: existingGlobalUser,
+                email,
+                username,
+                password,
+                inviteToken,
+            });
+            console.log(`POST: /register ${username} held for email verification (${held.status})`);
+            return res.status(held.status).json(held.body);
         }
+
+        const user = await createRegisteredUser(req, res, { username, email, password, inviteToken });
 
         const globalUser = await authGlobalService.getOrCreateGlobalUser(req, user);
         await authGlobalService.getOrCreateTenantMembership(req, globalUser._id, user);
@@ -346,6 +377,75 @@ router.post('/register', async (req, res) => {
     } catch (error) {
         console.log(`POST: /register registration of ${username} failed`)
         console.log(error)
+        res.status(500).json({
+            success: false,
+            message: 'Error registering new user'
+        });
+    }
+});
+
+// Finish a sign-up that /register held for email verification
+router.post('/register/verify', async (req, res) => {
+    const { verificationId, code } = req.body || {};
+    try {
+        const checked = await checkRegistrationCode(req, { verificationId, code });
+        if (!checked.pending) {
+            return res.status(checked.status).json(checked.body);
+        }
+        const { pending } = checked;
+
+        if (req.school === 'www') {
+            req.school = pending.tenantKey;
+            req.db = await require('../connectionsManager').connectToDatabase(pending.tenantKey);
+        } else if (req.school !== pending.tenantKey) {
+            return res.status(400).json({
+                success: false,
+                code: 'VERIFICATION_TENANT_MISMATCH',
+                message: 'Finish signing up on the same school site where you started.'
+            });
+        }
+
+        const { PendingRegistration, GlobalUser } = getGlobalModels(req, 'PendingRegistration', 'GlobalUser');
+        // Consume the code before creating anything so a double submit can't make two users.
+        const consumed = await PendingRegistration.deleteOne({ _id: pending._id, verificationId: pending.verificationId });
+        if (consumed.deletedCount !== 1) {
+            return res.status(400).json({
+                success: false,
+                code: 'VERIFICATION_INVALID',
+                message: 'That code is invalid or has expired. Start sign-up again.'
+            });
+        }
+
+        const { User } = getModels(req, 'User');
+        const existingUsername = await User.findOne({ username: pending.username });
+        const existingEmail = await User.findOne({ email: pending.email });
+        if (existingUsername || existingEmail) {
+            const message = existingUsername && existingEmail ? 'Email and username are taken'
+                : existingEmail ? 'Email is taken'
+                    : 'Username is taken';
+            return res.status(400).json({ success: false, message });
+        }
+
+        const user = await createRegisteredUser(req, res, {
+            username: pending.username,
+            email: pending.email,
+            passwordHash: pending.passwordHash,
+            inviteToken: pending.inviteToken,
+        });
+
+        const globalUser = await GlobalUser.findById(pending.globalUserId)
+            || await authGlobalService.getOrCreateGlobalUser(req, user);
+        await authGlobalService.getOrCreateTenantMembership(req, globalUser._id, user);
+        const platformRoles = await authGlobalService.getPlatformRolesForGlobalUser(req, globalUser._id);
+        // Same admin MFA handling as /login: a verified sign-up still doesn't skip it.
+        const loginResult = await completeLoginWithAdminMfa(req, res, globalUser, user, platformRoles, 'User registered successfully');
+
+        console.log(`POST: /register/verify new user ${pending.username} (${pending.deliveryRoute})`);
+        sendDiscordMessage(`New user registered`, `user ${pending.username} registered`, "newUser");
+        res.status(loginResult.status === 200 ? 201 : loginResult.status).json(loginResult.body);
+    } catch (error) {
+        console.log(`POST: /register/verify failed`);
+        console.log(error);
         res.status(500).json({
             success: false,
             message: 'Error registering new user'

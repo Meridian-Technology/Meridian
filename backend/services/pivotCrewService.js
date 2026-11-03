@@ -9,11 +9,19 @@ const {
 } = require('./pivotCrewWeekStateService');
 const { toIsoWeek } = require('../utilities/pivotIsoWeek');
 const { isProfane } = require('./profanityFilterService');
+const {
+  generatePivotCrewJoinCode,
+  isJoinCodeCollision,
+  isPivotCrewJoinCode,
+  normalizePivotCrewJoinCode,
+} = require('../utilities/pivotCrewJoinCode');
 
 const CREW_NAME_MAX_LENGTH = 80;
 const MAX_INVITE_PLACEHOLDERS_PER_REQUEST = 20;
 const PIVOT_CREW_INVITED_DISPLAY_LABEL = 'invited';
 const PIVOT_CREW_JOIN_DEEP_LINK_PREFIX = 'meridian://pivot/crew/join?token=';
+/** Fresh codes to try when one collides with another crew's. */
+const JOIN_CODE_ATTEMPTS = 6;
 
 function unauthorized() {
   return { error: 'Authentication required.', status: 401, code: 'UNAUTHORIZED' };
@@ -69,7 +77,32 @@ function serializeCrewSummary(crew, counts = {}) {
     /** null = inherit tenant judgement.maxPickSlots */
     maxPickSlots:
       crew.maxPickSlots == null ? null : Number(crew.maxPickSlots),
+    /** Six characters a friend types to join. */
+    joinCode: crew.joinCode ?? null,
   };
+}
+
+/**
+ * Give a crew made before join codes its code. Safe to race: only a crew
+ * still without one is updated, and a collision just draws again.
+ */
+async function ensureCrewJoinCode(PivotCrew, crew) {
+  if (crew.joinCode) return crew.joinCode;
+  for (let attempt = 0; attempt < JOIN_CODE_ATTEMPTS; attempt += 1) {
+    try {
+      const updated = await PivotCrew.findOneAndUpdate(
+        { _id: crew._id, joinCode: null },
+        { $set: { joinCode: generatePivotCrewJoinCode() } },
+        { new: true },
+      ).lean();
+      if (updated) return updated.joinCode;
+      const current = await PivotCrew.findById(crew._id).select('joinCode').lean();
+      return current?.joinCode ?? null;
+    } catch (error) {
+      if (!isJoinCodeCollision(error)) throw error;
+    }
+  }
+  return null;
 }
 
 /**
@@ -426,12 +459,22 @@ async function createPivotCrew(req, options = {}) {
 
   const { PivotCrew, PivotCrewMembership } = getModels(req, 'PivotCrew', 'PivotCrewMembership');
 
-  const crew = await PivotCrew.create({
-    name,
-    createdBy: userObjectId,
-    tenantKey,
-    shareInviteToken,
-  });
+  let crew = null;
+  for (let attempt = 0; !crew; attempt += 1) {
+    try {
+      crew = await PivotCrew.create({
+        name,
+        createdBy: userObjectId,
+        tenantKey,
+        shareInviteToken,
+        joinCode: generatePivotCrewJoinCode(),
+      });
+    } catch (error) {
+      if (!isJoinCodeCollision(error) || attempt + 1 >= JOIN_CODE_ATTEMPTS) {
+        throw error;
+      }
+    }
+  }
 
   await PivotCrewMembership.create({
     crewId: crew._id,
@@ -524,8 +567,9 @@ async function getPivotCrewDetail(req, crewId) {
     return access;
   }
 
-  const { crew, membership, PivotCrewMembership } = access;
+  const { crew, membership, PivotCrewMembership, PivotCrew } = access;
   const { User } = getModels(req, 'User');
+  crew.joinCode = await ensureCrewJoinCode(PivotCrew, crew);
 
   const rosterRows = await PivotCrewMembership.find({
     crewId: crew._id,
@@ -669,6 +713,81 @@ async function joinPivotCrew(req, options = {}) {
   scheduleCrewWeekRecompute(req, { userId, batchWeek });
 
   return getPivotCrewDetail(req, crew._id.toString());
+}
+
+/** A live crew in this city by its join code or share link token. */
+async function findCrewByCodeOrToken(req, { code, token }) {
+  const tenantKey = normalizeTenantKey(req);
+  const { PivotCrew, PivotCrewMembership } = getModels(req, 'PivotCrew', 'PivotCrewMembership');
+  const joinCode = normalizePivotCrewJoinCode(code);
+  if (joinCode) {
+    if (!isPivotCrewJoinCode(joinCode)) {
+      return { error: 'That code isn’t right.', status: 400, code: 'INVALID_CODE' };
+    }
+    const crew = await PivotCrew.findOne({ joinCode, tenantKey, archivedAt: null }).lean();
+    return crew ? { crew } : notFound('No circle has that code.');
+  }
+  const trimmed = String(token || '').trim();
+  if (!trimmed) {
+    return { error: 'A code or invite link is required.', status: 400, code: 'CODE_REQUIRED' };
+  }
+  const { crew } = await findCrewByInviteToken(PivotCrew, PivotCrewMembership, trimmed, tenantKey);
+  return crew ? { crew } : notFound('Invite link is invalid or expired.');
+}
+
+/**
+ * "Is this your circle?" before joining: the circle's name and who's in it,
+ * names and photos only, by join code or invite link token. Signed-in and
+ * rate-limited at the route, since six characters can be guessed.
+ */
+async function previewPivotCrew(req, options = {}) {
+  const userId = req.user?.userId;
+  if (!userId) {
+    return unauthorized();
+  }
+  if (!normalizeTenantKey(req)) {
+    return invalidTenant();
+  }
+  const found = await findCrewByCodeOrToken(req, options);
+  if (found.error) {
+    return found;
+  }
+  const { crew } = found;
+  const { PivotCrewMembership, User } = getModels(req, 'PivotCrewMembership', 'User');
+  const active = await PivotCrewMembership.find({ crewId: crew._id, status: 'active' })
+    .sort({ role: 1, joinedAt: 1 })
+    .select('userId')
+    .lean();
+  const ids = active.map((row) => row.userId).filter(Boolean);
+  const users = ids.length
+    ? await User.find({ _id: { $in: ids } }).select('name picture').lean()
+    : [];
+  const userById = new Map(users.map((user) => [user._id.toString(), user]));
+  return {
+    data: {
+      crew: { name: crew.name, memberCount: ids.length },
+      members: ids.map((id) => {
+        const user = userById.get(id.toString());
+        return { name: user?.name || 'member', picture: user?.picture || null };
+      }),
+      alreadyMember: ids.some((id) => id.toString() === userId.toString()),
+    },
+  };
+}
+
+/** Join by the six-character code: the same join as the crew's share link. */
+async function joinPivotCrewByCode(req, options = {}) {
+  if (!req.user?.userId) {
+    return unauthorized();
+  }
+  if (!normalizeTenantKey(req)) {
+    return invalidTenant();
+  }
+  const found = await findCrewByCodeOrToken(req, { code: options.code });
+  if (found.error) {
+    return found;
+  }
+  return joinPivotCrew(req, { token: found.crew.shareInviteToken });
 }
 
 async function addPivotCrewMember(req, crewId, options = {}) {
@@ -1093,6 +1212,9 @@ module.exports = {
   deletePivotCrew,
   rotatePivotCrewInviteLink,
   joinPivotCrew,
+  previewPivotCrew,
+  joinPivotCrewByCode,
+  ensureCrewJoinCode,
   invitePivotCrewPlaceholders,
   addPivotCrewMember,
   listPivotCrewInvites,

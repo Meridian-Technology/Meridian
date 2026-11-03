@@ -1,3 +1,6 @@
+/** Events a host made in the app rather than ones crawled from a source. */
+export const HOST_CREATED_SOURCE = 'justgo';
+
 export const FILTER_OPTIONS = [
   { value: 'all', label: 'All' },
   { value: 'unpublished', label: 'Unpublished' },
@@ -58,4 +61,40 @@ export function eventMatchesCatalogSearch(event, query) {
     .join(' ')
     .toLowerCase();
   return haystack.includes(needle);
+}
+
+export function isHostCreatedEvent(event) {
+  return event?.source === HOST_CREATED_SOURCE;
+}
+
+export function eventMatchesSourceFilter(event, sourceFilter) {
+  if (!sourceFilter || sourceFilter === 'all') return true;
+  if (sourceFilter === HOST_CREATED_SOURCE) return isHostCreatedEvent(event);
+  return true;
+}
+
+/** Newest host drafts first when Host-created filter is active; otherwise soft-boost them. */
+export function compareCurationEvents(a, b, { hostCreatedOnly = false } = {}) {
+  if (hostCreatedOnly) {
+    const aSubmitted = a.creatorSubmittedAt ? Date.parse(a.creatorSubmittedAt) : 0;
+    const bSubmitted = b.creatorSubmittedAt ? Date.parse(b.creatorSubmittedAt) : 0;
+    if (bSubmitted !== aSubmitted) return bSubmitted - aSubmitted;
+    const aStart = a.start_time ? Date.parse(a.start_time) : 0;
+    const bStart = b.start_time ? Date.parse(b.start_time) : 0;
+    return aStart - bStart;
+  }
+
+  const aHostDraft = isHostCreatedEvent(a) && a.ingestStatus === 'draft' ? 1 : 0;
+  const bHostDraft = isHostCreatedEvent(b) && b.ingestStatus === 'draft' ? 1 : 0;
+  if (bHostDraft !== aHostDraft) return bHostDraft - aHostDraft;
+
+  if (aHostDraft && bHostDraft) {
+    const aSubmitted = a.creatorSubmittedAt ? Date.parse(a.creatorSubmittedAt) : 0;
+    const bSubmitted = b.creatorSubmittedAt ? Date.parse(b.creatorSubmittedAt) : 0;
+    if (bSubmitted !== aSubmitted) return bSubmitted - aSubmitted;
+  }
+
+  const aStart = a.start_time ? Date.parse(a.start_time) : 0;
+  const bStart = b.start_time ? Date.parse(b.start_time) : 0;
+  return aStart - bStart;
 }

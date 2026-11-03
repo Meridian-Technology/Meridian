@@ -14,13 +14,13 @@ import {
 import { formatBatchWeekRange, isValidIsoWeek, toIsoWeek } from '../../../utils/pivotIsoWeek';
 import PivotBatchWeekPicker from './PivotBatchWeekPicker';
 import PivotHistoricLocationHeatmap from './PivotHistoricLocationHeatmap';
+import PivotLocationMemoryList from './PivotLocationMemoryList';
 import PivotLocationReviewInspector from './PivotLocationReviewInspector';
+import { locationReviewSavedMessage } from './curationPublishFeedback';
 import PivotTenantPage from './PivotTenantPage';
 import usePivotBatchWeekState from './usePivotBatchWeekState';
+import { RICH_LOCATION_MIGRATION_UI_ENABLED } from './richLocationMigrationFlag';
 import './PivotTenantLocationMigrationPage.scss';
-
-const RICH_LOCATION_MIGRATION_UI_ENABLED =
-  process.env.REACT_APP_ENABLE_RICH_LOCATION_MIGRATION_UI === 'true';
 
 const EMPTY_CONTROLS = {
   rollout: 'off',
@@ -260,6 +260,7 @@ export default function PivotTenantLocationMigrationPage({
   const [savingConfig, setSavingConfig] = useState(false);
   const [reviewingId, setReviewingId] = useState(null);
   const [selectedReviewId, setSelectedReviewId] = useState(null);
+  const [memoryRefreshToken, setMemoryRefreshToken] = useState(0);
   const [lastResult, setLastResult] = useState(null);
 
   useEffect(() => {
@@ -411,7 +412,7 @@ export default function PivotTenantLocationMigrationPage({
     refresh();
   };
 
-  const reviewCandidate = async (eventId, action, richLocation) => {
+  const reviewCandidate = async (eventId, action, richLocation, options = {}) => {
     if (action === 'invalid_json') {
       notifyError('Invalid location JSON', 'The rich location must be valid JSON.');
       return;
@@ -419,7 +420,7 @@ export default function PivotTenantLocationMigrationPage({
     setReviewingId(eventId);
     const { data, error } = await authenticatedRequest(`${baseUrl}/reviews/${eventId}`, {
       method: 'POST',
-      data: { action, ...(richLocation !== undefined ? { richLocation } : {}) },
+      data: { action, ...(richLocation !== undefined ? { richLocation } : {}), ...options },
       headers: { 'Content-Type': 'application/json' },
     });
     setReviewingId(null);
@@ -427,8 +428,12 @@ export default function PivotTenantLocationMigrationPage({
       notifyError('Could not save decision', data?.message || error);
       return;
     }
-    const name = reviews.find((candidate) => candidate.eventId === eventId)?.name || eventId;
-    addNotification({ title: 'Location decision saved', message: name, type: 'success' });
+    addNotification({
+      title: 'Location decision saved',
+      message: locationReviewSavedMessage(data.data) || eventId,
+      type: 'success',
+    });
+    if (data.data?.memory) setMemoryRefreshToken((token) => token + 1);
     refresh();
   };
 
@@ -536,14 +541,18 @@ export default function PivotTenantLocationMigrationPage({
                       {reviews.map((candidate) => (
                         <tr key={candidate.eventId} className={candidate.eventId === selectedReviewId ? 'is-selected' : ''} onClick={() => setSelectedReviewId(candidate.eventId)}>
                           <td><strong>{candidate.name || 'Untitled event'}</strong><code>{candidate.eventId}</code></td>
-                          <td>{candidate.rawLocationText || candidate.legacyLocation || 'No location supplied'}</td>
+                          <td>
+                            {candidate.rawLocationText || candidate.legacyLocation || 'No location supplied'}
+                            {candidate.matchingCount > 0 ? <small>+{candidate.matchingCount} with same text</small> : null}
+                            {candidate.rememberedLocation ? <small>Matched before</small> : null}
+                          </td>
                           <td><strong>{candidate.whyReview?.title || 'Human decision needed'}</strong></td>
                         </tr>
                       ))}
                     </tbody>
                   </table>
                 </div>
-                <PivotLocationReviewInspector candidate={selectedReview} busy={reviewingId === selectedReview?.eventId} onReview={reviewCandidate} />
+                <PivotLocationReviewInspector candidate={selectedReview} busy={reviewingId === selectedReview?.eventId} onReview={reviewCandidate} tenantKey={tenantKey} />
               </div>
             ) : (
               <div className="pivot-location-migration__empty-state">
@@ -554,6 +563,10 @@ export default function PivotTenantLocationMigrationPage({
         </main>
 
         <aside>
+          <PivotOpsSection title="Remembered locations" description="Source text you have already resolved. New events with the same text use your decision instead of asking again.">
+            <PivotLocationMemoryList baseUrl={baseUrl} refreshToken={memoryRefreshToken} onError={notifyError} />
+          </PivotOpsSection>
+
           <PivotOpsSection title="City boundary" description="Look up a Google bounding box for this city, then review it before saving. Suggestions outside the box are sent to you for review.">
             <div className="pivot-location-migration__lookup">
               <label className="pivot-location-migration__field">

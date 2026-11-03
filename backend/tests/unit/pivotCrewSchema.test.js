@@ -71,6 +71,29 @@ describe('PivotCrew + PivotCrewMembership schemas (Task 1.1)', () => {
     });
   });
 
+  describe('PivotCrew join codes', () => {
+    const crewWith = (joinCode) =>
+      PivotCrew.create({
+        name: 'Code Crew',
+        createdBy: ownerId,
+        tenantKey,
+        shareInviteToken: PivotCrewMembership.generateInviteToken(),
+        ...(joinCode === undefined ? {} : { joinCode }),
+      });
+
+    it('allows any number of crews without a code', async () => {
+      await crewWith(undefined);
+      await crewWith(null);
+      expect(await PivotCrew.countDocuments({ joinCode: null })).toBe(2);
+    });
+
+    it('keeps each code to one crew, whatever case it was given in', async () => {
+      const crew = await crewWith('abc234');
+      expect(crew.joinCode).toBe('ABC234');
+      await expect(crewWith('ABC234')).rejects.toMatchObject({ code: 11000 });
+    });
+  });
+
   describe('PivotCrewMembership', () => {
     async function createCrew(name) {
       return PivotCrew.create({

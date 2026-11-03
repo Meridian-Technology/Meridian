@@ -64,8 +64,46 @@ describe('pivotEntryService.listPivotCities', () => {
         cityDisplayName: 'New York City',
         status: 'active',
         statusMessage: '',
+        // No stored drop schedule: the pilot default.
+        timeZone: 'America/New_York',
+        latitude: expect.closeTo(40.71, 1),
+        longitude: expect.closeTo(-74.01, 1),
       },
     ]);
+  });
+
+  it('carries each city\'s drop time zone and where it is', async () => {
+    getMergedTenants.mockResolvedValue([
+      {
+        tenantKey: 'sf',
+        location: 'San Francisco, California',
+        status: 'active',
+        tenantType: 'pivot',
+        pivotDropTimezone: 'America/Los_Angeles',
+        pivotDropDayOfWeek: 0,
+        pivotDropHour: 18,
+      },
+    ]);
+
+    const [city] = (await listPivotCities({})).data.cities;
+    expect(city.timeZone).toBe('America/Los_Angeles');
+    expect(city.latitude).toBeCloseTo(37.77, 1);
+    expect(city.longitude).toBeCloseTo(-122.42, 1);
+  });
+
+  it('leaves the place empty for a city the directory has no match for', async () => {
+    getMergedTenants.mockResolvedValue([
+      {
+        tenantKey: 'qq',
+        location: 'Qqzzyx, Nowhere',
+        status: 'active',
+        tenantType: 'pivot',
+      },
+    ]);
+
+    const [city] = (await listPivotCities({})).data.cities;
+    expect(city.latitude).toBeNull();
+    expect(city.longitude).toBeNull();
   });
 });
 

@@ -784,6 +784,35 @@ describe('getPivotExplore', () => {
         'passed',
       );
     });
+
+    it("keeps a live theme's passed picks, marked passed, while the page hides them", async () => {
+      mockExploreModels(mixedEvents, mixedIntents);
+      const theme = {
+        _id: '665a0000000000000000ee01',
+        name: 'Halloween',
+        tagline: 'spooky season is here',
+        startsAt: new Date('2026-05-20T00:00:00.000Z'),
+        endsAt: new Date('2026-06-01T00:00:00.000Z'),
+        eventIds: ['665a000000000000000000a1', '665a000000000000000000d4'],
+      };
+      const themeModel = {
+        findOne: jest.fn(() => ({
+          sort: jest.fn(() => ({ lean: jest.fn().mockResolvedValue(theme) })),
+        })),
+      };
+      const themedReq = {
+        ...req,
+        globalDb: { model: jest.fn((name) => (name === 'PivotExploreTheme' ? themeModel : {})) },
+      };
+
+      const result = await getPivotExplore(themedReq, { batchWeek: '2026-W22', now });
+
+      expect(result.data.events.find((event) => event.name === 'Passed Event')).toBeUndefined();
+      expect(result.data.theme.events.map((event) => [event.name, event.userIntent])).toEqual([
+        ['Passed Event', 'passed'],
+        ['Fresh Event', null],
+      ]);
+    });
   });
 
   it('filters by catalog tag and adds tag constraint to the Event query', async () => {

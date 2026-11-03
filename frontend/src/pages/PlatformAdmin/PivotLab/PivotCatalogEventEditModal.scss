@@ -24,6 +24,56 @@
     overflow-y: auto;
   }
 
+  &__tickets {
+    margin: 0 0 8px;
+    border: 1px solid var(--la-border-subtle);
+    border-radius: 8px;
+    background: var(--la-surface-inset, transparent);
+
+    ul {
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+
+    li {
+      display: flex;
+      align-items: baseline;
+      gap: 8px;
+      padding: 8px 10px;
+      border-top: 1px solid var(--la-border-subtle);
+      font-size: 13px;
+
+      strong {
+        margin-left: auto;
+        font-weight: 650;
+      }
+
+      em {
+        font-style: normal;
+        color: var(--la-text-tertiary);
+        font-size: 12px;
+      }
+    }
+  }
+
+  &__ticket-summary {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin: 0;
+    padding: 8px 10px;
+    color: var(--la-text-secondary);
+    font-size: 12px;
+    font-weight: 600;
+
+    strong {
+      margin-left: auto;
+      color: var(--la-text);
+      font-size: 13px;
+    }
+  }
+
   &__enrichment-warn {
     margin: 0 0 12px;
     padding: 10px 12px;

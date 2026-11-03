@@ -213,6 +213,75 @@ describe('pivotFeedService helpers', () => {
     expect(payload).not.toHaveProperty('crewInterestedCount');
     expect(payload).not.toHaveProperty('crewRegisteredCount');
     expect(payload).not.toHaveProperty('hostingId');
+    expect(payload).not.toHaveProperty('details');
+  });
+
+  it('serializePivotFeedEvent sends stored ticket tiers and falls back to a parsed price', () => {
+    const stored = serializePivotFeedEvent(
+      {
+        _id: '665a1b2c3d4e5f6789012345',
+        name: 'Open Mic',
+        start_time: new Date('2026-05-28T19:00:00.000Z'),
+        customFields: {
+          pivot: {
+            host: { name: 'Host' },
+            source: 'luma',
+            details: {
+              version: 1,
+              admission: 'paid',
+              ticketProvider: 'Luma',
+              tiers: [
+                { id: 'ga', name: 'General', kind: 'general', price: { amountMinor: 2000, currency: 'USD' } },
+                { id: 'sup', name: 'Supporter', kind: 'other', price: { amountMinor: 3000, currency: 'USD' } },
+              ],
+            },
+          },
+        },
+      },
+      {
+        displayHost: { name: 'Host' },
+        userIntent: null,
+        friendsInterested: [],
+        friendsGoing: [],
+        friendsInterestedCount: 0,
+        friendsGoingCount: 0,
+      },
+    );
+    expect(stored.details.tiers).toHaveLength(2);
+    expect(stored.details.priceRange).toEqual({
+      min: { amountMinor: 2000, currency: 'USD' },
+      max: { amountMinor: 3000, currency: 'USD' },
+    });
+
+    const fallback = serializePivotFeedEvent(
+      {
+        _id: '665a1b2c3d4e5f6789012345',
+        name: 'Open Mic',
+        start_time: new Date('2026-05-28T19:00:00.000Z'),
+        customFields: {
+          pivot: {
+            host: { name: 'Host' },
+            parsed: { price: { raw: '$15–$40', min: 15, max: 40, currency: 'USD' } },
+          },
+        },
+      },
+      {
+        displayHost: { name: 'Host' },
+        userIntent: null,
+        friendsInterested: [],
+        friendsGoing: [],
+        friendsInterestedCount: 0,
+        friendsGoingCount: 0,
+      },
+    );
+    expect(fallback.details).toEqual({
+      version: 1,
+      admission: 'paid',
+      priceRange: {
+        min: { amountMinor: 1500, currency: 'USD' },
+        max: { amountMinor: 4000, currency: 'USD' },
+      },
+    });
   });
 
   it('serializePivotFeedEvent includes crew counts when non-zero', () => {

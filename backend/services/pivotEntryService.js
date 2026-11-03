@@ -1,18 +1,28 @@
 const mongoose = require('mongoose');
 const { getMergedTenants, getTenantByKey } = require('./tenantConfigService');
-const { isPivotTenant } = require('../utilities/pivotDropSchedule');
+const { isPivotTenant, resolvePivotDropConfig } = require('../utilities/pivotDropSchedule');
+const { locateTenantCity } = require('./justGoCityDirectoryService');
 const { validateReferralCode, redeemReferralCode } = require('./pivotReferralCodeService');
 const { reactivatePivotParticipationByGlobalUserId } = require('./pivotProfileService');
 
 const SELECTABLE_STATUSES = new Set(['active']);
 
+/**
+ * A live city for the app's picker: its drop's time zone, so the app can
+ * suggest the one nearest the phone's, and where it is, for the map.
+ */
 function serializePivotCity(tenant) {
+  const cityDisplayName = tenant.location || tenant.name || tenant.tenantKey;
+  const place = locateTenantCity(cityDisplayName);
   return {
     tenantKey: tenant.tenantKey,
     subdomain: tenant.subdomain || tenant.tenantKey,
-    cityDisplayName: tenant.location || tenant.name || tenant.tenantKey,
+    cityDisplayName,
     status: tenant.status,
     statusMessage: tenant.statusMessage || '',
+    timeZone: resolvePivotDropConfig(tenant).timezone,
+    latitude: place ? place.latitude : null,
+    longitude: place ? place.longitude : null,
   };
 }
 

@@ -133,6 +133,9 @@ function toStoredTenantRow(tenant) {
   if (Object.prototype.hasOwnProperty.call(tenant, 'pivotMobileConfig')) {
     payload.pivotMobileConfig = tenant.pivotMobileConfig;
   }
+  if (tenant.pivotClipConfig) {
+    payload.pivotClipConfig = tenant.pivotClipConfig;
+  }
   if (isDefault) {
     const base = DEFAULT_TENANTS.find((row) => row.tenantKey === tenant.tenantKey);
     const defaultConfirmations = { dns: false, cors: false, pickerVerified: false };

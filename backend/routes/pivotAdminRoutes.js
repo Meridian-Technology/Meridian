@@ -136,6 +136,11 @@ const { getPivotExplorePreview } = require('../services/pivotExploreService');
 const { getPivotRetention } = require('../services/pivotRetentionService');
 const { listPivotLabEvents } = require('../services/pivotLabEventsService');
 const {
+  getTenantClipAdmin,
+  updateTenantClipConfig,
+  searchClipCandidateEvents,
+} = require('../services/pivotClipAdminService');
+const {
   getInterviewNotes,
   saveInterviewNotes,
 } = require('../services/pivotLabNotesService');
@@ -224,6 +229,11 @@ const {
 const router = express.Router();
 
 router.use(pivotRequestLogger);
+
+router.use('/campaigns', require('./justGoCampaignAdminRoutes'));
+router.use('/tenants/:tenantKey/tags', require('./justGoTagAdminRoutes'));
+router.use('/tenants/:tenantKey/explore-themes', require('./pivotExploreThemeAdminRoutes'));
+router.use('/live-events', require('./justGoLiveAdminRoutes'));
 
 function sendCopyAdminResult(res, result) {
   if (result.error) {
@@ -1112,7 +1122,11 @@ router.post(
       return sendDeckResult(res, await createCurationDraft(req, req.params.accountId, req.body || {}), 201);
     } catch (err) {
       logPivotRouteError('POST carousel curation draft', err, req);
-      return res.status(500).json({ success: false, message: 'Unable to save the curation draft.' });
+      return res.status(500).json({
+        success: false,
+        message: 'Unable to save the curation draft.',
+        ...(process.env.NODE_ENV !== 'production' && err?.message ? { detail: err.message } : {}),
+      });
     }
   },
 );
@@ -1687,6 +1701,81 @@ router.patch(
       return res.status(500).json({
         success: false,
         message: 'Unable to update landing mode.',
+      });
+    }
+  },
+);
+
+function sendClipResult(res, result) {
+  if (result.error) {
+    return res.status(result.status || 400).json({
+      success: false,
+      message: result.error,
+      code: result.code,
+    });
+  }
+  return res.status(200).json({ success: true, data: result.data });
+}
+
+/** Content → App Clip: settings, pinned cards, and what the clip serves now. */
+router.get(
+  '/tenants/:tenantKey/clip',
+  verifyToken,
+  requirePlatformAdmin,
+  async (req, res) => {
+    try {
+      const result = await getTenantClipAdmin(req, { tenantKey: req.params.tenantKey });
+      return sendClipResult(res, result);
+    } catch (err) {
+      logPivotRouteError('GET /admin/pivot/tenants/:tenantKey/clip', err, req);
+      return res.status(500).json({
+        success: false,
+        message: 'Unable to load App Clip settings.',
+      });
+    }
+  },
+);
+
+router.put(
+  '/tenants/:tenantKey/clip',
+  verifyToken,
+  requirePlatformAdmin,
+  async (req, res) => {
+    try {
+      const result = await updateTenantClipConfig(req, {
+        tenantKey: req.params.tenantKey,
+        config: req.body?.config,
+      });
+      return sendClipResult(res, result);
+    } catch (err) {
+      logPivotRouteError('PUT /admin/pivot/tenants/:tenantKey/clip', err, req);
+      return res.status(500).json({
+        success: false,
+        message: 'Unable to save App Clip settings.',
+      });
+    }
+  },
+);
+
+/** Published cards from any week, to pin to the clip deck. */
+router.get(
+  '/tenants/:tenantKey/clip/events',
+  verifyToken,
+  requirePlatformAdmin,
+  async (req, res) => {
+    try {
+      const result = await searchClipCandidateEvents(req, {
+        tenantKey: req.params.tenantKey,
+        q: req.query?.q,
+        limit: req.query?.limit,
+        includePast: req.query?.includePast,
+      });
+      return sendClipResult(res, result);
+    } catch (err) {
+      logPivotRouteError('GET /admin/pivot/tenants/:tenantKey/clip/events', err, req);
+      return res.status(500).json({
+        success: false,
+        message: 'Unable to search events for the App Clip.',
       });
     }
   },
@@ -3664,6 +3753,9 @@ router.post(
         candidateId: req.body?.candidateId,
         richLocation: req.body?.richLocation,
         notes: req.body?.notes,
+        candidateSource: req.body?.candidateSource,
+        remember: req.body?.remember === true,
+        applyToMatching: req.body?.applyToMatching === true,
       });
       if (result.error) {
         return res.status(result.status || 400).json({

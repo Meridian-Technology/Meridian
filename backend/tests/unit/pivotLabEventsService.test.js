@@ -89,6 +89,39 @@ describe('pivotLabEventsService', () => {
       expect(row.featured).toBe(false);
     });
 
+    it('sends stored ticket options, or rebuilds them from the scraped price label', () => {
+      const stored = serializeLabEvent({
+        _id: 'priced',
+        name: 'Open mic',
+        customFields: {
+          pivot: {
+            source: 'luma',
+            details: {
+              version: 1,
+              admission: 'paid',
+              ticketProvider: 'Luma',
+              tiers: [
+                { id: 'ga', name: 'General', kind: 'general', price: { amountMinor: 2000, currency: 'USD' } },
+              ],
+            },
+          },
+        },
+      });
+      expect(stored.details.tiers[0]).toMatchObject({ name: 'General', price: { amountMinor: 2000, currency: 'USD' } });
+      expect(stored.details.priceRange).toEqual({ min: { amountMinor: 2000, currency: 'USD' } });
+
+      const fromLabel = serializeLabEvent({
+        _id: 'labeled',
+        name: 'Open mic',
+        customFields: {
+          pivot: {
+            parsed: { price: { raw: 'General · $20 · Supporter · $30', min: 20, max: 30, currency: 'USD' } },
+          },
+        },
+      });
+      expect(fromLabel.details.tiers.map((tier) => tier.name)).toEqual(['General', 'Supporter']);
+    });
+
     it('surfaces featured as an internal curation flag', () => {
       const row = serializeLabEvent({
         _id: 'e3',

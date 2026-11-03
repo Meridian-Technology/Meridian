@@ -107,6 +107,34 @@ describe('pivotIngestPublishService merge helpers', () => {
     expect(merged.rawLocationText).toBe('Brooklyn, NY');
   });
 
+  it('keeps a scraped ticket price and lets the review override it', () => {
+    const kept = mergeDraftWithOverrides(
+      { price: '$15 suggested', parsed: { price: { raw: '$15 suggested', min: 15 } } },
+      { name: 'Reviewed title' },
+    );
+    expect(kept.price).toBe('$15 suggested');
+
+    const replaced = mergeDraftWithOverrides(
+      { price: '$15 suggested' },
+      { price: 'Free' },
+    );
+    expect(replaced.price).toBe('Free');
+    expect(replaced.details).toBeNull();
+
+    const keptDetails = mergeDraftWithOverrides(
+      {
+        price: 'General · $20',
+        details: {
+          version: 1,
+          admission: 'paid',
+          tiers: [{ id: 'ga', name: 'General', kind: 'general', price: { amountMinor: 2000, currency: 'USD' } }],
+        },
+      },
+      { name: 'Reviewed title' },
+    );
+    expect(keptDetails.details.tiers[0].name).toBe('General');
+  });
+
   it('retains scraped source text when an operator supplies a canonical location', () => {
     const merged = mergeDraftWithOverrides(
       { location: 'RAW VENUE TEXT', rawLocationText: 'RAW VENUE TEXT' },
@@ -1081,6 +1109,40 @@ describe('pivotIngestPublishService updateIngestEvent', () => {
         },
       }),
     });
+  });
+
+  it('stores a reviewed ticket price on the event', async () => {
+    await updateIngestEvent(
+      { globalDb: {} },
+      {
+        tenantKey: 'nyc',
+        eventId: '507f1f77bcf86cd799439012',
+        overrides: { price: '$15 suggested' },
+      },
+    );
+
+    expect(Event.findByIdAndUpdate).toHaveBeenCalledWith(
+      '507f1f77bcf86cd799439012',
+      expect.objectContaining({
+        $set: expect.objectContaining({
+          'customFields.pivot': expect.objectContaining({
+            parsed: expect.objectContaining({
+              price: expect.objectContaining({
+                raw: '$15 suggested',
+                min: 15,
+                suggested: true,
+              }),
+            }),
+            details: {
+              version: 1,
+              admission: 'donation',
+              priceRange: { min: { amountMinor: 1500, currency: 'USD' } },
+            },
+          }),
+        }),
+      }),
+      expect.any(Object),
+    );
   });
 
   it('updates host name and ingest status', async () => {

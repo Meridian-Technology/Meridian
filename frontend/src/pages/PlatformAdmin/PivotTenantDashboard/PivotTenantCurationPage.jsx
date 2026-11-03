@@ -34,6 +34,7 @@ import PivotRichDataEnrichmentPopup from './PivotRichDataEnrichmentPopup';
 import PivotTenantSourcesPanel from './PivotTenantSourcesPanel';
 import PivotComputeJobRunStatus, { useTenantComputeJob } from './PivotComputeJobRunStatus';
 import { buildAdminCreateJobRequest } from './pivotComputeJobActions';
+import { describeComputeJobWake } from './pivotComputeJobsFormat';
 import Popup from '../../../components/Popup/Popup';
 import PivotTenantPage from './PivotTenantPage';
 import PivotBatchWeekPicker from './PivotBatchWeekPicker';
@@ -44,8 +45,20 @@ import PivotHostLiveWeekAlert, {
 import usePivotBatchWeekState from './usePivotBatchWeekState';
 import usePivotTenantWeekKeybinds from './usePivotTenantWeekKeybinds';
 import KeybindTooltip from '../../../components/Interface/KeybindTooltip/KeybindTooltip';
-import { FILTER_OPTIONS, eventMatchesFilter } from './curationCatalogFilters';
-import { eventPublishBlock, releaseOutcomeNotification } from './curationPublishFeedback';
+import {
+  FILTER_OPTIONS,
+  compareCurationEvents,
+  eventMatchesFilter,
+  eventMatchesSourceFilter,
+  isHostCreatedEvent,
+} from './curationCatalogFilters';
+import {
+  bulkGoogleLocationEvents,
+  eventPublishBlock,
+  googleMatchReviewRequest,
+  locationReviewSavedMessage,
+  releaseOutcomeNotification,
+} from './curationPublishFeedback';
 import useBrokenCatalogImages from './useBrokenCatalogImages';
 import '../PivotLab/PivotLabPage.scss';
 import './PivotTenantDashboard.scss';
@@ -74,42 +87,6 @@ const STRATEGY_OPTIONS = [
 
 const PURGE_CONFIRM_TOKEN = 'PURGE';
 const UNRELEASE_CONFIRM_TOKEN = 'UNRELEASE';
-
-function isHostCreatedEvent(event) {
-  return event?.source === HOST_CREATED_SOURCE;
-}
-
-function eventMatchesSourceFilter(event, sourceFilter) {
-  if (!sourceFilter || sourceFilter === 'all') return true;
-  if (sourceFilter === HOST_CREATED_SOURCE) return isHostCreatedEvent(event);
-  return true;
-}
-
-/** Newest host drafts first when Host-created filter is active; otherwise soft-boost them. */
-function compareCurationEvents(a, b, { hostCreatedOnly = false } = {}) {
-  if (hostCreatedOnly) {
-    const aSubmitted = a.creatorSubmittedAt ? Date.parse(a.creatorSubmittedAt) : 0;
-    const bSubmitted = b.creatorSubmittedAt ? Date.parse(b.creatorSubmittedAt) : 0;
-    if (bSubmitted !== aSubmitted) return bSubmitted - aSubmitted;
-    const aStart = a.start_time ? Date.parse(a.start_time) : 0;
-    const bStart = b.start_time ? Date.parse(b.start_time) : 0;
-    return aStart - bStart;
-  }
-
-  const aHostDraft = isHostCreatedEvent(a) && a.ingestStatus === 'draft' ? 1 : 0;
-  const bHostDraft = isHostCreatedEvent(b) && b.ingestStatus === 'draft' ? 1 : 0;
-  if (bHostDraft !== aHostDraft) return bHostDraft - aHostDraft;
-
-  if (aHostDraft && bHostDraft) {
-    const aSubmitted = a.creatorSubmittedAt ? Date.parse(a.creatorSubmittedAt) : 0;
-    const bSubmitted = b.creatorSubmittedAt ? Date.parse(b.creatorSubmittedAt) : 0;
-    if (bSubmitted !== aSubmitted) return bSubmitted - aSubmitted;
-  }
-
-  const aStart = a.start_time ? Date.parse(a.start_time) : 0;
-  const bStart = b.start_time ? Date.parse(b.start_time) : 0;
-  return aStart - bStart;
-}
 
 function emptyJobForm() {
   return {
@@ -829,9 +806,11 @@ function PivotTenantCurationPage({
       refreshCompute.trackCreated(data);
       addNotification({
         title: data.created ? 'Refresh job created' : 'Refresh job already queued',
-        message: data?.wake?.status === 'accepted'
-          ? `“${job.label}” is queued for ${committedWeek}, and the Mini accepted the wake request.`
-          : `“${job.label}” is safely queued for ${committedWeek}. The Mini will collect it on its next poll.`,
+        message: describeComputeJobWake(data?.wake, {
+          local: `“${job.label}” is running on this machine for ${committedWeek}.`,
+          accepted: `“${job.label}” is queued for ${committedWeek}, and the Mini accepted the wake request.`,
+          queued: `“${job.label}” is safely queued for ${committedWeek}. The Mini will collect it on its next poll.`,
+        }),
         type: 'success',
       });
     },
@@ -880,9 +859,11 @@ function PivotTenantCurationPage({
     refreshCompute.trackCreated(data);
     addNotification({
       title: data.created ? 'Refresh job created' : 'Refresh job already queued',
-      message: data?.wake?.status === 'accepted'
-        ? `${runnableJobCount} source(s) are queued for ${committedWeek}, and the Mini accepted the wake request.`
-        : `${runnableJobCount} source(s) are safely queued for ${committedWeek}. The Mini will collect the job on its next poll.`,
+      message: describeComputeJobWake(data?.wake, {
+        local: `${runnableJobCount} source(s) are running on this machine for ${committedWeek}.`,
+        accepted: `${runnableJobCount} source(s) are queued for ${committedWeek}, and the Mini accepted the wake request.`,
+        queued: `${runnableJobCount} source(s) are safely queued for ${committedWeek}. The Mini will collect the job on its next poll.`,
+      }),
       type: 'success',
     });
   }, [
@@ -1406,6 +1387,73 @@ function PivotTenantCurationPage({
     },
     [addNotification, patchEventOverrides, refreshAll],
   );
+
+  const handleLocationReview = useCallback(
+    async (eventId, action, richLocation, options = {}) => {
+      if (action === 'invalid_json') {
+        addNotification({
+          title: 'Invalid location JSON',
+          message: 'The rich location must be valid JSON.',
+          type: 'error',
+        });
+        return;
+      }
+      setBusyKey(`location-${eventId}`);
+      const { data, error } = await authenticatedRequest(
+        `/admin/platform/tenants/${tenantKey}/rich-location-migration/reviews/${eventId}`,
+        {
+          method: 'POST',
+          data: { action, ...(richLocation !== undefined ? { richLocation } : {}), ...options },
+        },
+      );
+      setBusyKey(null);
+      if (error || !data?.success) {
+        addNotification({
+          title: 'Could not save location',
+          message: data?.message || error || 'Request failed',
+          type: 'error',
+        });
+        return;
+      }
+      refreshAll();
+      addNotification({
+        title: action === 'reject_match' ? 'Google match dismissed' : 'Location resolved',
+        message: locationReviewSavedMessage(data.data),
+        type: 'success',
+      });
+    },
+    [addNotification, refreshAll, tenantKey],
+  );
+
+  const handleBulkResolveLocation = useCallback(async () => {
+    const eligible = bulkGoogleLocationEvents(selectedEvents);
+    if (!eligible.length) return;
+    setBusyKey('bulk-location');
+    let ok = 0;
+    let failed = 0;
+    // One at a time: each save also remembers the text for later scrapes.
+    for (const event of eligible) {
+      const { data, error } = await authenticatedRequest(
+        `/admin/platform/tenants/${tenantKey}/rich-location-migration/reviews/${event._id}`,
+        { method: 'POST', data: googleMatchReviewRequest(event) },
+      );
+      if (error || !data?.success) failed += 1;
+      else ok += 1;
+    }
+    setBusyKey(null);
+    refreshAll();
+    const skipped = selectedEvents.filter((event) => event.locationReview?.status === 'needs_review')
+      .length - eligible.length;
+    addNotification({
+      title: failed ? 'Some locations were not resolved' : 'Locations resolved with Google',
+      message: [
+        `${ok} resolved`,
+        failed ? `${failed} failed` : null,
+        skipped > 0 ? `${skipped} need a manual look (no match, or outside the city)` : null,
+      ].filter(Boolean).join(' · '),
+      type: failed ? 'warning' : 'success',
+    });
+  }, [addNotification, refreshAll, selectedEvents, tenantKey]);
 
   const handleBulkEditorial = useCallback(
     async (tier) => {
@@ -2808,6 +2856,8 @@ function PivotTenantCurationPage({
             onBulkUnfeature={handleBulkUnfeature}
             onToggleFeatured={handleToggleFeatured}
             onEditorialChange={handleEditorialChange}
+            onLocationReview={handleLocationReview}
+            onBulkResolveLocation={handleBulkResolveLocation}
             onBulkEditorial={handleBulkEditorial}
             selectionPolicy={selectionPolicy}
             onSelectionPolicyChange={handleSelectionPolicyChange}

@@ -7,6 +7,7 @@ const s3 = require('../aws-config');
 const mongoose = require('mongoose');
 const { clean } = require('../services/profanityFilterService');
 const getModels = require('../services/getModelService');
+const { PUBLIC_USER_FIELDS } = require('../constants/publicUserFields');
 
 const router = express.Router();
 
@@ -134,6 +135,20 @@ router.get('/get-ratings', async (req, res) => {
                     localField: "user_id",
                     foreignField: "_id",
                     as: "user_info"
+                }
+            },
+            // Ratings are public, so keep only the reviewer's public profile fields.
+            {
+                $addFields: {
+                    user_info: {
+                        $map: {
+                            input: "$user_info",
+                            as: "u",
+                            in: Object.fromEntries(
+                                ['_id', ...PUBLIC_USER_FIELDS].map((field) => [field, `$$u.${field}`])
+                            )
+                        }
+                    }
                 }
             }
         ]);

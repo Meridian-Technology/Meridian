@@ -67,6 +67,27 @@ describe('pivotComputeAdminService', () => {
     expect(created.wake).toEqual({ status: 'failed', code: 'COMPUTE_WAKE_FAILED' });
   });
 
+  it('runs a development discovery job locally and does not wake the Mini', async () => {
+    const jobRequest = loadFixture('job-request-discovery-valid.json');
+    const notifyWake = jest.fn();
+    const scheduleLocal = jest.fn().mockReturnValue(true);
+    const created = await createAdminComputeJob(req, {
+      request: jobRequest,
+      actor: 'admin@example.com',
+      notifyWake,
+      scheduleLocal,
+    });
+
+    expect(created.wake).toEqual({ status: 'local' });
+    expect(created.job.status).toBe('pending');
+    expect(notifyWake).not.toHaveBeenCalled();
+    expect(scheduleLocal).toHaveBeenCalledWith(expect.objectContaining({
+      externalJobId: jobRequest.jobId,
+      kind: 'city-source-discovery',
+      status: 'pending',
+    }));
+  });
+
   it('submits manual results for review and preserves duplicate idempotency', async () => {
     const result = loadFixture('result-discovery-valid-completed.json');
     const first = await submitManualComputeResult(req, {

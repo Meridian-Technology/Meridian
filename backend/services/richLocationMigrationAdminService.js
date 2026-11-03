@@ -13,6 +13,8 @@ const HEATMAP_COLS = 40;
 const HEATMAP_ROWS = 32;
 const HEATMAP_MAX_POINTS = 8_000;
 const HEATMAP_PAD_RATIO = 0.08;
+// Margin around the city box so nearby suburbs stay visible on the heatmap.
+const HEATMAP_CITY_PAD_RATIO = 0.5;
 
 function trimString(value) {
   return typeof value === 'string' ? value.trim() : '';
@@ -220,17 +222,6 @@ function boundsFromRadius(center, radiusKm) {
   };
 }
 
-function unionBounds(first, second) {
-  if (!first) return second || null;
-  if (!second) return first;
-  return {
-    north: Math.max(first.north, second.north),
-    south: Math.min(first.south, second.south),
-    east: Math.max(first.east, second.east),
-    west: Math.min(first.west, second.west),
-  };
-}
-
 function padBounds(bounds, ratio = HEATMAP_PAD_RATIO) {
   if (!bounds) return null;
   const latSpan = Math.max(bounds.north - bounds.south, 0.004);
@@ -260,6 +251,11 @@ function binHistoricPoints(points, bounds, cols = HEATMAP_COLS, rows = HEATMAP_R
 
   const counts = new Map();
   points.forEach((point) => {
+    // Points outside the grid are dropped, not piled onto the edge cells.
+    if (point.latitude < bounds.south || point.latitude > bounds.north
+      || point.longitude < bounds.west || point.longitude > bounds.east) {
+      return;
+    }
     const x = Math.min(
       cols - 1,
       Math.max(0, Math.floor(((point.longitude - bounds.west) / lngSpan) * cols)),
@@ -309,10 +305,12 @@ async function getHistoricLocationHeatmap({ tenant }) {
   ]);
 
   const points = docs.map(coordinatesFromEvent).filter(Boolean);
-  const viewBounds = padBounds(unionBounds(
-    boundsFromPoints(points),
-    cityViewBounds(constraints),
-  ));
+  // Grid the city, not every point: a few far-off events would otherwise
+  // stretch the 40x32 grid across a continent and make each cell huge.
+  const cityBounds = cityViewBounds(constraints);
+  const viewBounds = cityBounds
+    ? padBounds(cityBounds, HEATMAP_CITY_PAD_RATIO)
+    : padBounds(boundsFromPoints(points));
   const { cells, maxCount } = viewBounds
     ? binHistoricPoints(points, viewBounds)
     : { cells: [], maxCount: 0 };
