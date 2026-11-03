@@ -156,7 +156,30 @@ export default function PivotCarouselPage({ tenantKey, cityDisplayName }) {
     ]);
     const rows = list.data?.success ? list.data.data?.decks || [] : [];
     const accountRows = accountList.data?.success ? accountList.data.data?.accounts || [] : [];
-    setLibrary(rows);
+    // The tenant deck serializer predates editorial review. Account issues carry
+    // the canonical caption, origin and review state, including generated drafts.
+    const accountIssues = (await Promise.all(accountRows.map(async account => {
+      const issues = [];
+      let cursor;
+      do {
+        const result = await authenticatedRequest(`/admin/pivot/carousel-accounts/${account.id}/issues`, {
+          params: { limit: 50, ...(cursor ? { cursor } : {}) },
+        });
+        if (!result.data?.success) {
+          addNotification({ title: 'Could not load issue review status', message: result.error || result.data?.message || 'Reload to try again.', type: 'error' });
+          break;
+        }
+        issues.push(...(result.data.data.issues || []));
+        const next = result.data.data.nextCursor;
+        if (next === cursor) break;
+        cursor = next;
+      } while (cursor);
+      return issues;
+    }))).flat();
+    const merged = new Map(rows.map(row => [String(row._id), row]));
+    for (const issue of accountIssues) merged.set(String(issue.id), { ...merged.get(String(issue.id)), ...issue, _id: issue.id });
+    const libraryRows = [...merged.values()];
+    setLibrary(libraryRows);
     setAccounts(accountRows);
     setAccountId((current) => carouselAccountSelection(accountRows, requestedAccountId, current).account?.id || '');
 
@@ -174,7 +197,7 @@ export default function PivotCarouselPage({ tenantKey, cityDisplayName }) {
       }
     }
 
-    const selection = librarySelection(rows, requestedDeckId);
+    const selection = librarySelection(libraryRows, requestedDeckId);
     if (!requestedCurationId) setLibraryMode(selection.mode);
     if (selection.mode !== 'open') {
       setDeck(null);
@@ -190,8 +213,20 @@ export default function PivotCarouselPage({ tenantKey, cityDisplayName }) {
     setMissingId(null);
     const full = await authenticatedRequest(`${decksPath(tenantKey)}/${selection.deckId}`);
     if (full.data?.success) {
-      setDeck(full.data.data.deck);
-      setDraft(full.data.data.deck);
+      const loadedDeck = full.data.data.deck;
+      const editorialIssue = loadedDeck.schemaVersion === 2 && loadedDeck.accountId
+        ? await authenticatedRequest(`/admin/pivot/carousel-accounts/${loadedDeck.accountId}/issues/${selection.deckId}`)
+        : null;
+      if (loadedDeck.schemaVersion === 2 && !editorialIssue?.data?.success) {
+        addNotification({ title: 'Could not load the issue', message: editorialIssue?.error || 'Reload to try again.', type: 'error' });
+        setDeck(null);
+        setDraft(null);
+        setLoading(false);
+        return;
+      }
+      const loaded = { ...loadedDeck, ...editorialIssue?.data?.data?.issue };
+      setDeck(loaded);
+      setDraft(loaded);
       setManifest(full.data.data.manifest);
       setCityVoice(full.data.data.cityVoice || {});
       setEdition(full.data.data.deck.edition || 'night');
@@ -205,7 +240,7 @@ export default function PivotCarouselPage({ tenantKey, cityDisplayName }) {
       setMissingId(selection.deckId);
     }
     setLoading(false);
-  }, [tenantKey, requestedDeckId, requestedCurationId, requestedAccountId]);
+  }, [tenantKey, requestedDeckId, requestedCurationId, requestedAccountId, addNotification]);
 
   useEffect(() => {
     load();
@@ -394,7 +429,7 @@ export default function PivotCarouselPage({ tenantKey, cityDisplayName }) {
     if (!draft?.accountId || !draft?._id) return { error: 'Missing issue', code: 400 };
     const result = await authenticatedRequest(
       `/admin/pivot/carousel-accounts/${draft.accountId}/issues/${draft._id}`,
-      { method: 'PATCH', data: { revision: Number.isInteger(revision) ? revision : draft.revision, document, curation: editorial.curation, sources: editorial.sources } },
+      { method: 'PATCH', data: { revision: Number.isInteger(revision) ? revision : draft.revision, document, curation: editorial.curation, sources: editorial.sources, socialCaption: editorial.socialCaption } },
     );
     if (result.error || result.data?.success === false) {
       return {
@@ -407,16 +442,9 @@ export default function PivotCarouselPage({ tenantKey, cityDisplayName }) {
     }
     const saved = result.data?.data?.issue;
     if (!saved) return { error: 'Save failed', code: 500 };
-    setDraft((current) => ({
-      ...current,
-      revision: saved.revision,
-      document: saved.document,
-      curation: saved.curation,
-      sources: saved.sources,
-      name: saved.name || current.name,
-      updatedAt: saved.updatedAt,
-    }));
-    return { document: saved.document, revision: saved.revision, editorial: { curation: saved.curation, sources: saved.sources } };
+    setDraft(current => ({ ...current, ...saved, _id: saved.id }));
+    setDeck(current => ({ ...current, ...saved, _id: saved.id }));
+    return { issue: saved, document: saved.document, revision: saved.revision, editorial: { curation: saved.curation, sources: saved.sources, socialCaption: saved.socialCaption } };
   }, [draft]);
 
   const reloadStudioIssue = useCallback(async () => {
@@ -438,6 +466,7 @@ export default function PivotCarouselPage({ tenantKey, cityDisplayName }) {
         document,
         curation: editorial.curation,
         sources: editorial.sources,
+        socialCaption: editorial.socialCaption,
       },
     });
     const issue = result.data?.data?.issue;
@@ -585,6 +614,10 @@ export default function PivotCarouselPage({ tenantKey, cityDisplayName }) {
               issue={draft}
               userId={user?._id || user?.id || null}
               onSave={saveStudioDocument}
+              onIssueChange={saved => {
+                setDraft(current => ({ ...current, ...saved, _id: saved.id || current._id }));
+                setDeck(current => ({ ...current, ...saved, _id: saved.id || current._id }));
+              }}
               onSaveCopy={saveStudioCopy}
               onReload={reloadStudioIssue}
               onOpenIssue={openIssue}

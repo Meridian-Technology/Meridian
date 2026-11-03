@@ -64,6 +64,8 @@
   &__panel p { font-size: 12px; line-height: 1.55; color: var(--pivot-ops-ink-muted); margin: 0; }
   &__panel label { display: flex; flex-direction: column; min-width: 0; gap: 6px; font-size: 11px; color: var(--pivot-ops-ink-muted); }
   &__panel input:not([type='checkbox']):not([type='file']), &__panel select { width: 100%; min-width: 0; height: 36px; padding: 7px 10px; border: 1px solid var(--pivot-ops-border); background: var(--pivot-ops-surface); color: var(--pivot-ops-ink); border-radius: var(--pivot-ops-radius-chip); font: inherit; font-size: 12px; font-variant-numeric: tabular-nums; }
+  &__panel textarea { width: 100%; resize: vertical; padding: 8px 10px; border: 1px solid var(--pivot-ops-border); border-radius: 8px; background: var(--pivot-ops-surface); color: var(--pivot-ops-ink); font: inherit; line-height: 1.5; }
+  &__panel form { display: grid; gap: 10px; }
   &__panel input[type='range'], &__panel input[type='checkbox'] { accent-color: var(--pivot-ops-accent); }
   &__numbers { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px; }
   &__panel &__check { flex-direction: row; align-items: center; padding-top: 16px; }

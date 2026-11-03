@@ -55,6 +55,18 @@ async function resolveEditorialAccount(req, accountKey) {
   return { definition, account, timezone };
 }
 
+/** Minimal read-only scheduling metadata; account owners remain the source of truth. */
+async function listCarouselComposeScheduleAccounts(req) {
+  return { accounts: await Promise.all(EDITORIAL_ACCOUNTS.map(async definition => {
+    const resolved = await resolveEditorialAccount(req, definition.key);
+    return {
+      key: definition.key,
+      cityKey: resolved.error ? definition.ownerTenantKey : resolved.account.ownerTenantKey,
+      timezone: resolved.error ? definition.timezone : resolved.timezone,
+    };
+  })) };
+}
+
 function snapshotRefs(snapshot, tenantKey) {
   const refs = [ ...(snapshot.sources || []), ...(snapshot.document?.slides || []).map(slide => slide.source) ];
   for (const slide of snapshot.slides || []) {
@@ -224,4 +236,4 @@ async function buildCarouselComposeContextSnapshot(req, { job, now = new Date(),
   return { data: { snapshot } };
 }
 
-module.exports = { EDITORIAL_ACCOUNTS, CONTEXT_LIMITS, composeWindow, resolveEditorialAccount, postedHistory, buildCarouselComposeContextSnapshot };
+module.exports = { listCarouselComposeScheduleAccounts, EDITORIAL_ACCOUNTS, CONTEXT_LIMITS, composeWindow, resolveEditorialAccount, postedHistory, buildCarouselComposeContextSnapshot };

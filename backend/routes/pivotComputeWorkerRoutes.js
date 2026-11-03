@@ -37,6 +37,15 @@ function createPivotComputeWorkerRouter({
     type: 'application/json',
   }));
 
+  router.get('/carousel-compose-accounts', requireComputeWorkerAuth, async (req, res) => {
+    try {
+      const { listCarouselComposeScheduleAccounts } = require('../services/pivotCarouselComposeContextService');
+      return res.json(await listCarouselComposeScheduleAccounts(req));
+    } catch (error) {
+      return handleWorkerServiceError(res, error);
+    }
+  });
+
   router.post('/schedule-occurrences', requireComputeWorkerAuth, async (req, res) => {
     try {
       const payload = await registerScheduleOccurrence(req, {

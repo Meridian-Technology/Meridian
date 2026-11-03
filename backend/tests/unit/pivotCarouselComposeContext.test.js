@@ -105,6 +105,19 @@ describe('carousel compose catalog context with real persistence', () => {
   });
   afterAll(async () => { if (mongo) await mongo.cleanup(); });
 
+  it('resolves all three scheduling identities from the existing account owner without exposing account data', async () => {
+    const { listCarouselComposeScheduleAccounts } = require('../../services/pivotCarouselComposeContextService');
+    expect(await listCarouselComposeScheduleAccounts(req)).toEqual({ accounts: [
+      { key: 'just.go.ic', cityKey: 'iowacity', timezone: 'America/Chicago' },
+      { key: 'just.go.sf', cityKey: 'sf', timezone: 'America/Los_Angeles' },
+      { key: 'sorry.u.missed.it', cityKey: 'sf', timezone: 'America/Los_Angeles' },
+    ] });
+    const { PivotCarouselAccount } = getGlobalModels(req, 'PivotCarouselAccount');
+    await PivotCarouselAccount.updateOne({ _id: accounts['sorry.u.missed.it'] }, { $set: { ownerTenantKey: 'iowacity' } });
+    const changed = await listCarouselComposeScheduleAccounts(req);
+    expect(changed.accounts[2]).toEqual({ key: 'sorry.u.missed.it', cityKey: 'iowacity', timezone: 'America/Chicago' });
+  });
+
   async function events(tenantKey, names, start = '2026-10-30T20:00:00.000Z', pivot) {
     const db = await connectToDatabase(tenantKey);
     return getModels({ db }, 'Event').Event.create(names.map(name => eventDoc(name, start, pivot)));

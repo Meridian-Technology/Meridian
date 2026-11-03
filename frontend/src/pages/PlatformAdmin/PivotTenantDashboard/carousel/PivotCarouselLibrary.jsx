@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import PivotOpsSection from '../../../../components/PivotOps/PivotOpsSection';
 import { issueId, issueName, listPastIssues } from './carouselLibrary';
 import './PivotCarouselLibrary.scss';
@@ -58,6 +58,11 @@ function when(value) {
   return date.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
 }
 
+/**
+ * Library view for PlatformAdmin/PivotTenantDashboard. PivotCarouselPage merges
+ * canonical account issue metadata into legacy deck rows before passing issues,
+ * so generated-draft filtering can use origin and reviewState.
+ */
 export default function PivotCarouselLibrary({
   issues,
   missingId,
@@ -67,7 +72,10 @@ export default function PivotCarouselLibrary({
   onDelete,
   busy,
 }) {
-  const past = useMemo(() => listPastIssues(issues), [issues]);
+  const [filter, setFilter] = useState('all');
+  const past = useMemo(() => listPastIssues(issues).filter(issue => (
+    filter === 'all' || (issue.origin === 'agent-generated' && (issue.reviewState || 'unapproved') === 'unapproved')
+  )), [issues, filter]);
 
   return (
     <div className="jg-library">
@@ -87,6 +95,13 @@ export default function PivotCarouselLibrary({
           </button>
         )}
       >
+        <label className="jg-library__filter">
+          Review status
+          <select value={filter} onChange={event => setFilter(event.target.value)}>
+            <option value="all">All carousels</option>
+            <option value="unapproved">Unapproved drafts</option>
+          </select>
+        </label>
         {past.length ? (
           <div className="jg-library__grid">
             {past.map((issue) => (
@@ -95,6 +110,9 @@ export default function PivotCarouselLibrary({
                   <PhotoFan issue={issue} />
                   <span className="jg-library__meta">
                     <strong>{issueName(issue)}</strong>
+                    {issue.origin === 'agent-generated' && (issue.reviewState || 'unapproved') === 'unapproved' && (
+                      <span className="jg-library__badge">Unapproved draft</span>
+                    )}
                     <time dateTime={issue.updatedAt}>{when(issue.updatedAt)}</time>
                   </span>
                 </button>
@@ -106,7 +124,7 @@ export default function PivotCarouselLibrary({
             ))}
           </div>
         ) : (
-          <p className="pivot-lab__empty">No carousels yet.</p>
+          <p className="pivot-lab__empty">{filter === 'unapproved' ? 'No unapproved drafts.' : 'No carousels yet.'}</p>
         )}
       </PivotOpsSection>
     </div>
