@@ -12,35 +12,64 @@ const mongoose = require('mongoose');
  * - Named checkpoints (`kind: 'checkpoint'`) and export pins (`kind: 'export'`)
  *   are retained. Cleanup never deletes them. An export pin is the document
  *   a queued render is allowed to read.
+ * - Posted snapshots are retained so autosave pruning cannot erase published content.
  * - Unnamed save snapshots (`kind: 'save'`) keep the newest 25 per issue,
  *   always including the snapshot of the current head revision.
  */
 const RETENTION = Object.freeze({
   namedCheckpoints: 'retain',
   exportPins: 'retain',
+  postedSnapshots: 'retain',
   autosaveSnapshotsPerIssue: 25,
 });
 
+const REVISION_KINDS = Object.freeze(['save', 'checkpoint', 'export', 'posted']);
+/** Kinds routine pruning is not allowed to touch. */
+const PROTECTED_REVISION_KINDS = Object.freeze(['checkpoint', 'export', 'posted']);
+
 const pivotCarouselRevisionSchema = new mongoose.Schema(
   {
-    issueId: { type: mongoose.Schema.Types.ObjectId, required: true, index: true },
-    accountId: { type: mongoose.Schema.Types.ObjectId, required: true, index: true },
-    headRevision: { type: Number, required: true, min: 1 },
-    kind: { type: String, enum: ['save', 'checkpoint', 'export'], required: true },
+    issueId: { type: mongoose.Schema.Types.ObjectId, required: true, index: true, immutable: true },
+    accountId: { type: mongoose.Schema.Types.ObjectId, required: true, index: true, immutable: true },
+    headRevision: { type: Number, required: true, min: 1, immutable: true },
+    kind: { type: String, enum: REVISION_KINDS, required: true, immutable: true },
     sourceRevision: { type: String, default: null, trim: true, maxlength: 40 },
     name: { type: String, default: null, trim: true, maxlength: 80 },
-    schemaVersion: { type: Number, default: 2 },
-    document: { type: mongoose.Schema.Types.Mixed, required: true },
+    schemaVersion: { type: Number, default: 2, immutable: true },
+    document: { type: mongoose.Schema.Types.Mixed, default: null, immutable: true },
+    /** Legacy schema-version-1 content, captured only by posted snapshots. */
+    slides: { type: [mongoose.Schema.Types.Mixed], default: undefined, immutable: true },
+    socialCaption: { type: String, default: null, maxlength: 2200, immutable: true },
     curation: { type: mongoose.Schema.Types.Mixed, default: null },
     sources: { type: [mongoose.Schema.Types.Mixed], default: [] },
     restoredFrom: { type: mongoose.Schema.Types.ObjectId, default: null },
+    /** Set on posted rows; never edited afterwards. */
+    actedAt: { type: Date, default: null },
+    actedBy: { type: String, default: null, trim: true, maxlength: 256 },
+    instagramUrl: { type: String, default: null, trim: true, maxlength: 2048 },
     createdBy: { type: String, default: null, trim: true },
   },
   { timestamps: true },
 );
+
+pivotCarouselRevisionSchema.pre('validate', function requireContent() {
+  // Editing kinds have always carried a document and still must. Posted
+  // snapshots may instead capture a legacy deck's slides, because a manual
+  // issue that was posted is still worth recording exactly.
+  const hasDocument = this.document != null;
+  const hasSlides = Array.isArray(this.slides);
+  if (['save', 'checkpoint', 'export'].includes(this.kind) && !hasDocument) {
+    this.invalidate('document', 'a document is required for this revision kind');
+  }
+  if (!hasDocument && !hasSlides) {
+    this.invalidate('document', 'a revision must capture a document or legacy slides');
+  }
+});
 
 pivotCarouselRevisionSchema.index({ issueId: 1, kind: 1, createdAt: -1 });
 pivotCarouselRevisionSchema.index({ issueId: 1, headRevision: 1, kind: 1 });
 
 module.exports = pivotCarouselRevisionSchema;
 module.exports.RETENTION = RETENTION;
+module.exports.REVISION_KINDS = REVISION_KINDS;
+module.exports.PROTECTED_REVISION_KINDS = PROTECTED_REVISION_KINDS;

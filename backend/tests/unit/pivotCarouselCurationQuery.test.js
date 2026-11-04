@@ -24,6 +24,7 @@ const {
   parseCurationQuery,
   buildCurationMongoQuery,
   encodeCursor,
+  cursorMongoClause,
   compareCandidates,
   mergeSourcePages,
   chipsFromQuery,
@@ -157,6 +158,18 @@ describe('merged pagination', () => {
       group: null,
     };
   }
+
+  test('unpinned upcoming pages advance past the ascending id when timestamps match', () => {
+    const ids = ['000000000000000000000001', '000000000000000000000002', '000000000000000000000003'];
+    const rows = ids.map(id => candidate('sf', id, '2026-11-03T20:00:00Z'));
+    rows[2].snapshot.featured = true;
+    const spec = parseCurationQuery({ sort: 'date-asc', limit: 2 }).spec;
+    const page = mergeSourcePages([{ tenantKey: 'sf', status: 'ok', fetched: 3, candidates: rows.reverse() }], spec, { pin: false });
+    expect(page.candidates.map(row => row.ref.eventId)).toEqual(ids.slice(0, 2));
+    const next = parseCurationQuery({ sort: 'date-asc', limit: 2, cursor: page.continuation.cursor }).spec;
+    expect(cursorMongoClause(next, 'sf').$or[1]._id).toEqual({ $gt: ids[1] });
+    expect(page.continuation.complete).toBe(false);
+  });
 
   test('stable sort has no duplicates and keeps city identity', () => {
     const spec = parseCurationQuery({ limit: 2 }).spec;

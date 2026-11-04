@@ -23,6 +23,7 @@ describe('Pivot admin compute job contracts v1 (Phase 1, Step 1.2)', () => {
       'city-source-discovery',
       'city-curation-refresh',
       'carousel-export',
+      'carousel-compose',
     ]);
   });
 
@@ -276,6 +277,79 @@ describe('Pivot admin compute job contracts v1 (Phase 1, Step 1.2)', () => {
       expect(invalid.errors).toEqual(expect.arrayContaining([
         expect.stringContaining('$.proposals.events[0].draft.description'),
       ]));
+    });
+  });
+
+  describe('carousel compose', () => {
+    it.each([
+      ['job-request', validateJobRequest],
+      ['context', validateContextSnapshot],
+      ['result', validateExecutionResult],
+    ])('accepts and rejects the shared %s compose fixtures', (prefix, validate) => {
+      expect(validate(loadFixture(`${prefix}-compose-valid.json`))).toEqual({ valid: true });
+      expect(validate(loadFixture(`${prefix}-compose-invalid.json`)).valid).toBe(false);
+    });
+
+    it.each(['wait', 'needs-editor'])('accepts %s without composing an issue', decision => {
+      const result = loadFixture('result-compose-valid.json');
+      delete result.composition;
+      Object.assign(result, { decision, reason: 'Not enough eligible events yet.' });
+      expect(validateExecutionResult(result)).toEqual({ valid: true });
+      result.reason = '   ';
+      expect(validateExecutionResult(result).valid).toBe(false);
+      result.reason = 'Ask an editor.';
+      result.composition = loadFixture('result-compose-valid.json').composition;
+      expect(validateExecutionResult(result).valid).toBe(false);
+    });
+
+    it('bounds selection and copy and refuses arbitrary layout or assets', () => {
+      for (const mutate of [
+        composition => { composition.selectedEventRefs = composition.selectedEventRefs.slice(0, 2); },
+        composition => { composition.eventSlides.push(...composition.eventSlides); },
+        composition => { composition.socialCaption = ''; },
+        composition => { composition.socialCaption = 'x'.repeat(2201); },
+        composition => { composition.cover.assetRef = { kind: 'url', url: 'https://example.test/photo.jpg' }; },
+        composition => { composition.eventSlides[0].assetRef = { kind: 'unsplash', assetId: 'unsplash:photo' }; },
+        composition => { composition.cover.elements = []; },
+        composition => { composition.cover.crop.focalX = 1.01; },
+        composition => { composition.cover.crop.scale = '2'; },
+        composition => { composition.cover.crop.focalY = NaN; },
+        composition => { composition.cover.crop.scale = Infinity; },
+        composition => { composition.cover.variation = 4; },
+      ]) {
+        const result = loadFixture('result-compose-valid.json');
+        mutate(result.composition);
+        expect(validateExecutionResult(result).valid).toBe(false);
+      }
+    });
+
+    it('requires unique event refs and matching slides with their own posters', () => {
+      const duplicate = loadFixture('result-compose-valid.json');
+      duplicate.composition.selectedEventRefs[1] = duplicate.composition.selectedEventRefs[0];
+      expect(validateExecutionResult(duplicate).valid).toBe(false);
+      const mismatch = loadFixture('result-compose-valid.json');
+      mismatch.composition.eventSlides[1].eventRef = mismatch.composition.eventSlides[0].eventRef;
+      expect(validateExecutionResult(mismatch).valid).toBe(false);
+      const wrongPoster = loadFixture('result-compose-valid.json');
+      wrongPoster.composition.eventSlides[0].assetRef.eventRef = wrongPoster.composition.eventSlides[1].eventRef;
+      expect(validateExecutionResult(wrongPoster).valid).toBe(false);
+    });
+
+    it('accepts an event-poster cover, fractional crops and an optional preset closing slide', () => {
+      const result = loadFixture('result-compose-valid.json');
+      result.composition.cover.assetRef = result.composition.eventSlides[0].assetRef;
+      result.composition.cover.crop = { focalX: 0.25, focalY: 0.75, scale: 1.5 };
+      result.composition.optionalClosingSlide = { presetId: 'paper-close', line: 'See you out there.' };
+      expect(validateExecutionResult(result)).toEqual({ valid: true });
+    });
+
+    it('rejects export grants in the agent context and diagnostics in its result', () => {
+      const context = loadFixture('context-compose-valid.json');
+      context.renderToken = 'not-an-editorial-input';
+      expect(validateContextSnapshot(context).valid).toBe(false);
+      const result = loadFixture('result-compose-valid.json');
+      result.composition.logs = ['private execution details'];
+      expect(validateExecutionResult(result).valid).toBe(false);
     });
   });
 

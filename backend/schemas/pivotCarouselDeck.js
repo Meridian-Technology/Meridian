@@ -17,6 +17,80 @@ const { ZINE_SLIDE_TYPE_KEYS } = require('../constants/zineSlideTypes');
 const EDITIONS = Object.freeze(['night', 'paper']);
 
 /**
+ * How an issue came to exist. Manual issues are everything a human started;
+ * `agent-generated` is reserved for the carousel-compose pipeline and is the
+ * only origin that carries a review state.
+ */
+const ORIGINS = Object.freeze(['manual', 'agent-generated']);
+
+/**
+ * Review state is deliberately separate from `status`. Archival (active or
+ * archived) answers "is this in the list"; review state answers "has a human
+ * signed off on this exact revision". Conflating them would make archiving an
+ * issue look like approving it.
+ */
+const REVIEW_STATES = Object.freeze(['unapproved', 'approved', 'posted']);
+
+const MAX_SOCIAL_CAPTION_LENGTH = 2200;
+const EDITORIAL_FIELDS = Object.freeze(['events', 'cover-copy', 'event-copy', 'presets', 'images', 'caption']);
+const FEEDBACK_DISPOSITIONS = Object.freeze(['approve', 'reject', 'change']);
+
+const editorialChangeSchema = new mongoose.Schema({
+  field: { type: String, enum: EDITORIAL_FIELDS, required: true },
+  before: { type: mongoose.Schema.Types.Mixed, required: true },
+  after: { type: mongoose.Schema.Types.Mixed, required: true },
+}, { _id: false });
+
+const editorialEditSchema = new mongoose.Schema({
+  actor: { type: String, required: true },
+  time: { type: Date, required: true },
+  version: { type: Number, required: true, min: 1 },
+  fromRevision: { type: Number, required: true, min: 1 },
+  toRevision: { type: Number, required: true, min: 2 },
+  changes: { type: [editorialChangeSchema], default: [] },
+});
+
+const feedbackNoteSchema = new mongoose.Schema({
+  author: { type: String, required: true },
+  time: { type: Date, required: true },
+  version: { type: Number, required: true, min: 1 },
+  revision: { type: Number, required: true, min: 1 },
+  text: { type: String, required: true, trim: true },
+  disposition: { type: String, enum: FEEDBACK_DISPOSITIONS, required: true },
+});
+/**
+ * An approval covers one exact revision, slides and caption together. It is
+ * cleared whenever that revision stops being current, so it can never describe
+ * content nobody read.
+ */
+const approvalSchema = new mongoose.Schema(
+  {
+    revision: { type: Number, required: true, min: 1 },
+    approvedAt: { type: Date, required: true },
+    approvedBy: { type: String, default: null, trim: true, maxlength: 256 },
+  },
+  { _id: false },
+);
+
+/**
+ * A record that a human put this issue on Instagram by hand. `postedAt` is the
+ * actual publication time, which is not the time this row was written and is
+ * certainly not the time the issue was generated, exported or approved.
+ */
+const postingSchema = new mongoose.Schema(
+  {
+    revision: { type: Number, required: true, min: 1 },
+    postedAt: { type: Date, required: true },
+    postedBy: { type: String, default: null, trim: true, maxlength: 256 },
+    recordedAt: { type: Date, required: true },
+    instagramUrl: { type: String, default: null, trim: true, maxlength: 2048 },
+    /** The immutable revision row holding exactly what went out. */
+    snapshotRevisionId: { type: mongoose.Schema.Types.ObjectId, default: null },
+  },
+  { _id: false },
+);
+
+/**
  * A catalog event copied onto a slide. This is a snapshot, not a reference:
  * eventId is kept for provenance only and is never read back, so a later
  * catalog correction cannot silently rewrite a deck that was already posted.
@@ -140,6 +214,28 @@ const pivotCarouselDeckSchema = new mongoose.Schema(
     lastExportedAt: { type: Date, default: null },
     createdBy: { type: String, default: null, trim: true },
     updatedBy: { type: String, default: null, trim: true },
+    /*
+     * Editorial lifecycle. Every field below is additive and defaulted, so a
+     * legacy deck that has never seen this code reads as a manual issue with
+     * no caption, no review state, no approval and no posting history — which
+     * is exactly what it is. Nothing here is inferred from an existing row.
+     */
+    origin: { type: String, enum: ORIGINS, default: 'manual' },
+    // Internal provenance; the job also deterministically supplies the issue _id.
+    composeJobId: { type: String, maxlength: 128, immutable: true },
+    // Null for manual issues: "Unapproved draft" is a generated-only state.
+    reviewState: {
+      type: String,
+      enum: REVIEW_STATES,
+      default() { return this.origin === 'agent-generated' ? 'unapproved' : null; },
+    },
+    socialCaption: { type: String, default: '', trim: true, maxlength: MAX_SOCIAL_CAPTION_LENGTH },
+    approval: { type: approvalSchema, default: null },
+    posting: { type: postingSchema, default: null },
+    postHistory: { type: [postingSchema], default: undefined },
+    editorialVersion: { type: Number, default: 0, min: 0 },
+    editLog: { type: [editorialEditSchema], default: [] },
+    feedbackNotes: { type: [feedbackNoteSchema], default: [] },
   },
   { timestamps: true },
 );
@@ -154,6 +250,27 @@ pivotCarouselDeckSchema.pre('validate', function normalizeFields() {
   if (this.batchWeek === '') {
     this.batchWeek = null;
   }
+  // A manual issue never carries the generated-only review state, and nothing
+  // may be marked approved without an approval record describing which exact
+  // revision was approved.
+  if (this.origin !== 'agent-generated' && this.reviewState != null) {
+    this.invalidate('reviewState', 'review state is only used by generated issues');
+  }
+  if (this.origin === 'agent-generated' && this.reviewState == null) {
+    this.invalidate('reviewState', 'a generated issue needs a review state');
+  }
+  if (['approved', 'posted'].includes(this.reviewState) && !this.approval) {
+    this.invalidate('reviewState', 'an approved issue needs an approval record');
+  }
+  if (this.approval && !['approved', 'posted'].includes(this.reviewState)) {
+    this.invalidate('approval', 'an approval record requires an approved or posted review state');
+  }
+  if (this.approval && this.approval.revision !== (this.revision || 1)) {
+    this.invalidate('approval', 'an approval must name the current revision');
+  }
+  if (this.reviewState === 'posted' && (!this.posting || this.posting.revision !== this.revision)) {
+    this.invalidate('reviewState', 'a posted issue needs a posting record for its current revision');
+  }
 });
 
 pivotCarouselDeckSchema.index({ tenantKey: 1, updatedAt: -1 });
@@ -162,3 +279,8 @@ pivotCarouselDeckSchema.index({ tenantKey: 1, status: 1, updatedAt: -1 });
 
 module.exports = pivotCarouselDeckSchema;
 module.exports.EDITIONS = EDITIONS;
+module.exports.ORIGINS = ORIGINS;
+module.exports.REVIEW_STATES = REVIEW_STATES;
+module.exports.MAX_SOCIAL_CAPTION_LENGTH = MAX_SOCIAL_CAPTION_LENGTH;
+module.exports.EDITORIAL_FIELDS = EDITORIAL_FIELDS;
+module.exports.FEEDBACK_DISPOSITIONS = FEEDBACK_DISPOSITIONS;

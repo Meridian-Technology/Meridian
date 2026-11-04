@@ -1,3 +1,4 @@
+/* eslint-disable testing-library/no-node-access -- Photo fan images are decorative and have no accessible role. */
 import React from 'react';
 import { fireEvent, render, screen } from '@testing-library/react';
 import PivotCarouselLibrary from './PivotCarouselLibrary';
@@ -52,4 +53,25 @@ describe('carousel grid', () => {
     fireEvent.click(screen.getAllByRole('button', { name: 'Delete' })[1]);
     expect(onDelete).toHaveBeenCalledWith(issues[1]);
   });
+});
+
+test('shows and filters unapproved generated drafts without labeling manual issues', () => {
+  render(<PivotCarouselLibrary issues={[
+    ...ISSUES,
+    { ...ISSUES[0], _id: 'generated', name: 'City weekend', origin: 'agent-generated', reviewState: 'unapproved' },
+    { ...ISSUES[0], _id: 'approved', name: 'Ready issue', origin: 'agent-generated', reviewState: 'approved' },
+    { ...ISSUES[0], _id: 'posted', name: 'Posted issue', origin: 'agent-generated', reviewState: 'posted' },
+  ]} />);
+  expect(screen.getAllByText('Unapproved draft')).toHaveLength(1);
+  fireEvent.change(screen.getByLabelText('Review status'), { target: { value: 'unapproved' } });
+  expect(screen.getByRole('button', { name: /City weekend/ })).toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: /Lanterns|Jazz night|Ready issue|Posted issue/ })).not.toBeInTheDocument();
+  fireEvent.change(screen.getByLabelText('Review status'), { target: { value: 'all' } });
+  expect(screen.getByRole('button', { name: /Lanterns/ })).toBeInTheDocument();
+});
+
+test('explains when the unapproved filter has no matches', () => {
+  render(<PivotCarouselLibrary issues={ISSUES} />);
+  fireEvent.change(screen.getByLabelText('Review status'), { target: { value: 'unapproved' } });
+  expect(screen.getByText('No unapproved drafts.')).toBeInTheDocument();
 });

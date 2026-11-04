@@ -1,0 +1,87 @@
+{
+  "contractVersion": "1",
+  "jobId": "job:compose-iowacity-001",
+  "scheduleOccurrenceId": null,
+  "kind": "carousel-compose",
+  "cityKey": "iowacity",
+  "implementationRevision": "meridian-backend@2026.09.11",
+  "contextVersion": "ctx:compose.iowacity.001",
+  "snapshotAt": "2026-09-11T20:00:00.000Z",
+  "editorialAccountKey": "just.go.ic",
+  "proposedPublicationAt": "2026-10-12T23:00:00.000Z",
+  "account": {
+    "id": "507f1f77bcf86cd799439001",
+    "key": "just.go.ic",
+    "displayName": "Just Go Curation Iowa City",
+    "handle": "@just.go.ic",
+    "format": "city-picks",
+    "ownerTenantKey": "iowacity",
+    "sourceTenantKeys": [
+      "iowacity"
+    ],
+    "timezone": "America/Chicago",
+    "voice": {}
+  },
+  "policy": {
+    "minEvents": 3,
+    "maxEvents": 5,
+    "browsingAllowed": false
+  },
+  "window": {
+    "from": "2026-10-12T23:00:00.000Z",
+    "to": "2026-10-26T23:00:00.000Z",
+    "toExclusive": false,
+    "timezone": "America/Chicago",
+    "mode": "upcoming",
+    "days": 14
+  },
+  "candidates": [],
+  "lastPostedIssues": [],
+  "editorialFeedback": {
+    "accountKey": "507f1f77bcf86cd799439001",
+    "items": [],
+    "version": "feedback:fixture"
+  },
+  "coverage": {
+    "tenantsRead": 1,
+    "pagesRead": 1,
+    "cutOff": false,
+    "complete": true,
+    "candidateCount": 0,
+    "tenants": [
+      {
+        "tenantKey": "iowacity",
+        "pagesRead": 1,
+        "complete": true,
+        "candidatesRead": 0,
+        "error": null
+      }
+    ]
+  },
+  "templates": {
+    "version": 2,
+    "coverFamilies": [
+      "loose-letters",
+      "open-invitation",
+      "kept-somewhere"
+    ],
+    "coverVariations": [
+      1,
+      2,
+      3
+    ],
+    "eventPresets": [
+      "photo-note",
+      "on-the-bill",
+      "in-the-room"
+    ],
+    "closingPresets": [
+      "paper-close",
+      "orange-close"
+    ]
+  },
+  "missingSignals": [
+    "Catalog interest does not verify attendance."
+  ],
+  "coverAssets": []
+}

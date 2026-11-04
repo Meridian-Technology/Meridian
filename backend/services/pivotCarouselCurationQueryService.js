@@ -8,6 +8,11 @@
 const { connectToDatabase } = require('../connectionsManager');
 const getModels = require('./getModelService');
 const getGlobalModels = require('./getGlobalModelService');
+const { recordVersion } = require('../utilities/pivotComputeContextVersion');
+const { serializeLabEvent, loadIntentStatsByEventId } = require('./pivotLabEventsService');
+const { serializePerformanceEvent } = require('./pivotAdminOverviewService');
+const { resolvePivotDropConfig } = require('../utilities/pivotDropSchedule');
+const { isRichLocationCapabilityEnabled } = require('../utilities/justGoRichLocationControls');
 const { getTenantByKey } = require('./tenantConfigService');
 const { loadAccount } = require('./pivotCarouselIssueService');
 const { resolveCurationProvider, VECTOR_PROVIDER_ID } = require('./carouselCurationProvider');
@@ -36,9 +41,10 @@ const EVENT_FIELDS = [
   'start_time',
   'end_time',
   'location',
-  'richLocation.venueName',
+  'richLocation',
   'externalLink',
   'createdAt',
+  'updatedAt',
   'customFields.pivot',
 ].join(' ');
 
@@ -113,13 +119,14 @@ function excludeIds(match, ids) {
   return match;
 }
 
-async function queryOneSource(req, tenantKey, spec, usedEventIds, { now, capturedAt }) {
+async function queryOneSource(req, tenantKey, spec, usedEventIds, { now, capturedAt, pin = true, editorialSignals = false, onlyEventIds }) {
   try {
     const db = await connectToDatabase(tenantKey);
-    const { Event } = getModels({ db }, 'Event');
+    const { Event, PivotEventIntent } = getModels({ db }, 'Event', ...(editorialSignals ? ['PivotEventIntent'] : []));
     const tenant = await getTenantByKey(req, tenantKey);
     const cityName = tenant?.location || tenant?.name || tenantKey;
     const match = buildCurationMongoQuery(spec, { now, usedEventIds });
+    if (onlyEventIds) match.$and = [...(match.$and || []), { _id: { $in: onlyEventIds } }];
     const afterCursor = cursorMongoClause(spec, tenantKey);
     if (afterCursor) {
       match.$and = [...(match.$and || []), afterCursor];
@@ -134,7 +141,7 @@ async function queryOneSource(req, tenantKey, spec, usedEventIds, { now, capture
     });
 
     let pinned = [];
-    if (!spec.cursor) {
+    if (pin && !spec.cursor) {
       pinned = await Event.find({ $and: [match, pinnedMongoClause()] })
         .select(EVENT_FIELDS)
         .sort({ start_time: -1, _id: -1 })
@@ -161,6 +168,7 @@ async function queryOneSource(req, tenantKey, spec, usedEventIds, { now, capture
           richLocation: 1,
           externalLink: 1,
           createdAt: 1,
+          updatedAt: 1,
           customFields: 1,
           _curationRelevance: 1,
         } },
@@ -173,11 +181,34 @@ async function queryOneSource(req, tenantKey, spec, usedEventIds, { now, capture
         .lean();
     }
 
+    const candidates = [...pinned, ...events].map(toCandidate);
+    if (editorialSignals) {
+      const rows = [...pinned, ...events];
+      const stats = await loadIntentStatsByEventId(PivotEventIntent, rows.map(event => event._id));
+      candidates.forEach((candidate, index) => {
+        const event = rows[index];
+        const panel = serializeLabEvent(event, stats, {
+          dropDayOfWeek: resolvePivotDropConfig(tenant).dayOfWeek,
+          richLocationReadsEnabled: isRichLocationCapabilityEnabled(tenant, 'reads'),
+        });
+        // Keep panel-visible catalog facts and aggregates; never expose attendee identities.
+        const { _id, createdByUserId, hostIdentities, ...signals } = panel;
+        candidate.panelSignals = signals;
+        candidate.performance = serializePerformanceEvent(event, panel.intentStats);
+        candidate.snapshot.rankingOverride = panel.rankingOverride;
+        candidate.snapshot.tags = panel.tags;
+        const { intentStats, ...recordSignals } = signals;
+        candidate.recordVersion = recordVersion('event', {
+          sourceTenantKey: tenantKey, eventId: String(event._id),
+          updatedAt: event.updatedAt || null, snapshot: candidate.snapshot, panelSignals: recordSignals,
+        });
+      });
+    }
     return {
       tenantKey,
       status: 'ok',
       fetched: events.length,
-      candidates: [...pinned, ...events].map(toCandidate),
+      candidates,
     };
   } catch (err) {
     return {
@@ -190,6 +221,20 @@ async function queryOneSource(req, tenantKey, spec, usedEventIds, { now, capture
       candidates: [],
     };
   }
+}
+
+/** Internal read for a trusted compose context: one catalog tenant, stable date paging,
+ * no account-search source cap and no first-page pinning. Not exposed as an HTTP route.
+ */
+async function searchEditorialCatalogPage(req, tenantKey, raw = {}, options = {}) {
+  const parsed = parseCurationQuery({ ...raw, provider: 'catalog', sourceTenantKeys: [tenantKey],
+    publication: 'published', previouslyUsedInAccount: options.usedEventIds?.length ? 'exclude' : 'any' });
+  if (parsed.error) return parsed;
+  const now = options.now instanceof Date ? options.now : new Date();
+  const row = await queryOneSource(req, tenantKey, parsed.spec, options.usedEventIds || [], {
+    now, capturedAt: now, pin: false, editorialSignals: true, onlyEventIds: options.onlyEventIds,
+  });
+  return { data: mergeSourcePages([row], parsed.spec, { pin: false }) };
 }
 
 async function searchCatalogCandidates(ctx) {
@@ -394,6 +439,7 @@ module.exports = {
   SOURCE_CONCURRENCY,
   SAVED_SEARCH_MAX,
   searchCurationCandidates,
+  searchEditorialCatalogPage,
   curationQuerySpec,
   listSavedCurationSearches,
   saveCurationSearch,

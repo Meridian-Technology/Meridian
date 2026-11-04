@@ -109,6 +109,19 @@ describe('pivotComputeWorkerRoutes outcomes', () => {
     expect(response.body.code).toBe('COMPUTE_WORKER_AUTH_REQUIRED');
   });
 
+  it('authenticates read-only compose scheduling metadata and returns no credentials', async () => {
+    const route = '/worker/pivot/compute/v1/carousel-compose-accounts';
+    expect((await request(app).get(route)).status).toBe(401);
+    const response = await workerAuth(request(app).get(route));
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({ accounts: [
+      { key: 'just.go.ic', cityKey: 'iowacity', timezone: 'America/Chicago' },
+      { key: 'just.go.sf', cityKey: 'sf', timezone: 'America/Los_Angeles' },
+      { key: 'sorry.u.missed.it', cityKey: null, timezone: null },
+    ] });
+    expect(JSON.stringify(response.body)).not.toContain(WORKER_SECRET);
+  });
+
   it('registers and leases a schedule occurrence before returning its context', async () => {
     const occurrenceId = 'sched:discovery-iowacity@2026-09-08T12:00:00.000Z';
     buildCityDiscoveryContextSnapshot.mockImplementation(async (_req, options) => {

@@ -30,6 +30,7 @@ function serializeCheckpoint(row) {
     name: doc.name,
     headRevision: doc.headRevision,
     schemaVersion: doc.schemaVersion || 2,
+    socialCaption: doc.socialCaption ?? null,
     createdAt: doc.createdAt,
     createdBy: doc.createdBy || null,
   };
@@ -45,6 +46,7 @@ async function recordHeadSnapshot(req, saved, meta = {}) {
     kind: 'save',
     schemaVersion: 2,
     document: saved.document,
+    socialCaption: saved.socialCaption ?? '',
     curation: saved.curation || null,
     sources: saved.sources || [],
     restoredFrom: meta.restoredFrom || null,
@@ -73,6 +75,26 @@ async function pruneSaveSnapshots(req, issueId, currentRevision) {
   return { kept: keep.size, removed: drop.length };
 }
 
+/** Capture posted content separately so later saves cannot rewrite it. */
+async function recordPostedSnapshot(req, doc, extra = {}) {
+  const { PivotCarouselRevision } = getGlobalModels(req, 'PivotCarouselRevision');
+  const isEditable = Boolean(doc.document) && (doc.schemaVersion || 1) === 2;
+  return PivotCarouselRevision.create({
+    issueId: doc._id,
+    accountId: doc.accountId,
+    headRevision: doc.revision || 1,
+    kind: 'posted',
+    schemaVersion: doc.schemaVersion || 1,
+    document: isEditable ? doc.document : null,
+    ...(isEditable ? {} : { slides: JSON.parse(JSON.stringify(doc.slides || [])) }),
+    socialCaption: doc.socialCaption ?? '',
+    curation: doc.curation || null,
+    sources: doc.sources || [],
+    createdBy: actorId(req),
+    ...extra,
+  });
+}
+
 async function pinExportRevision(req, deck, sourceRevision) {
   if (!deck?.document || (deck.schemaVersion || 1) !== 2) {
     return fail('Only an editable issue can be pinned for export.', 409, 'SCHEMA_VERSION_UNSUPPORTED');
@@ -89,6 +111,7 @@ async function pinExportRevision(req, deck, sourceRevision) {
     sourceRevision,
     schemaVersion: 2,
     document: pinned.document,
+    socialCaption: deck.socialCaption ?? '',
     curation: deck.curation || null,
     sources: deck.sources || [],
     createdBy: actorId(req),
@@ -147,6 +170,7 @@ async function createCheckpoint(req, accountId, issueId, body = {}) {
     name,
     schemaVersion: head.schemaVersion || 2,
     document: head.document,
+    socialCaption: head.socialCaption ?? '',
     curation: head.curation || null,
     sources: head.sources || [],
     createdBy: actorId(req),
@@ -170,6 +194,8 @@ async function restoreCheckpoint(req, accountId, issueId, checkpointId, body = {
   }).lean();
   if (!checkpoint) return fail('Checkpoint not found.', 404, 'CHECKPOINT_NOT_FOUND');
   const next = { revision: body.revision, document: checkpoint.document };
+  // Older checkpoints did not capture captions; preserve the current caption.
+  if (typeof checkpoint.socialCaption === 'string') next.socialCaption = checkpoint.socialCaption;
   if (checkpoint.curation && typeof checkpoint.curation === 'object') next.curation = checkpoint.curation;
   if (Array.isArray(checkpoint.sources)) next.sources = checkpoint.sources;
   const restored = await updateCarouselIssue(req, accountId, issueId, next, { restoredFrom: checkpoint._id });
@@ -189,6 +215,7 @@ async function restoreCheckpoint(req, accountId, issueId, checkpointId, body = {
 module.exports = {
   RETENTION,
   recordHeadSnapshot,
+  recordPostedSnapshot,
   pinExportRevision,
   findExportPin,
   findExportPinById,

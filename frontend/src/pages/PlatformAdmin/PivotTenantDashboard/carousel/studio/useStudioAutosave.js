@@ -80,6 +80,18 @@ export default function useStudioAutosave({
     });
   }, [key, userId, accountId, issueId, schemaVersion]);
 
+  const reportConflict = useCallback((result) => {
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = null;
+    saveStateRef.current = 'conflict';
+    setConflict({
+      serverIssue: result.issue || null,
+      storedRevision: result.storedRevision || result.issue?.revision || null,
+      message: result.error || 'This issue changed in another session.',
+    });
+    setSaveState('conflict');
+  }, []);
+
   const runSave = useCallback(async () => {
     if (!onSaveRef.current || saveStateRef.current === 'conflict') return;
     const online = typeof navigator === 'undefined' ? true : navigator.onLine !== false;
@@ -99,13 +111,7 @@ export default function useStudioAutosave({
     }
     const outcome = classifySaveResult(result, online);
     if (outcome === 'conflict') {
-      const next = {
-        serverIssue: result.issue || null,
-        storedRevision: result.storedRevision || result.issue?.revision || null,
-        message: result.error || 'This issue changed in another session.',
-      };
-      setConflict(next);
-      setSaveState('conflict');
+      reportConflict(result);
       onResultRef.current?.({ outcome, result });
       return;
     }
@@ -141,7 +147,7 @@ export default function useStudioAutosave({
     }
     onResultRef.current?.({ outcome: 'saved', result: applied });
     return applied;
-  }, [autosaveMs, key]);
+  }, [autosaveMs, key, reportConflict]);
 
   const enqueueRef = useRef(() => {});
 
@@ -229,6 +235,7 @@ export default function useStudioAutosave({
     flush,
     dismissRecovery,
     clearConflict,
+    reportConflict,
     persistLocal,
   };
 }

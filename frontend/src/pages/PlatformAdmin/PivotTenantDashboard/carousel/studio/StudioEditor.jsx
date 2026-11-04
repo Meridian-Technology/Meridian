@@ -15,6 +15,7 @@ import useStudioAutosave from './useStudioAutosave';
 import { compareDocuments, exportAvailability } from './studioPersistence';
 import CarouselExportChoice from '../CarouselExportChoice';
 import PivotCarouselPopup from '../PivotCarouselPopup';
+import PivotCarouselReview from '../PivotCarouselReview';
 import './StudioEditor.scss';
 
 const HANDLES = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'];
@@ -35,14 +36,14 @@ function FileButton({ label, disabled, onFile }) {
   return <label className={`jg-editor__upload${disabled ? ' is-disabled' : ''}`}><Icon icon="lucide:upload" />{label}<input type="file" aria-label={label} accept="image/png,image/jpeg,image/webp,image/gif" disabled={disabled} onChange={event => { const file = event.target.files?.[0]; event.target.value = ''; if (file) onFile(file); }} /></label>;
 }
 function editorDocument(issue) {
-  return { ...clone(issue.document), editorial: { curation: clone(issue.curation || { refs: issue.sources || [] }), sources: clone(issue.sources || []) } };
+  return { ...clone(issue.document), editorial: { curation: clone(issue.curation || { refs: issue.sources || [] }), sources: clone(issue.sources || []), ...(issue.socialCaption !== undefined || issue.origin === 'agent-generated' ? { socialCaption: issue.socialCaption || '' } : {}) } };
 }
 function snapshotOf(value) {
   const snapshot = clone(value);
   const { editorial, ...document } = snapshot;
   return { document, editorial };
 }
-export default function StudioEditor({ issue, onSave, onSaveCopy, onReload, onOpenIssue, onExport, onEditSelection, account, onBack, userId, autosaveMs }) {
+export default function StudioEditor({ issue, onSave, onSaveCopy, onReload, onOpenIssue, onExport, onEditSelection, account, onBack, userId, autosaveMs, onIssueChange }) {
   const [history, setHistory] = useState(() => createHistory(editorDocument(issue)));
   const historyRef = useRef(history); historyRef.current = history;
   const doc = history.present; const docRef = useRef(doc); docRef.current = doc;
@@ -51,7 +52,9 @@ export default function StudioEditor({ issue, onSave, onSaveCopy, onReload, onOp
   const [selected, setSelected] = useState([]);
   const [zoom, setZoom] = useState(0.42);
   const manualZoom = useRef(false);
-  const [panel, setPanel] = useState('design');
+  const [panel, setPanel] = useState(issue.origin === 'agent-generated' ? 'review' : 'design');
+  const [reviewIssue, setReviewIssue] = useState(issue);
+  useEffect(() => setReviewIssue(issue), [issue]);
   const [mode, setMode] = useState('select');
   const [editingId, setEditingId] = useState(null);
   const pendingText = useRef(null);
@@ -86,22 +89,25 @@ export default function StudioEditor({ issue, onSave, onSaveCopy, onReload, onOp
   useStudioNavigationGuard(dirty);
   const adopt = useCallback((savedIssue) => {
     const next = editorDocument({ ...issue, ...savedIssue });
+    setReviewIssue(savedIssue);
+    onIssueChange?.(savedIssue);
     setHistory(createHistory(next));
     setSavedJson(JSON.stringify(next));
     setSelected([]);
-  }, [issue]);
+  }, [issue, onIssueChange]);
   const autosave = useStudioAutosave({
     userId,
     accountId: issue.accountId,
     issueId: issue._id || issue.id,
     serverUpdatedAt: issue.updatedAt,
     serverDocument: issue.document,
-    serverEditorial: { curation: issue.curation || null, sources: issue.sources || [] },
+    serverEditorial: editorDocument(issue).editorial,
     initialRevision: issue.revision || 1,
     getSnapshot: () => snapshotOf(docRef.current),
     onSave,
     autosaveMs,
     onResult: ({ outcome, result }) => {
+      if (outcome === 'saved' && result.issue) setReviewIssue(result.issue);
       if (outcome === 'saved' && result.replaceDocument) {
         const saved = { ...(result.document || result.captured.document), editorial: result.editorial || result.captured.editorial };
         setSavedJson(JSON.stringify(saved));
@@ -112,7 +118,7 @@ export default function StudioEditor({ issue, onSave, onSaveCopy, onReload, onOp
       else if (outcome === 'failed') setNotice('The save failed. Your edits are still here. Try again.');
     },
   });
-  const { saveState, conflict, recovery, noteEdit, flush, dismissRecovery, clearConflict, revisionRef } = autosave;
+  const { saveState, conflict, recovery, noteEdit, flush, dismissRecovery, clearConflict, reportConflict, revisionRef } = autosave;
   const dirtyRef = useRef(dirty); dirtyRef.current = dirty;
   const center = primary && commands.visualCenter(slide, primaryId);
   const bounds = selected.length > 1 ? commands.selectionBounds(slide, selected) : null;
@@ -310,7 +316,7 @@ export default function StudioEditor({ issue, onSave, onSaveCopy, onReload, onOp
     setNotice('Recovered edits from this browser. They are not saved on the server yet.');
   };
   const reloadServer = async () => {
-    if (conflict?.serverIssue?.document) {
+    if (!onReload && conflict?.serverIssue?.document) {
       adopt(conflict.serverIssue);
       clearConflict(conflict.serverIssue.revision);
       setCompareOpen(false);
@@ -322,7 +328,7 @@ export default function StudioEditor({ issue, onSave, onSaveCopy, onReload, onOp
       adopt(loaded);
       clearConflict(loaded.revision);
       setCompareOpen(false);
-    }
+    } else setNotice(loaded?.error || 'The saved issue could not be loaded. Try again.');
   };
   const saveCopy = async () => {
     const { document, editorial } = snapshotOf(docRef.current);
@@ -444,7 +450,7 @@ export default function StudioEditor({ issue, onSave, onSaveCopy, onReload, onOp
 
   return <div className="jg-editor pivot-ops" ref={rootRef} tabIndex={0} onKeyDown={keyDown} onPointerMove={move} onPointerUp={finish} onPointerCancel={cancelGesture} onLostPointerCapture={() => { if (drag.current) cancelGesture(); }}>
     <header className="jg-editor__bar">
-      <div className="jg-editor__identity">{onBack && <Button icon="lucide:arrow-left" aria-label="Back to issues" onClick={() => { if (!dirty || window.confirm('Leave this issue and discard unsaved changes?')) onBack(); }} />}<div><h1>{issue.name || issue.title || 'Untitled issue'}</h1><span>{issue.format === 'sorry-you-missed-it' ? 'Sorry you missed it' : 'City picks'} · {slides.length} slides</span></div></div>
+      <div className="jg-editor__identity">{onBack && <Button icon="lucide:arrow-left" aria-label="Back to issues" onClick={() => { if (!dirty || window.confirm('Leave this issue and discard unsaved changes?')) onBack(); }} />}<div><h1>{issue.name || issue.title || 'Untitled issue'}</h1><span>{issue.format === 'sorry-you-missed-it' ? 'Sorry you missed it' : 'City picks'} · {slides.length} slides</span>{reviewIssue.origin === 'agent-generated' && <PivotOpsStatus tone={reviewIssue.reviewState === 'unapproved' || dirty ? 'warn' : 'success'}>{dirty || (reviewIssue.reviewState || 'unapproved') === 'unapproved' ? 'Unapproved draft' : reviewIssue.reviewState === 'posted' ? 'Posted' : 'Approved'}</PivotOpsStatus>}</div></div>
       <div className="jg-editor__actions"><span data-testid="save-state"><PivotOpsStatus tone={saveState === 'failed' || saveState === 'conflict' || saveState === 'offline' ? 'danger' : dirty ? 'warn' : 'success'}>{status}</PivotOpsStatus></span><Button icon="lucide:list-filter" onClick={editSelection} disabled={!account && !onEditSelection}>Edit selection</Button><Button icon="lucide:history" onClick={openCheckpoints}>Checkpoints</Button><div className="jg-editor__commit"><Button className="is-primary" onClick={save} disabled={!dirty || saveState === 'saving' || saveState === 'conflict' || uploading}>Save</Button><Button data-testid="export-issue" disabled={!exportState.enabled} title={exportState.reason} onClick={() => setExportOpen(true)}>Export</Button></div></div>
     </header>
 
@@ -467,7 +473,16 @@ export default function StudioEditor({ issue, onSave, onSaveCopy, onReload, onOp
           </div>}
         </div> : <div className="jg-editor__empty" data-testid="empty-document"><Icon icon="lucide:panels-top-left" /><h2>No slides yet</h2><p>Add a slide and choose a template to begin.</p><Button className="is-primary" onClick={() => addSlide('cover')}>Add cover</Button></div>}
       </main>
-      <aside className={`jg-editor__inspector${sheetOpen ? ' is-open' : ''}`} aria-label="Inspector"><nav className="jg-editor__tabs">{['design', 'templates', 'assets', 'layers'].map(tab => <Button key={tab} aria-pressed={panel === tab} aria-expanded={narrow ? sheetOpen && panel === tab : undefined} onClick={() => openPanel(tab)}>{tab[0].toUpperCase() + tab.slice(1)}</Button>)}{sheetOpen ? <Button className="jg-editor__sheet-close" icon="lucide:chevron-down" aria-label="Close panel" onClick={() => setSheetOpen(false)} /> : null}</nav><div className="jg-editor__panel">
+      <aside className={`jg-editor__inspector${sheetOpen ? ' is-open' : ''}`} aria-label="Inspector"><nav className="jg-editor__tabs">{[...(reviewIssue.origin === 'agent-generated' ? ['review'] : []), 'design', 'templates', 'assets', 'layers'].map(tab => <Button key={tab} aria-pressed={panel === tab} aria-expanded={narrow ? sheetOpen && panel === tab : undefined} onClick={() => openPanel(tab)}>{tab[0].toUpperCase() + tab.slice(1)}</Button>)}{sheetOpen ? <Button className="jg-editor__sheet-close" icon="lucide:chevron-down" aria-label="Close panel" onClick={() => setSheetOpen(false)} /> : null}</nav><div className="jg-editor__panel">
+        {panel === 'review' && reviewIssue.origin === 'agent-generated' && <PivotCarouselReview
+          issue={reviewIssue}
+          revision={revisionRef.current}
+          caption={doc.editorial?.socialCaption || ''}
+          onCaption={socialCaption => commit({ ...docRef.current, editorial: { ...docRef.current.editorial, socialCaption } }, 'Edit caption')}
+          disabled={dirty || saveState !== 'saved'}
+          onIssue={saved => { setReviewIssue(saved); onIssueChange?.(saved); }}
+          onConflict={reportConflict}
+        />}
         {panel === 'design' && <>
           {overflowingCards.map(card => <section key={card.id} className="jg-editor__warning"><h2>Copy needs more room</h2><p>Text overlaps the details in this card. Resize the card or reduce its text size.</p><Button onClick={() => change(commands.growTextFrame, card.id, cardOverflow(card) + 24)}>Make card taller</Button><Button onClick={() => change(commands.fitCardText, card.id)}>Fit card text</Button></section>)}
           <section><h2>{primary ? commands.elementLabel(primary).replaceAll('-', ' ') : 'Slide design'}</h2>{!primary && <p>Select an object to move, resize, or style it. Double-click text to edit.</p>}
@@ -494,7 +509,7 @@ export default function StudioEditor({ issue, onSave, onSaveCopy, onReload, onOp
     </div>
     <footer className={`jg-editor__footer${narrow ? ' is-compact' : ''}`}><span>{notice || (mode === 'crop' || mode === 'background-crop' ? 'Crop mode · Drag to pan · Escape to finish' : 'Drag to move · Shift-click to select more · Alt to bypass snapping')}</span><div className="jg-editor__photo-credits">{assets.filter(asset => asset.provider === 'unsplash').map(asset => <PhotoCredit key={asset.id || asset.src} asset={asset} />)}</div><span>1080 × 1350 · 4:5</span></footer>
     {imageTarget && <StudioImagePicker accountId={issue.accountId} events={eventImages(doc)} assets={accountAssets} onChoose={chooseImage} onUpload={file => upload(file, chooseImage)} onClose={() => setImageTarget(null)} />}
-    {curationId && account && <div className="jg-editor__curation" role="dialog" aria-modal="true" aria-label="Edit selection"><PivotCarouselCurationWorkspace account={account} draftId={curationId} issue={{ id: issue._id || issue.id, revision: revisionRef.current, ...doc.editorial, document: doc }} onDraftId={setCurationId} staged onApplied={data => { commit({ ...data.document, editorial: { curation: data.curation, sources: data.sources } }, 'Edit selection'); setCurationId(null); setNotice('Selection updated locally. Save to keep it.'); }} onCancel={() => setCurationId(null)} /></div>}
+    {curationId && account && <div className="jg-editor__curation" role="dialog" aria-modal="true" aria-label="Edit selection"><PivotCarouselCurationWorkspace account={account} draftId={curationId} issue={{ id: issue._id || issue.id, revision: revisionRef.current, ...doc.editorial, document: doc }} onDraftId={setCurationId} staged onApplied={data => { commit({ ...data.document, editorial: { ...docRef.current.editorial, curation: data.curation, sources: data.sources } }, 'Edit selection'); setCurationId(null); setNotice('Selection updated locally. Save to keep it.'); }} onCancel={() => setCurationId(null)} /></div>}
     {recovery && <div className="jg-editor__banner" role="status"><p>This browser has newer unsaved edits than the saved issue. Restoring them does not save to the server.</p><Button onClick={acceptRecovery}>Restore local edits</Button><Button onClick={dismissRecovery}>Keep saved issue</Button></div>}
     {conflict && <div className="jg-editor__banner" role="alert"><p>{conflict.message} Both copies are kept. Autosave is paused.</p><Button onClick={reloadServer}>Reload saved issue</Button><Button onClick={() => setCompareOpen(true)} disabled={!conflict.serverIssue?.document}>Compare</Button><Button onClick={saveCopy} disabled={!onSaveCopy}>Save as a new issue</Button></div>}
     {compareOpen && comparison && <div className="jg-editor__curation" role="dialog" aria-modal="true" aria-label="Compare versions"><h2>This browser and the saved issue</h2><p>{comparison.localSlides} slides here, {comparison.serverSlides} slides saved. Revision {conflict.storedRevision} is on the server.</p>{comparison.changes.map(change => <p key={change.id}>{change.role}: {change.local ?? 'removed'} → {change.server ?? 'not on server'}</p>)}{comparison.hiddenChanges > 0 && <p>{comparison.hiddenChanges} more differences are not listed.</p>}<Button onClick={() => setCompareOpen(false)}>Close</Button></div>}

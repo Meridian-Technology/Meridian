@@ -100,6 +100,12 @@ async function buildAuthorizedContext(req, job, workerId) {
     if (result?.error) throw serviceError(result.error, result.code || 'CAROUSEL_CONTEXT_FAILED', result.status || 500);
     return result.data.snapshot;
   }
+  if (job.kind === 'carousel-compose') {
+    const { buildCarouselComposeContextSnapshot } = require('./pivotCarouselComposeContextService');
+    const result = await buildCarouselComposeContextSnapshot(req, { job });
+    if (result?.error) throw serviceError(result.error, result.code || 'COMPOSE_CONTEXT_FAILED', result.status || 500);
+    return result.data.snapshot;
+  }
   throw serviceError(`Unsupported compute job kind: ${job.kind}`, 'UNSUPPORTED_COMPUTE_JOB_KIND');
 }
 
@@ -174,7 +180,8 @@ async function registerScheduleOccurrence(req, {
     );
   }
   const context = await buildAuthorizedContext(req, claim.job, workerId);
-  const updatedJob = await updateComputeJobContextVersion(req, claim.job.externalJobId, context.contextVersion);
+  const updatedJob = await updateComputeJobContextVersion(req, claim.job.externalJobId, context.contextVersion,
+    claim.job.kind === 'carousel-compose' ? { composeContext: context, leaseToken: claim.job.lease.token } : {});
 
   return {
     created,
@@ -225,7 +232,8 @@ async function fetchJobContext(req, {
   if (!job) throw serviceError('Compute job not found', 'COMPUTE_JOB_NOT_FOUND', 404);
   assertLeaseBinding({ job, workerId, leaseToken, requireActive: true, now });
   const context = await buildAuthorizedContext(req, job, workerId);
-  const updatedJob = await updateComputeJobContextVersion(req, job.externalJobId, context.contextVersion);
+  const updatedJob = await updateComputeJobContextVersion(req, job.externalJobId, context.contextVersion,
+    job.kind === 'carousel-compose' ? { composeContext: context, leaseToken } : {});
   return { job: updatedJob, context };
 }
 
@@ -311,6 +319,10 @@ async function submitTerminalJobResult(req, {
     requiresReview: body.requiresReview !== false,
     now,
   });
+  if (job.kind === 'carousel-compose' && job.result?.embedded?.outcome === 'completed') {
+    const { applyCarouselComposeJob } = require('./pivotComputeAdminService');
+    return applyCarouselComposeJob(req, externalJobId, { tenantKey: job.tenantKey, actor: `worker:${workerId}`, now });
+  }
   return { job };
 }
 

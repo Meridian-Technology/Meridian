@@ -11,6 +11,7 @@ const getGlobalModels = require('./getGlobalModelService');
 const { getTenantByKey } = require('./tenantConfigService');
 const { isPivotTenant } = require('../utilities/pivotDropSchedule');
 const { FORMATS } = require('../schemas/pivotCarouselAccount');
+const { MAX_SOCIAL_CAPTION_LENGTH } = require('../schemas/pivotCarouselDeck');
 const { slideTypeFor } = require('../constants/zineSlideTypes');
 const {
   LIMITS: ISSUE_LIMITS,
@@ -105,8 +106,21 @@ function serializeAccount(doc) {
   };
 }
 
+function serializePosting(posting) {
+  if (!posting) return null;
+  return {
+    revision: posting.revision,
+    postedAt: posting.postedAt,
+    postedBy: posting.postedBy || null,
+    recordedAt: posting.recordedAt,
+    instagramUrl: posting.instagramUrl || null,
+    snapshotRevisionId: posting.snapshotRevisionId ? String(posting.snapshotRevisionId) : null,
+  };
+}
+
 function serializeIssue(doc) {
   const row = doc.toObject ? doc.toObject() : doc;
+  const origin = row.origin || 'manual';
   return {
     id: String(row._id),
     accountId: row.accountId ? String(row.accountId) : null,
@@ -122,6 +136,22 @@ function serializeIssue(doc) {
     curation: row.curation || null,
     sources: row.sources || [],
     limits: ISSUE_LIMITS,
+    origin,
+    // Only a generated issue has a review state. A manual issue reads as null
+    // so the editor cannot show "Unapproved draft" over someone's own work.
+    reviewState: origin === 'agent-generated' ? (row.reviewState || 'unapproved') : null,
+    socialCaption: row.socialCaption || '',
+    editorialVersion: row.editorialVersion || 0,
+    feedbackNotes: (row.feedbackNotes || []).map(require('./pivotCarouselEditorialFeedbackService').serializeFeedbackRecord),
+    approval: row.approval
+      ? {
+        revision: row.approval.revision,
+        approvedAt: row.approval.approvedAt,
+        approvedBy: row.approval.approvedBy || null,
+      }
+      : null,
+    posting: serializePosting(row.posting),
+    postHistory: (row.postHistory || []).map(serializePosting),
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
@@ -139,15 +169,18 @@ async function loadAccount(req, accountId) {
   return { account };
 }
 
-async function assertSources(req, account, sources) {
+async function assertSources(req, account, sources, trustedTenantKeys = null) {
   if (sources != null && !Array.isArray(sources)) return fail('Sources must be a list.', 422, 'INVALID_CURATION');
-  const allowed = new Set(account.sourceTenantKeys);
+  const allowed = new Set(trustedTenantKeys || account.sourceTenantKeys);
   for (const source of sources || []) {
     const key = String(source?.sourceTenantKey || '').trim().toLowerCase();
     if (!allowed.has(key)) {
       return fail('That source tenant is not allowed for this account.', 403, 'SOURCE_NOT_ALLOWED');
     }
-    const gate = await pivotTenant(req, key);
+    // Compose's fixed global policy includes every catalog tenant, including campuses.
+    const gate = trustedTenantKeys
+      ? (await require('./tenantConfigService').getTenantByKey(req, key) ? {} : { error: 'Source tenant not found.', status: 404, code: 'TENANT_NOT_FOUND' })
+      : await pivotTenant(req, key);
     if (gate.error) return gate;
   }
   return null;
@@ -224,7 +257,7 @@ async function listCarouselIssues(req, accountId, query = {}) {
   };
 }
 
-async function createCarouselIssue(req, accountId, body = {}) {
+async function createIssue(req, accountId, body, origin, trusted = {}) {
   const loaded = await loadAccount(req, accountId);
   if (loaded.error) return loaded;
   const name = text(body.name, 80);
@@ -234,7 +267,7 @@ async function createCarouselIssue(req, accountId, body = {}) {
   }
   const format = body.format || loaded.account.defaultFormat;
   if (!FORMATS.includes(format)) return fail('Unknown issue format.', 400, 'FORMAT_INVALID');
-  const sourceError = await assertSources(req, loaded.account, body.sources);
+  const sourceError = await assertSources(req, loaded.account, body.sources, trusted.sourceTenantKeys);
   if (sourceError) return sourceError;
   const slides = Array.isArray(body.slides) ? body.slides : [];
   if (slides.length > ISSUE_LIMITS.maxSlides) {
@@ -248,10 +281,17 @@ async function createCarouselIssue(req, accountId, body = {}) {
 
   const assetError = await require('./pivotCarouselAssetService').validateAssetOwnership(req, accountId, document);
   if (assetError) return assetError;
-  const documentSourceError = await assertSources(req, loaded.account, (document?.slides || []).map(slide => slide.source).filter(Boolean));
+  const documentSourceError = await assertSources(req, loaded.account, (document?.slides || []).map(slide => slide.source).filter(Boolean), trusted.sourceTenantKeys);
   if (documentSourceError) return documentSourceError;
+  let socialCaption = '';
+  if (body.socialCaption !== undefined) {
+    const normalized = normalizeCaption(body.socialCaption);
+    if (normalized.error) return normalized;
+    socialCaption = normalized.caption;
+  }
   const { PivotCarouselDeck } = getGlobalModels(req, 'PivotCarouselDeck');
   const doc = await PivotCarouselDeck.create({
+    ...(trusted.issueId ? { _id: trusted.issueId, composeJobId: trusted.composeJobId } : {}),
     tenantKey: loaded.account.ownerTenantKey,
     title: name,
     name,
@@ -264,10 +304,19 @@ async function createCarouselIssue(req, accountId, body = {}) {
     document,
     curation: body.curation || null,
     sources: body.sources || [],
+    // Admin routes create human issues. Generated drafts arrive through the
+    // compute apply path, which supplies its origin internally.
+    origin,
+    reviewState: origin === 'agent-generated' ? 'unapproved' : null,
+    socialCaption,
     createdBy: actorId(req),
     updatedBy: actorId(req),
   });
   return { data: { issue: serializeIssue(doc) } };
+}
+
+async function createCarouselIssue(req, accountId, body = {}) {
+  return createIssue(req, accountId, body, 'manual');
 }
 
 async function getCarouselIssue(req, accountId, issueId) {
@@ -279,6 +328,26 @@ async function getCarouselIssue(req, accountId, issueId) {
   return { data: { issue: serializeIssue(doc) } };
 }
 
+/**
+ * A caption is content: it is approved with the slides, it goes out with the
+ * post, and it is saved under the same revision contract.
+ */
+function normalizeCaption(value) {
+  if (typeof value !== 'string') {
+    return fail('A social caption must be text.', 422, 'INVALID_CAPTION');
+  }
+  const caption = value.replace(/\r\n/g, '\n').trim();
+  if (caption.length > MAX_SOCIAL_CAPTION_LENGTH) {
+    return fail(
+      `A social caption can hold ${MAX_SOCIAL_CAPTION_LENGTH} characters.`,
+      422,
+      'CAPTION_TOO_LONG',
+      { limits: { maxSocialCaption: MAX_SOCIAL_CAPTION_LENGTH } },
+    );
+  }
+  return { caption };
+}
+
 async function writeIssue(req, accountId, issueId, body, mutate, snapshotMeta = null) {
   const loaded = await getCarouselIssue(req, accountId, issueId);
   if (loaded.error) return loaded;
@@ -286,8 +355,18 @@ async function writeIssue(req, accountId, issueId, body, mutate, snapshotMeta = 
   const doc = await PivotCarouselDeck.findOne({ _id: issueId, accountId });
   const conflict = checkRevision(doc.revision || 1, body.revision);
   if (conflict) return { ...conflict, issue: serializeIssue(doc) };
+  const editorial = require('./pivotCarouselEditorialFeedbackService');
+  const generated = doc.origin === 'agent-generated';
+  const before = generated ? editorial.editorialFields(doc) : null;
   const account = (await loadAccount(req, accountId)).account;
-  const sourceError = await assertSources(req, account, body.sources);
+  let composeSources = null;
+  if (generated && doc.composeJobId) {
+    const definition = require('../constants/pivotCarouselEditorialAccounts').editorialAccountFor(String(account.handle || '').replace(/^@/, ''));
+    if (definition) composeSources = definition.sourceTenantKeys === 'all'
+      ? (await require('./tenantConfigService').getMergedTenants(req)).map(tenant => tenant.tenantKey)
+      : [...definition.sourceTenantKeys];
+  }
+  const sourceError = await assertSources(req, account, body.sources, composeSources);
   if (sourceError) return sourceError;
   if (body.document !== undefined) {
     const prepared = prepareDocument(body.document);
@@ -295,7 +374,7 @@ async function writeIssue(req, accountId, issueId, body, mutate, snapshotMeta = 
     const assetError = await require('./pivotCarouselAssetService').validateAssetOwnership(req, accountId, prepared.document);
     if (assetError) return assetError;
     const refs = (prepared.document?.slides || []).map(slide => slide.source).filter(Boolean);
-    const refError = await assertSources(req, account, refs);
+    const refError = await assertSources(req, account, refs, composeSources);
     if (refError) return refError;
     doc.document = prepared.document;
     doc.schemaVersion = prepared.document ? 2 : doc.schemaVersion;
@@ -306,7 +385,7 @@ async function writeIssue(req, accountId, issueId, body, mutate, snapshotMeta = 
     if (!curation || typeof curation !== 'object' || Array.isArray(curation)) return fail('Invalid curation metadata.', 422, 'INVALID_CURATION');
     const refs = curation.refs || [];
     if (!Array.isArray(refs) || !Array.isArray(curation.snapshots || []) || refs.length > 19) return fail('Invalid selection.', 422, 'INVALID_CURATION');
-    const scopeError = await assertSources(req, account, [...refs, ...(curation.snapshots || []).map(item => item.ref)]);
+    const scopeError = await assertSources(req, account, [...refs, ...(curation.snapshots || []).map(item => item.ref)], composeSources);
     if (scopeError) return scopeError;
     if (body.sources && JSON.stringify(body.sources) !== JSON.stringify(refs)) return fail('Sources must match the reviewed selection.', 422, 'INVALID_CURATION');
     if (curation.draftId && JSON.stringify(curation) !== JSON.stringify(doc.curation)) {
@@ -323,12 +402,48 @@ async function writeIssue(req, accountId, issueId, body, mutate, snapshotMeta = 
     }
   }
   if (body.sources !== undefined) doc.sources = body.sources;
+  const nextRevision = (doc.revision || 1) + 1;
+  if (body.socialCaption !== undefined) {
+    const normalized = normalizeCaption(body.socialCaption);
+    if (normalized.error) return normalized;
+    if (normalized.caption !== (doc.socialCaption || '')) {
+      doc.socialCaption = normalized.caption;
+    }
+  }
   await mutate(doc, loaded);
   if (body.curation !== undefined) { doc.curation = body.curation; doc.markModified('curation'); }
-  doc.revision = (doc.revision || 1) + 1;
+  doc.revision = nextRevision;
   doc.updatedBy = actorId(req);
+  // A generated issue that moves to a new revision is no longer the thing
+  // anybody approved, so it goes back to being an unapproved draft. Approval
+  // names one exact revision and is never carried forward to another.
+  if (generated) {
+    doc.approval = null;
+    doc.reviewState = 'unapproved';
+  }
   await doc.validate();
-  const changes = doc.getChanges();
+
+  let changes = doc.getChanges();
+  if (generated) {
+    // Written unconditionally, not just when this copy of the issue happened
+    // to be holding an approval. An approval can land between the read above
+    // and the swap below, and the compare-and-swap would still match because
+    // approving does not move the revision. Clearing it here is what stops an
+    // approval from silently covering an edit nobody approved.
+    changes.$set = { ...(changes.$set || {}), approval: null, reviewState: 'unapproved' };
+    if (changes.$unset) {
+      delete changes.$unset.approval;
+      delete changes.$unset.reviewState;
+      if (!Object.keys(changes.$unset).length) delete changes.$unset;
+    }
+    const edit = doc.editLog.create({
+      actor: actorId(req), time: new Date(), version: (doc.editorialVersion || 0) + 1,
+      fromRevision: body.revision, toRevision: nextRevision,
+      changes: editorial.editorialChanges(before, editorial.editorialFields(doc)),
+    });
+    await edit.validate();
+    changes = editorial.appendEditorialRecord(changes, 'editLog', edit.toObject());
+  }
   const saved = await PivotCarouselDeck.findOneAndUpdate(
     { _id: issueId, accountId, revision: body.revision }, changes, { new: true, runValidators: true },
   );
@@ -343,8 +458,7 @@ async function writeIssue(req, accountId, issueId, body, mutate, snapshotMeta = 
   try {
     await require('./pivotCarouselRevisionService').recordHeadSnapshot(req, saved, snapshotMeta || {});
   } catch (err) {
-    // The head write already committed. A missing history row must not look
-    // like a failed save, or the next attempt would conflict with itself.
+    // Keep the existing save contract: the head has already committed.
     console.error('carousel revision snapshot failed', err);
   }
   return { data: { issue: serializeIssue(saved) } };
@@ -384,6 +498,180 @@ async function restoreCarouselIssue(req, accountId, issueId, body = {}) {
   });
 }
 
+/**
+ * Creates a new generated issue as an unapproved draft.
+ *
+ * Deliberately not reachable from the admin routes: an admin creating an issue
+ * is creating their own work, and nothing a human types should be able to
+ * claim it came from the editorial pipeline.
+ */
+async function createGeneratedCarouselIssue(req, accountId, body = {}, trusted = {}) {
+  return createIssue(req, accountId, body, 'agent-generated', trusted);
+}
+
+async function loadIssueForDecision(req, accountId, issueId) {
+  const loaded = await loadAccount(req, accountId);
+  if (loaded.error) return loaded;
+  const { PivotCarouselDeck } = getGlobalModels(req, 'PivotCarouselDeck');
+  const doc = await PivotCarouselDeck.findOne({ _id: issueId, accountId: loaded.account._id });
+  if (!doc) return fail('Issue not found.', 404, 'ISSUE_NOT_FOUND');
+  return { account: loaded.account, doc };
+}
+
+/**
+ * Approve one exact revision, slides and caption together.
+ *
+ * The compare-and-swap is on `revision` without changing it: approving is not
+ * an edit, but it must fail outright if the issue moved since the approver
+ * read it. Two approvals of the same revision are the same approval.
+ */
+async function approveCarouselIssue(req, accountId, issueId, body = {}) {
+  const loaded = await loadIssueForDecision(req, accountId, issueId);
+  if (loaded.error) return loaded;
+  const { doc } = loaded;
+  if ((doc.origin || 'manual') !== 'agent-generated') {
+    return fail('Only a generated issue is approved. Manual issues are already yours.', 409, 'NOT_GENERATED_ISSUE');
+  }
+  const conflict = checkRevision(doc.revision || 1, body.revision);
+  if (conflict) return { ...conflict, issue: serializeIssue(doc) };
+  if (doc.approval && doc.approval.revision === (doc.revision || 1)) {
+    return { data: { issue: serializeIssue(doc), alreadyApproved: true } };
+  }
+
+  const approval = {
+    revision: doc.revision || 1,
+    approvedAt: new Date(),
+    approvedBy: actorId(req),
+  };
+  const { PivotCarouselDeck } = getGlobalModels(req, 'PivotCarouselDeck');
+  const saved = await PivotCarouselDeck.findOneAndUpdate(
+    {
+      _id: issueId,
+      accountId: loaded.account._id,
+      revision: body.revision,
+      origin: 'agent-generated',
+      reviewState: 'unapproved',
+      approval: null,
+    },
+    { $set: { reviewState: 'approved', approval, updatedBy: actorId(req) } },
+    { new: true, runValidators: true },
+  );
+  if (!saved) {
+    const current = await PivotCarouselDeck.findOne({ _id: issueId, accountId: loaded.account._id });
+    // Another approver may have won on the same revision. Preserve that actor
+    // and time rather than overwriting the record on a concurrent request.
+    if (current?.revision === body.revision && current.approval?.revision === body.revision) {
+      return { data: { issue: serializeIssue(current), alreadyApproved: true } };
+    }
+    return fail('The issue changed while approving it.', 409, 'REVISION_CONFLICT', {
+      storedRevision: current?.revision,
+      presentedRevision: body.revision,
+      issue: current ? serializeIssue(current) : undefined,
+    });
+  }
+  return { data: { issue: serializeIssue(saved) } };
+}
+
+/**
+ * Record that a human posted this exact revision by hand.
+ *
+ * Nothing else in the system implies this. Generating, exporting, archiving
+ * and approving an issue all leave it unposted; only an admin saying so here
+ * creates a posted record, and that record is an immutable snapshot of what
+ * actually went out.
+ */
+async function markCarouselIssuePosted(req, accountId, issueId, body = {}) {
+  const loaded = await loadIssueForDecision(req, accountId, issueId);
+  if (loaded.error) return loaded;
+  const { doc } = loaded;
+  const generated = (doc.origin || 'manual') === 'agent-generated';
+  const conflict = checkRevision(doc.revision || 1, body.revision);
+  if (conflict) return { ...conflict, issue: serializeIssue(doc) };
+
+  // A retry still has to name the current revision, but it preserves the first
+  // actor, timestamp, URL and snapshot instead of writing another post.
+  const existing = (doc.postHistory || []).find((entry) => entry.revision === body.revision);
+  if (existing) {
+    return { data: { issue: serializeIssue(doc), alreadyPosted: true } };
+  }
+
+  // A generated issue is posted from an approved revision, never from one
+  // someone merely looked at. Manual issues keep their existing workflow and
+  // acquire posted history without ever entering the generated review state.
+  if (generated && !(doc.reviewState === 'approved' && doc.approval?.revision === body.revision)) {
+    return fail(
+      'Approve this exact revision before recording it as posted.',
+      409,
+      'APPROVAL_REQUIRED',
+      { storedRevision: doc.revision, issue: serializeIssue(doc) },
+    );
+  }
+
+  const postedAt = body.postedAt === undefined ? new Date() : new Date(body.postedAt);
+  if (Number.isNaN(postedAt.getTime())) {
+    return fail('A publication time must be a date.', 422, 'INVALID_POSTED_AT');
+  }
+  if (postedAt.getTime() > Date.now() + 60_000) {
+    return fail('A publication time cannot be in the future.', 422, 'INVALID_POSTED_AT');
+  }
+  let instagramUrl = null;
+  if (body.instagramUrl !== undefined && body.instagramUrl !== null && body.instagramUrl !== '') {
+    instagramUrl = text(body.instagramUrl, 2048);
+    if (!/^https:\/\/(www\.)?instagram\.com\/[\w./?=&%-]*$/i.test(instagramUrl)) {
+      return fail('That does not look like an Instagram URL.', 422, 'INVALID_INSTAGRAM_URL');
+    }
+  }
+
+  const revisions = require('./pivotCarouselRevisionService');
+  const snapshot = await revisions.recordPostedSnapshot(req, doc, {
+    actedAt: postedAt,
+    actedBy: actorId(req),
+    instagramUrl,
+  });
+  const posting = {
+    revision: doc.revision || 1,
+    postedAt,
+    postedBy: actorId(req),
+    recordedAt: new Date(),
+    instagramUrl,
+    snapshotRevisionId: snapshot._id,
+  };
+  const { PivotCarouselDeck } = getGlobalModels(req, 'PivotCarouselDeck');
+  const saved = await PivotCarouselDeck.findOneAndUpdate(
+    {
+      _id: issueId,
+      accountId: loaded.account._id,
+      revision: body.revision,
+      'postHistory.revision': { $ne: doc.revision || 1 },
+      // Approval must still cover the head when the write lands, not just
+      // when the request loaded its copy of the issue.
+      ...(generated ? {
+        origin: 'agent-generated',
+        reviewState: 'approved',
+        'approval.revision': body.revision,
+      } : {}),
+    },
+    { $set: { posting, updatedBy: actorId(req), ...(generated ? { reviewState: 'posted' } : {}) }, $push: { postHistory: posting } },
+    { new: true, runValidators: true },
+  );
+  if (!saved) {
+    // This request's compare-and-swap did not land. Its snapshot is unreferenced
+    // and must not look like another successful post.
+    const { PivotCarouselRevision } = getGlobalModels(req, 'PivotCarouselRevision');
+    await PivotCarouselRevision.deleteOne({ _id: snapshot._id, issueId, kind: 'posted' });
+    const current = await PivotCarouselDeck.findOne({ _id: issueId, accountId: loaded.account._id });
+    if (current?.revision === body.revision && (current.postHistory || []).some((entry) => entry.revision === body.revision)) {
+      return { data: { issue: serializeIssue(current), alreadyPosted: true } };
+    }
+    return fail('The issue changed while recording the post.', 409, 'REVISION_CONFLICT', {
+      storedRevision: current?.revision,
+      presentedRevision: body.revision,
+      issue: current ? serializeIssue(current) : undefined,
+    });
+  }
+  return { data: { issue: serializeIssue(saved), snapshotRevisionId: String(snapshot._id) } };
+}
+
 async function duplicateCarouselIssue(req, accountId, issueId) {
   const loaded = await getCarouselIssue(req, accountId, issueId);
   if (loaded.error) return loaded;
@@ -414,6 +702,11 @@ async function duplicateCarouselIssue(req, accountId, issueId) {
     showIssueNumber: source.showIssueNumber,
     issue: source.issue,
     voice: source.voice,
+    // A copy is new human work. It inherits the words, never
+    // the approval or the record that something went out.
+    origin: 'manual',
+    reviewState: null,
+    socialCaption: source.socialCaption || '',
     createdBy: actorId(req),
     updatedBy: actorId(req),
   });
@@ -522,6 +815,9 @@ async function createEditableCopy(req, accountId, issueId) {
     document: converted.document,
     curation: { copiedFromIssueId: String(source._id), unsupported: converted.unsupported },
     sources: source.sources || [],
+    origin: 'manual',
+    reviewState: null,
+    socialCaption: source.socialCaption || '',
     createdBy: actorId(req),
     updatedBy: actorId(req),
   });
@@ -530,6 +826,11 @@ async function createEditableCopy(req, accountId, issueId) {
 
 module.exports = {
   ISSUE_LIMITS,
+  MAX_SOCIAL_CAPTION_LENGTH,
+  normalizeCaption,
+  createGeneratedCarouselIssue,
+  approveCarouselIssue,
+  markCarouselIssuePosted,
   createCarouselAccount,
   getCarouselAccount,
   listCarouselIssues,

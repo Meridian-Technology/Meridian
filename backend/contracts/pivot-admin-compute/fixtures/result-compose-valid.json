@@ -1,0 +1,113 @@
+{
+  "contractVersion": "1",
+  "jobId": "job:compose-iowacity-001",
+  "scheduleOccurrenceId": null,
+  "kind": "carousel-compose",
+  "cityKey": "iowacity",
+  "implementationRevision": "meridian-backend@2026.09.11",
+  "idempotencyKey": "idem:compose-iowacity-001",
+  "basedOnContextVersion": "ctx:compose.iowacity.001",
+  "completedAt": "2026-10-10T06:00:00.000Z",
+  "outcome": "completed",
+  "editorialAccountKey": "just.go.ic",
+  "decision": "compose",
+  "composition": {
+    "selectedEventRefs": [
+      {
+        "sourceTenantKey": "iowacity",
+        "eventId": "507f1f77bcf86cd799439011"
+      },
+      {
+        "sourceTenantKey": "iowacity",
+        "eventId": "507f1f77bcf86cd799439012"
+      },
+      {
+        "sourceTenantKey": "iowacity",
+        "eventId": "507f1f77bcf86cd799439013"
+      }
+    ],
+    "evidenceRefs": [
+      "catalog:event-1",
+      "catalog:event-2",
+      "catalog:event-3"
+    ],
+    "cover": {
+      "headline": "Your week starts here",
+      "subtitle": "Three plans around Iowa City",
+      "family": "loose-letters",
+      "variation": 1,
+      "assetRef": {
+        "kind": "unsplash",
+        "assetId": "unsplash:city-night"
+      },
+      "crop": {
+        "focalX": 0.5,
+        "focalY": 0.5,
+        "scale": 1
+      }
+    },
+    "eventSlides": [
+      {
+        "eventRef": {
+          "sourceTenantKey": "iowacity",
+          "eventId": "507f1f77bcf86cd799439011"
+        },
+        "blurb": "Make an evening of it.",
+        "presetId": "photo-note",
+        "assetRef": {
+          "kind": "event-poster",
+          "eventRef": {
+            "sourceTenantKey": "iowacity",
+            "eventId": "507f1f77bcf86cd799439011"
+          }
+        },
+        "crop": {
+          "focalX": 0.5,
+          "focalY": 0.5,
+          "scale": 1
+        }
+      },
+      {
+        "eventRef": {
+          "sourceTenantKey": "iowacity",
+          "eventId": "507f1f77bcf86cd799439012"
+        },
+        "blurb": "Make an evening of it.",
+        "presetId": "photo-note",
+        "assetRef": {
+          "kind": "event-poster",
+          "eventRef": {
+            "sourceTenantKey": "iowacity",
+            "eventId": "507f1f77bcf86cd799439012"
+          }
+        },
+        "crop": {
+          "focalX": 0.5,
+          "focalY": 0.5,
+          "scale": 1
+        }
+      },
+      {
+        "eventRef": {
+          "sourceTenantKey": "iowacity",
+          "eventId": "507f1f77bcf86cd799439013"
+        },
+        "blurb": "Make an evening of it.",
+        "presetId": "photo-note",
+        "assetRef": {
+          "kind": "event-poster",
+          "eventRef": {
+            "sourceTenantKey": "iowacity",
+            "eventId": "507f1f77bcf86cd799439013"
+          }
+        },
+        "crop": {
+          "focalX": 0.5,
+          "focalY": 0.5,
+          "scale": 1
+        }
+      }
+    ],
+    "socialCaption": "Pick a plan and bring a friend ✨ #JustGo #IowaCity"
+  }
+}

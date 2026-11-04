@@ -33,8 +33,11 @@ const {
   archiveCarouselIssue,
   restoreCarouselIssue,
   duplicateCarouselIssue,
+  approveCarouselIssue,
+  markCarouselIssuePosted,
   createEditableCopy,
 } = require('../services/pivotCarouselIssueService');
+const { addCarouselIssueFeedback, listEditorialFeedback } = require('../services/pivotCarouselEditorialFeedbackService');
 const {
   listCheckpoints,
   createCheckpoint,
@@ -924,6 +927,58 @@ router.post(
     } catch (err) {
       logPivotRouteError('POST carousel issue duplicate', err, req);
       return res.status(500).json({ success: false, message: 'Unable to duplicate the issue.' });
+    }
+  },
+);
+
+/* ------------------------------------------- generated issue review */
+
+router.get('/carousel-accounts/:accountId/editorial-feedback', verifyToken, requirePlatformAdmin, async (req, res) => {
+  try {
+    return sendDeckResult(res, await listEditorialFeedback(req, req.params.accountId, req.query.sinceVersion));
+  } catch (err) {
+    logPivotRouteError('GET carousel editorial feedback', err, req);
+    return res.status(500).json({ success: false, message: 'Unable to load editorial feedback.' });
+  }
+});
+
+router.post('/carousel-accounts/:accountId/issues/:issueId/feedback', verifyToken, requirePlatformAdmin, async (req, res) => {
+  try {
+    return sendDeckResult(res, await addCarouselIssueFeedback(req, req.params.accountId, req.params.issueId, req.body), 201);
+  } catch (err) {
+    logPivotRouteError('POST carousel issue feedback', err, req);
+    return res.status(500).json({ success: false, message: 'Unable to save feedback.' });
+  }
+});
+
+router.post(
+  '/carousel-accounts/:accountId/issues/:issueId/approve',
+  verifyToken,
+  requirePlatformAdmin,
+  async (req, res) => {
+    try {
+      return sendDeckResult(res, await approveCarouselIssue(req, req.params.accountId, req.params.issueId, req.body));
+    } catch (err) {
+      logPivotRouteError('POST carousel issue approve', err, req);
+      return res.status(500).json({ success: false, message: 'Unable to approve the issue.' });
+    }
+  },
+);
+
+/**
+ * Records a post an admin made by hand. Nothing in this system publishes to
+ * Instagram; this is the only place a posted record is created.
+ */
+router.post(
+  '/carousel-accounts/:accountId/issues/:issueId/mark-posted',
+  verifyToken,
+  requirePlatformAdmin,
+  async (req, res) => {
+    try {
+      return sendDeckResult(res, await markCarouselIssuePosted(req, req.params.accountId, req.params.issueId, req.body));
+    } catch (err) {
+      logPivotRouteError('POST carousel issue mark-posted', err, req);
+      return res.status(500).json({ success: false, message: 'Unable to record the post.' });
     }
   },
 );
