@@ -60,6 +60,7 @@
     "seed:pivot-feedback-config": "node migrations/seedPivotFeedbackConfig.js",
     "seed:pivot-tag-catalog": "node migrations/seedPivotTagCatalog.js",
     "seed:pivot-crews": "node migrations/seedPivotCrews.js",
+    "seed:carousel-compose-draft": "node migrations/seedCarouselComposeDraft.js",
     "rebuild:pivot-weekly-snapshot": "node migrations/rebuildPivotWeeklySnapshot.js",
     "rebuild:pivot-crew-week-state": "node migrations/rebuildPivotCrewWeekState.js",
     "send:pivot-weekly-push": "node migrations/sendPivotWeeklyPush.js",
