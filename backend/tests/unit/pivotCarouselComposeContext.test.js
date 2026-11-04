@@ -39,7 +39,7 @@ function studioDocument(ref, headline = 'Published headline') {
 describe('compose windows', () => {
   test('three fixed editorial identities use the existing city keys and all-tenant retrospective scope', () => {
     expect(EDITORIAL_ACCOUNTS.map(account => [account.key, account.sourceTenantKeys])).toEqual([
-      ['just.go.ic', ['iowacity']], ['just.go.sf', ['sf']], ['sorry.u.missed.it', 'all'],
+      ['just.go.ic', ['ic']], ['just.go.sf', ['sf']], ['sorry.u.missed.it', 'all'],
     ]);
   });
   test('fourteen days are inclusive and anchored to publication, preserving seconds and milliseconds', () => {
@@ -86,7 +86,7 @@ describe('carousel compose catalog context with real persistence', () => {
     });
     const { TenantConfig } = getGlobalModels(req, 'TenantConfig');
     await TenantConfig.create({ configKey: 'default', tenants: [
-      { tenantKey: 'iowacity', subdomain: 'iowacity', name: 'Iowa City', tenantType: 'pivot', pivotDropTimezone: 'America/Chicago' },
+      { tenantKey: 'ic', subdomain: 'ic', name: 'Iowa City', tenantType: 'pivot', pivotDropTimezone: 'America/Chicago' },
       { tenantKey: 'sf', subdomain: 'sf', name: 'San Francisco', tenantType: 'pivot', pivotDropTimezone: 'America/Los_Angeles' },
     ] });
     accounts = {};
@@ -108,14 +108,14 @@ describe('carousel compose catalog context with real persistence', () => {
   it('resolves all three scheduling identities from the existing account owner without exposing account data', async () => {
     const { listCarouselComposeScheduleAccounts } = require('../../services/pivotCarouselComposeContextService');
     expect(await listCarouselComposeScheduleAccounts(req)).toEqual({ accounts: [
-      { key: 'just.go.ic', cityKey: 'iowacity', timezone: 'America/Chicago' },
+      { key: 'just.go.ic', cityKey: 'ic', timezone: 'America/Chicago' },
       { key: 'just.go.sf', cityKey: 'sf', timezone: 'America/Los_Angeles' },
       { key: 'sorry.u.missed.it', cityKey: 'sf', timezone: 'America/Los_Angeles' },
     ] });
     const { PivotCarouselAccount } = getGlobalModels(req, 'PivotCarouselAccount');
-    await PivotCarouselAccount.updateOne({ _id: accounts['sorry.u.missed.it'] }, { $set: { ownerTenantKey: 'iowacity' } });
+    await PivotCarouselAccount.updateOne({ _id: accounts['sorry.u.missed.it'] }, { $set: { ownerTenantKey: 'ic' } });
     const changed = await listCarouselComposeScheduleAccounts(req);
-    expect(changed.accounts[2]).toEqual({ key: 'sorry.u.missed.it', cityKey: 'iowacity', timezone: 'America/Chicago' });
+    expect(changed.accounts[2]).toEqual({ key: 'sorry.u.missed.it', cityKey: 'ic', timezone: 'America/Chicago' });
   });
 
   async function events(tenantKey, names, start = '2026-10-30T20:00:00.000Z', pivot) {
@@ -123,7 +123,7 @@ describe('carousel compose catalog context with real persistence', () => {
     return getModels({ db }, 'Event').Event.create(names.map(name => eventDoc(name, start, pivot)));
   }
   async function context(accountKey = 'sorry.u.missed.it', publication = PUBLICATION, extra = {}) {
-    const job = { externalJobId: 'job:compose-test-001', cityKey: accountKey === 'just.go.ic' ? 'iowacity' : 'sf',
+    const job = { externalJobId: 'job:compose-test-001', cityKey: accountKey === 'just.go.ic' ? 'ic' : 'sf',
       implementationRevision: 'meridian-backend@test', options: { editorialAccountKey: accountKey, proposedPublicationAt: publication } };
     const result = await buildCarouselComposeContextSnapshot(req, { job, now: new Date('2026-10-30T06:00:00Z'), ...extra });
     expect(result.error).toBeUndefined();
@@ -144,9 +144,9 @@ describe('carousel compose catalog context with real persistence', () => {
   test('includes publication, same-day and exact fourteen-day boundaries, excluding earlier, later, draft and deleted rows', async () => {
     const times = ['2026-10-10T22:59:59.999Z', '2026-10-10T23:00:00.000Z', '2026-10-11T00:00:00.000Z',
       '2026-10-24T23:00:00.000Z', '2026-10-24T23:00:00.001Z'];
-    for (const [index, time] of times.entries()) await events('iowacity', [`event-${index}`], time);
-    await events('iowacity', ['Draft'], times[2], { ingestStatus: 'draft' });
-    const [deleted] = await events('iowacity', ['Deleted'], times[2]);
+    for (const [index, time] of times.entries()) await events('ic', [`event-${index}`], time);
+    await events('ic', ['Draft'], times[2], { ingestStatus: 'draft' });
+    const [deleted] = await events('ic', ['Deleted'], times[2]);
     deleted.isDeleted = true; await deleted.save();
     await events('sf', ['Other city'], times[2]);
     const snapshot = await context('just.go.ic', times[1]);
@@ -157,7 +157,7 @@ describe('carousel compose catalog context with real persistence', () => {
   test('past candidates respect the seven-day local DST boundary and exclude the publication instant', async () => {
     await events('sf', ['Too early'], '2026-10-26T19:59:59.999Z');
     await events('sf', ['At start'], '2026-10-26T20:00:00.000Z');
-    await events('iowacity', ['Before publication'], '2026-11-02T20:59:59.999Z');
+    await events('ic', ['Before publication'], '2026-11-02T20:59:59.999Z');
     await events('sf', ['At publication'], PUBLICATION);
     const snapshot = await context();
     expect(snapshot.account.timezone).toBe('America/Los_Angeles');
@@ -167,7 +167,7 @@ describe('carousel compose catalog context with real persistence', () => {
 
   test('pages beyond the first city page without duplicating events at identical timestamps, including pinned rows', async () => {
     await events('sf', Array.from({ length: 30 }, (_, index) => `sf-${index}`), undefined, { featured: true });
-    await events('iowacity', ['IC one', 'IC two']);
+    await events('ic', ['IC one', 'IC two']);
     const snapshot = await context();
     expect(snapshot.candidates).toHaveLength(32);
     expect(new Set(snapshot.candidates.map(row => `${row.ref.sourceTenantKey}:${row.ref.eventId}`)).size).toBe(32);
@@ -176,7 +176,7 @@ describe('carousel compose catalog context with real persistence', () => {
   });
 
   test('upcoming ascending cursors retain all events sharing the same timestamp', async () => {
-    await events('iowacity', Array.from({ length: 30 }, (_, index) => `event-${index}`), '2026-11-03T21:00:00Z');
+    await events('ic', Array.from({ length: 30 }, (_, index) => `event-${index}`), '2026-11-03T21:00:00Z');
     const snapshot = await context('just.go.ic');
     expect(snapshot.candidates).toHaveLength(30);
     expect(new Set(snapshot.candidates.map(row => row.ref.eventId)).size).toBe(30);
@@ -197,10 +197,10 @@ describe('carousel compose catalog context with real persistence', () => {
   });
 
   test('caps at sixty and reports truncation while reading every tenant and representing both populated cities', async () => {
-    for (const key of ['sf', 'iowacity']) await events(key, Array.from({ length: 80 }, (_, index) => `${key}-${index}`));
+    for (const key of ['sf', 'ic']) await events(key, Array.from({ length: 80 }, (_, index) => `${key}-${index}`));
     const snapshot = await context();
     expect(snapshot.candidates).toHaveLength(60);
-    expect(new Set(snapshot.candidates.map(row => row.ref.sourceTenantKey))).toEqual(new Set(['sf', 'iowacity']));
+    expect(new Set(snapshot.candidates.map(row => row.ref.sourceTenantKey))).toEqual(new Set(['sf', 'ic']));
     expect(snapshot.coverage).toMatchObject({ tenantsRead: 4, pagesRead: 6, cutOff: true, complete: false, candidateCount: 60 });
   });
 
@@ -296,7 +296,7 @@ describe('carousel compose catalog context with real persistence', () => {
   });
 
   test('failed tenant reads remain visible and cannot appear as complete or leak a connection string', async () => {
-    await events('iowacity', ['Readable']);
+    await events('ic', ['Readable']);
     const original = connectToDatabase.getMockImplementation();
     connectToDatabase.mockImplementation(key => key === 'sf' ? Promise.reject(new Error('mongodb://secret:password@host')) : original(key));
     const snapshot = await context();
@@ -336,7 +336,7 @@ describe('carousel compose catalog context with real persistence', () => {
   });
 
   test('rejects unknown, missing, ambiguous and wrongly owned accounts or invalid publication times', async () => {
-    const job = { externalJobId: 'job:compose-test-001', cityKey: 'iowacity', options: { editorialAccountKey: 'unknown', proposedPublicationAt: PUBLICATION } };
+    const job = { externalJobId: 'job:compose-test-001', cityKey: 'ic', options: { editorialAccountKey: 'unknown', proposedPublicationAt: PUBLICATION } };
     expect((await buildCarouselComposeContextSnapshot(req, { job })).code).toBe('EDITORIAL_ACCOUNT_UNKNOWN');
     job.options.editorialAccountKey = 'just.go.ic'; job.options.proposedPublicationAt = 'next Monday';
     expect((await buildCarouselComposeContextSnapshot(req, { job })).code).toBe('COMPOSE_WINDOW_INVALID');
@@ -345,7 +345,7 @@ describe('carousel compose catalog context with real persistence', () => {
     const { PivotCarouselAccount } = getGlobalModels(req, 'PivotCarouselAccount');
     await PivotCarouselAccount.updateOne({ _id: accounts['just.go.ic'] }, { $set: { ownerTenantKey: 'sf' } });
     expect((await buildCarouselComposeContextSnapshot(req, { job })).code).toBe('EDITORIAL_ACCOUNT_TENANT_MISMATCH');
-    await PivotCarouselAccount.create({ displayName: 'Duplicate', handle: '@just.go.ic', ownerTenantKey: 'iowacity', sourceTenantKeys: ['iowacity'] });
+    await PivotCarouselAccount.create({ displayName: 'Duplicate', handle: '@just.go.ic', ownerTenantKey: 'ic', sourceTenantKeys: ['ic'] });
     expect((await buildCarouselComposeContextSnapshot(req, { job })).code).toBe('EDITORIAL_ACCOUNT_AMBIGUOUS');
     await PivotCarouselAccount.deleteMany({ handle: '@just.go.ic' });
     expect((await buildCarouselComposeContextSnapshot(req, { job })).code).toBe('EDITORIAL_ACCOUNT_NOT_FOUND');

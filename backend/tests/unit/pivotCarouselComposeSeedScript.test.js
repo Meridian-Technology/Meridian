@@ -36,17 +36,17 @@ describe('seedCarouselComposeDraft script', () => {
     });
     const { TenantConfig } = getGlobalModels(req, 'TenantConfig');
     await TenantConfig.create({ configKey: 'default', tenants: [
-      { tenantKey: 'iowacity', subdomain: 'iowacity', name: 'Iowa City', tenantType: 'pivot', pivotDropTimezone: 'America/Chicago' },
+      { tenantKey: 'ic', subdomain: 'ic', name: 'Iowa City', tenantType: 'pivot', pivotDropTimezone: 'America/Chicago' },
     ] });
     await ensurePivotComputeJobIndexes(req, { force: true });
     account = (await createCarouselAccount(req, { displayName: 'Just Go Curation Iowa City', handle: '@just.go.ic',
-      ownerTenantKey: 'iowacity', sourceTenantKeys: ['iowacity'], defaultFormat: 'city-picks' })).data.account;
+      ownerTenantKey: 'ic', sourceTenantKeys: ['ic'], defaultFormat: 'city-picks' })).data.account;
   });
   afterEach(async () => { jest.restoreAllMocks(); if (dbs) for (const db of dbs.values()) await db.dropDatabase(); });
   afterAll(async () => { if (mongo) await mongo.cleanup(); });
 
   async function seedEvents(docs) {
-    const db = await connectToDatabase('iowacity');
+    const db = await connectToDatabase('ic');
     await getModels({ db }, 'Event').Event.create(docs);
   }
 
@@ -91,7 +91,7 @@ describe('seedCarouselComposeDraft script', () => {
     expect(outcome).toMatchObject({ written: true, issueId: null, wake: 'accepted' });
     const { PivotComputeJob, PivotCarouselDeck } = getGlobalModels(req, 'PivotComputeJob', 'PivotCarouselDeck');
     const job = await PivotComputeJob.findOne({ externalJobId: outcome.externalJobId }).lean();
-    expect(job).toMatchObject({ kind: 'carousel-compose', status: 'pending', cityKey: 'iowacity',
+    expect(job).toMatchObject({ kind: 'carousel-compose', status: 'pending', cityKey: 'ic',
       options: { editorialAccountKey: 'just.go.ic', proposedPublicationAt: PUBLICATION } });
     expect(await PivotCarouselDeck.countDocuments({})).toBe(0);
   });

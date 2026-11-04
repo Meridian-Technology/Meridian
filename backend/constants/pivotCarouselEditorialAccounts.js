@@ -2,7 +2,7 @@
 const EDITORIAL_ACCOUNTS = Object.freeze([
   Object.freeze({
     key: 'just.go.ic', displayName: 'Just Go Curation Iowa City', handle: '@just.go.ic',
-    format: 'city-picks', ownerTenantKey: 'iowacity', sourceTenantKeys: Object.freeze(['iowacity']),
+    format: 'city-picks', ownerTenantKey: 'ic', sourceTenantKeys: Object.freeze(['ic']),
     timezone: 'America/Chicago', window: 'upcoming', days: 14,
   }),
   Object.freeze({

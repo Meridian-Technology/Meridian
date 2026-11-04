@@ -46,15 +46,15 @@ describe('compose compute result apply with real persistence', () => {
     });
     const { TenantConfig } = getGlobalModels(req, 'TenantConfig');
     await TenantConfig.create({ configKey: 'default', tenants: [
-      { tenantKey: 'iowacity', subdomain: 'iowacity', name: 'Iowa City', tenantType: 'pivot', pivotDropTimezone: 'America/Chicago' },
+      { tenantKey: 'ic', subdomain: 'ic', name: 'Iowa City', tenantType: 'pivot', pivotDropTimezone: 'America/Chicago' },
       { tenantKey: 'sf', subdomain: 'sf', name: 'San Francisco', tenantType: 'pivot', pivotDropTimezone: 'America/Los_Angeles' },
     ] });
     await ensurePivotComputeJobIndexes(req, { force: true });
     account = (await createCarouselAccount(req, { displayName: 'Just Go Curation Iowa City', handle: '@just.go.ic',
-      ownerTenantKey: 'iowacity', sourceTenantKeys: ['iowacity'], defaultFormat: 'city-picks' })).data.account;
+      ownerTenantKey: 'ic', sourceTenantKeys: ['ic'], defaultFormat: 'city-picks' })).data.account;
     globalAccount = (await createCarouselAccount(req, { displayName: 'Sorry You Missed It', handle: '@sorry.u.missed.it',
-      ownerTenantKey: 'iowacity', sourceTenantKeys: ['iowacity'], defaultFormat: 'sorry-you-missed-it' })).data.account;
-    const db = await connectToDatabase('iowacity');
+      ownerTenantKey: 'ic', sourceTenantKeys: ['ic'], defaultFormat: 'sorry-you-missed-it' })).data.account;
+    const db = await connectToDatabase('ic');
     await getModels({ db }, 'Event').Event.create(['One', 'Two', 'Three'].map(name => eventDoc(name)));
   });
   afterEach(async () => { postingClock?.mockRestore(); jest.restoreAllMocks(); if (dbs) for (const db of dbs.values()) await db.dropDatabase(); });
@@ -62,13 +62,14 @@ describe('compose compute result apply with real persistence', () => {
 
   async function prepare({ decision = 'compose', accountKey = 'just.go.ic', submit = true } = {}) {
     const now = new Date();
-    const { job } = await createComputeJob(req, { externalJobId: 'job:compose-iowacity-001', kind: 'carousel-compose',
-      cityKey: 'iowacity', contextVersion: 'ctx:pending', createIdempotencyKey: 'idem:compose-test-001',
+    const { job } = await createComputeJob(req, { externalJobId: 'job:compose-ic-001', kind: 'carousel-compose',
+      cityKey: 'ic', contextVersion: 'ctx:pending', createIdempotencyKey: 'idem:compose-test-001',
       origin: { type: 'admin' }, options: { editorialAccountKey: accountKey, proposedPublicationAt: PUBLICATION } });
     const claim = await claimNextPendingJob(req, { externalJobId: job.externalJobId, workerId: 'compose-worker', capability, now });
     const { context } = await fetchJobContext(req, { externalJobId: job.externalJobId, workerId: 'compose-worker', leaseToken: claim.job.lease.token, now });
     await startComputeJob(req, { externalJobId: job.externalJobId, workerId: 'compose-worker', leaseToken: claim.job.lease.token, now });
     const result = loadFixture('result-compose-valid.json');
+    result.jobId = job.externalJobId; result.cityKey = job.cityKey;
     result.editorialAccountKey = accountKey; result.basedOnContextVersion = context.contextVersion;
     if (decision === 'compose') {
       const selected = context.candidates.slice(0, 3).map(candidate => candidate.ref);
@@ -85,10 +86,10 @@ describe('compose compute result apply with real persistence', () => {
       leaseToken: claim.job.lease.token, result, requiresReview: false, now });
     return { result, context, job, claim, now };
   }
-  const apply = () => applyStoredComputeJob(req, 'job:compose-iowacity-001', { tenantKey: 'iowacity', actor: 'editor' });
+  const apply = () => applyStoredComputeJob(req, 'job:compose-ic-001', { tenantKey: 'ic', actor: 'editor' });
   async function changeResult(change) {
     const { PivotComputeJob } = getGlobalModels(req, 'PivotComputeJob');
-    const job = await PivotComputeJob.findOne({ externalJobId: 'job:compose-iowacity-001' });
+    const job = await PivotComputeJob.findOne({ externalJobId: 'job:compose-ic-001' });
     const result = JSON.parse(JSON.stringify(job.result.embedded)); change(result);
     job.result.embedded = result; job.markModified('result.embedded'); await job.save();
   }
@@ -131,7 +132,7 @@ describe('compose compute result apply with real persistence', () => {
   test('duplicate applies with different caller keys preserve the single issue and subsequent human edits', async () => {
     await prepare(); const first = await apply();
     expect((await updateCarouselIssue(req, account.id, first.issueId, { revision: 1, socialCaption: 'Human caption' })).error).toBeUndefined();
-    const again = await applyStoredComputeJob(req, 'job:compose-iowacity-001', { tenantKey: 'iowacity', idempotencyKey: 'different-caller-key' });
+    const again = await applyStoredComputeJob(req, 'job:compose-ic-001', { tenantKey: 'ic', idempotencyKey: 'different-caller-key' });
     expect(again.duplicate).toBe(true);
     const { PivotCarouselDeck } = getGlobalModels(req, 'PivotCarouselDeck');
     expect(await PivotCarouselDeck.countDocuments({ accountId: account.id })).toBe(1);
@@ -155,16 +156,16 @@ describe('compose compute result apply with real persistence', () => {
     const spy = jest.spyOn(PivotComputeJob, 'updateOne').mockImplementationOnce(() => { throw new Error('Interrupted after issue creation'); });
     await expect(apply()).rejects.toThrow('Interrupted after issue creation');
     expect(spy).toHaveBeenCalledTimes(1); spy.mockRestore();
-    const id = composeIssueId('job:compose-iowacity-001');
+    const id = composeIssueId('job:compose-ic-001');
     expect(await PivotCarouselDeck.countDocuments({ _id: id })).toBe(1);
     await updateCarouselIssue(req, account.id, id, { revision: 1, socialCaption: 'Human correction after interruption' });
-    const db = await connectToDatabase('iowacity'); await getModels({ db }, 'Event').Event.deleteMany({});
+    const db = await connectToDatabase('ic'); await getModels({ db }, 'Event').Event.deleteMany({});
     expect((await apply()).job.status).toBe('completed');
     expect((await getCarouselIssue(req, account.id, id)).data.issue.socialCaption).toBe('Human correction after interruption');
   });
 
   test.each([
-    ['unknown event', result => { const ref = { sourceTenantKey: 'iowacity', eventId: String(new mongoose.Types.ObjectId()) };
+    ['unknown event', result => { const ref = { sourceTenantKey: 'ic', eventId: String(new mongoose.Types.ObjectId()) };
       result.composition.selectedEventRefs[0] = ref; result.composition.eventSlides[0].eventRef = ref;
       result.composition.eventSlides[0].assetRef.eventRef = ref; result.composition.cover.assetRef.eventRef = ref; }, 'COMPOSE_EVENT_INELIGIBLE'],
     ['unknown preset', result => { result.composition.eventSlides[0].presetId = 'invented'; }, 'COMPOSE_PRESET_INVALID'],
@@ -174,12 +175,12 @@ describe('compose compute result apply with real persistence', () => {
     await expect(apply()).rejects.toMatchObject({ code });
     const { PivotCarouselDeck } = getGlobalModels(req, 'PivotCarouselDeck');
     expect(await PivotCarouselDeck.countDocuments({})).toBe(0);
-    expect((await findJobByExternalId(req, 'job:compose-iowacity-001')).status).toBe('review-required');
+    expect((await findJobByExternalId(req, 'job:compose-ic-001')).status).toBe('review-required');
   });
 
   test.each(['date', 'unpublish', 'delete', 'poster', 'copy'])('rechecks current catalog eligibility and versions after a %s change', async change => {
     const { result } = await prepare();
-    const db = await connectToDatabase('iowacity'); const { Event } = getModels({ db }, 'Event');
+    const db = await connectToDatabase('ic'); const { Event } = getModels({ db }, 'Event');
     const update = { date: { start_time: new Date('2026-11-15T00:00:00Z') }, unpublish: { 'customFields.pivot.ingestStatus': 'draft' },
       delete: { isDeleted: true }, poster: { image: null }, copy: { name: 'Changed name' } }[change];
     await Event.updateOne({ _id: result.composition.selectedEventRefs[0].eventId }, { $set: update });
@@ -209,7 +210,7 @@ describe('compose compute result apply with real persistence', () => {
 
   test.each([2, 6])('rejects a stored composition with %i events without creating a draft', async count => {
     await prepare(); await changeResult(result => {
-      while (result.composition.selectedEventRefs.length < count) result.composition.selectedEventRefs.push({ sourceTenantKey: 'iowacity', eventId: String(new mongoose.Types.ObjectId()) });
+      while (result.composition.selectedEventRefs.length < count) result.composition.selectedEventRefs.push({ sourceTenantKey: 'ic', eventId: String(new mongoose.Types.ObjectId()) });
       result.composition.selectedEventRefs = result.composition.selectedEventRefs.slice(0, count);
     });
     await expect(apply()).rejects.toMatchObject({ code: 'INVALID_COMPUTE_EXECUTION_RESULT' });
@@ -217,18 +218,18 @@ describe('compose compute result apply with real persistence', () => {
   });
 
   test('global compositions span tenants, including campuses, and remain editable without changing saved account settings', async () => {
-    for (const tenantKey of ['iowacity', 'sf', 'rpi']) {
+    for (const tenantKey of ['ic', 'sf', 'rpi']) {
       const db = await connectToDatabase(tenantKey);
       await getModels({ db }, 'Event').Event.create(eventDoc(tenantKey, '2026-10-10T23:00:00Z'));
     }
     const { result } = await prepare({ accountKey: 'sorry.u.missed.it' });
     const applied = await apply();
     const issue = (await getCarouselIssue(req, globalAccount.id, applied.issueId)).data.issue;
-    expect(new Set(issue.sources.map(ref => ref.sourceTenantKey))).toEqual(new Set(['iowacity', 'sf', 'rpi']));
+    expect(new Set(issue.sources.map(ref => ref.sourceTenantKey))).toEqual(new Set(['ic', 'sf', 'rpi']));
     expect((await updateCarouselIssue(req, globalAccount.id, issue.id, { revision: 1, document: issue.document,
       sources: issue.sources, curation: issue.curation, socialCaption: 'Edited retrospective' })).error).toBeUndefined();
     const { PivotCarouselAccount } = getGlobalModels(req, 'PivotCarouselAccount');
-    expect((await PivotCarouselAccount.findById(globalAccount.id)).sourceTenantKeys).toEqual(['iowacity']);
+    expect((await PivotCarouselAccount.findById(globalAccount.id)).sourceTenantKeys).toEqual(['ic']);
   });
 
   test('Unsplash assets saved on this account are offered in context and usable without an HTTP lookup', async () => {
