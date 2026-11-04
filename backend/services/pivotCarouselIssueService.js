@@ -140,6 +140,7 @@ function serializeIssue(doc) {
     // Only a generated issue has a review state. A manual issue reads as null
     // so the editor cannot show "Unapproved draft" over someone's own work.
     reviewState: origin === 'agent-generated' ? (row.reviewState || 'unapproved') : null,
+    trendRefs: origin === 'agent-generated' ? [...(row.trendRefs || [])] : [],
     socialCaption: row.socialCaption || '',
     editorialVersion: row.editorialVersion || 0,
     feedbackNotes: (row.feedbackNotes || []).map(require('./pivotCarouselEditorialFeedbackService').serializeFeedbackRecord),
@@ -292,6 +293,7 @@ async function createIssue(req, accountId, body, origin, trusted = {}) {
   const { PivotCarouselDeck } = getGlobalModels(req, 'PivotCarouselDeck');
   const doc = await PivotCarouselDeck.create({
     ...(trusted.issueId ? { _id: trusted.issueId, composeJobId: trusted.composeJobId } : {}),
+    ...(trusted.trendRefs?.length ? { trendRefs: trusted.trendRefs } : {}),
     tenantKey: loaded.account.ownerTenantKey,
     title: name,
     name,

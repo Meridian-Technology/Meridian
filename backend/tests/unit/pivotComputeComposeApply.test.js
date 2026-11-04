@@ -109,6 +109,16 @@ describe('compose compute result apply with real persistence', () => {
     expect(issue.sources).toEqual(result.composition.selectedEventRefs);
   });
 
+  test('keeps the online trends a draft cites on the issue, and only well-formed ones', async () => {
+    await prepare();
+    await changeResult(result => { result.composition.evidenceRefs.push('trend:kym:chinamaxxing', 'trend:Later:Odd.Ref', 'trend:kym:chinamaxxing'); });
+    const applied = await apply();
+    const issue = (await getCarouselIssue(req, account.id, applied.issueId)).data.issue;
+    expect(issue.trendRefs).toEqual(['trend:kym:chinamaxxing']);
+    const manual = (await createCarouselIssue(req, account.id, { name: 'Manual', document: issue.document })).data.issue;
+    expect(manual.trendRefs).toEqual([]);
+  });
+
   test.each(['wait', 'needs-editor'])('%s stores a terminal reason and creates no issue', async decision => {
     const { result } = await prepare({ decision });
     const applied = await apply();

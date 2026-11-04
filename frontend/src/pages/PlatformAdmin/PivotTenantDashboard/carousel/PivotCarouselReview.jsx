@@ -1,6 +1,15 @@
 import React, { useState } from 'react';
 import { authenticatedRequest } from '../../../../hooks/useFetch';
 
+const TREND_SOURCES = { kym: 'Know Your Meme', later: 'Later', google: 'Google Trends', giphy: 'GIPHY' };
+
+/** `trend:kym:chinamaxxing` reads as "Chinamaxxing · Know Your Meme". */
+export function trendLabel(ref) {
+  const [, source = '', slug = ''] = String(ref).split(':');
+  const name = slug.replace(/-/g, ' ');
+  return `${name.charAt(0).toUpperCase()}${name.slice(1)} · ${TREND_SOURCES[source] || source}`;
+}
+
 /** Review actions always name the revision currently confirmed by autosave. */
 export default function PivotCarouselReview({ issue, revision, caption, onCaption, disabled, onIssue, onConflict }) {
   const [busy, setBusy] = useState(false);
@@ -48,6 +57,10 @@ export default function PivotCarouselReview({ issue, revision, caption, onCaptio
 
   return <section aria-label="Issue review">
     <h2>Issue review</h2>
+    {issue.trendRefs?.length > 0 && <div aria-label="Trends this draft uses">
+      <p>Trends this draft uses. Check each fits before approving:</p>
+      <ul>{issue.trendRefs.map(ref => <li key={ref}>{trendLabel(ref)}</li>)}</ul>
+    </div>}
     <label>Social caption<textarea value={caption} onChange={event => onCaption(event.target.value)} disabled={busy} rows={5} /></label>
     {disabled && <p>Save your changes before reviewing this revision.</p>}
     <button type="button" disabled={blocked || issue.reviewState !== 'unapproved'} onClick={() => submit('approve')}>Approve</button>
