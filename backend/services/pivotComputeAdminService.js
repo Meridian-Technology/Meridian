@@ -449,7 +449,8 @@ async function applyCarouselComposeJob(req, externalJobId, { tenantKey, actor = 
           name: result.composition.cover.headline, format: context.account.format, document,
           socialCaption: result.composition.socialCaption, sources: selected,
           curation: { refs: selected, snapshots: candidates.filter(candidate => selected.some(ref => refKey(ref) === refKey(candidate.ref))) },
-        }, { issueId, composeJobId: externalJobId, sourceTenantKeys: context.account.sourceTenantKeys });
+        }, { issueId, composeJobId: externalJobId, sourceTenantKeys: context.account.sourceTenantKeys,
+          trendRefs: [...new Set((result.composition.evidenceRefs || []).filter(ref => /^trend:[a-z]+:[a-z0-9-]+$/.test(ref)))].slice(0, 10) });
         if (created.error) throw serviceError(created.error, created.code, created.status);
       }
     }

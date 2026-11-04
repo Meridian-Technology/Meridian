@@ -223,6 +223,16 @@ const pivotCarouselDeckSchema = new mongoose.Schema(
     origin: { type: String, enum: ORIGINS, default: 'manual' },
     // Internal provenance; the job also deterministically supplies the issue _id.
     composeJobId: { type: String, maxlength: 128, immutable: true },
+    /**
+     * Online trends a generated draft cites (`trend:<source>:<slug>`), so a
+     * reviewer can judge the reference. Absent on manual issues and on drafts
+     * that use none.
+     */
+    trendRefs: {
+      type: [{ type: String, maxlength: 128, match: /^trend:[a-z]+:[a-z0-9-]+$/ }],
+      default: undefined,
+      validate: { validator: (refs) => !refs || refs.length <= 10, message: 'At most ten trend references.' },
+    },
     // Null for manual issues: "Unapproved draft" is a generated-only state.
     reviewState: {
       type: String,
