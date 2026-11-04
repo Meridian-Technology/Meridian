@@ -82,6 +82,20 @@ describe('seedCarouselComposeDraft script', () => {
     expect(await PivotCarouselDeck.countDocuments({})).toBe(0);
   });
 
+  test('--relay queues a real compose job for Relay instead of submitting a scripted result', async () => {
+    const { createAdminComputeJob } = require('../../services/pivotComputeAdminService');
+    const createAdminJob = (scopedReq, input) => createAdminComputeJob(scopedReq, {
+      ...input, notifyWake: async () => ({ status: 'accepted' }), scheduleLocal: () => false,
+    });
+    const outcome = await seedCarouselComposeDraft(req, args({ relay: true }), { createAdminJob });
+    expect(outcome).toMatchObject({ written: true, issueId: null, wake: 'accepted' });
+    const { PivotComputeJob, PivotCarouselDeck } = getGlobalModels(req, 'PivotComputeJob', 'PivotCarouselDeck');
+    const job = await PivotComputeJob.findOne({ externalJobId: outcome.externalJobId }).lean();
+    expect(job).toMatchObject({ kind: 'carousel-compose', status: 'pending', cityKey: 'iowacity',
+      options: { editorialAccountKey: 'just.go.ic', proposedPublicationAt: PUBLICATION } });
+    expect(await PivotCarouselDeck.countDocuments({})).toBe(0);
+  });
+
   test('explains when too few candidates have posters', async () => {
     await seedEvents([eventDoc('One'), eventDoc('Two', { image: '' }), eventDoc('Three', { image: '' })]);
     await expect(seedCarouselComposeDraft(req, args({ write: false }))).rejects.toThrow(/Only 1 of 3 candidate events have a poster/);
@@ -93,5 +107,7 @@ describe('seedCarouselComposeDraft script', () => {
     expect(() => readArgs(['--account=elsewhere'])).toThrow(/--account must be one of/);
     expect(() => readArgs(['--events=6'])).toThrow(/--events must be 3, 4 or 5/);
     expect(() => readArgs(['--decision=post'])).toThrow(/--decision must be one of/);
+    expect(readArgs(['--relay', '--write'])).toMatchObject({ relay: true, write: true });
+    expect(() => readArgs(['--relay', '--decision=wait'])).toThrow(/--relay lets the agent decide/);
   });
 });

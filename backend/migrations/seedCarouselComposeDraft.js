@@ -15,12 +15,15 @@
  *   node migrations/seedCarouselComposeDraft.js --write               # create the job and the draft
  *   node migrations/seedCarouselComposeDraft.js --account=just.go.sf --events=4 --write
  *   node migrations/seedCarouselComposeDraft.js --decision=needs-editor --write
+ *   node migrations/seedCarouselComposeDraft.js --relay --write              # have Relay's agent compose it
  *
  * Options:
  *   --account=<key>        just.go.ic (default), just.go.sf or sorry.u.missed.it
  *   --events=<3-5>         events in the draft (default 3)
  *   --decision=<kind>      compose (default), wait or needs-editor
  *   --publication=<ISO>    proposed publication time (default: the next whole hour)
+ *   --relay                create a real compose job for Relay's agent instead of a
+ *                          scripted result; Relay must advertise carousel-compose
  *   --write                actually create the job and the draft
  *   --allow-production     required with --write when NODE_ENV=production
  *
@@ -37,6 +40,7 @@ const {
   listCarouselComposeScheduleAccounts,
 } = require('../services/pivotCarouselComposeContextService');
 const { createComputeJob, claimNextPendingJob, startComputeJob, findJobByExternalId } = require('../services/pivotComputeJobStore');
+const { createAdminComputeJob } = require('../services/pivotComputeAdminService');
 const { fetchJobContext, submitTerminalJobResult } = require('../services/pivotComputeWorkerService');
 const { loadFixture, validateExecutionResult } = require('../utilities/pivotAdminComputeJobContract');
 
@@ -58,6 +62,7 @@ function readArgs(argv) {
     decision: value('decision') || 'compose',
     publication: value('publication') || nextHour.toISOString(),
     write: flag('write'),
+    relay: flag('relay'),
     allowProduction: flag('allow-production'),
   };
   if (!EDITORIAL_ACCOUNT_KEYS.includes(args.account)) {
@@ -66,6 +71,7 @@ function readArgs(argv) {
   if (!Number.isInteger(args.events) || args.events < 3 || args.events > 5) throw new Error('--events must be 3, 4 or 5');
   if (!DECISIONS.includes(args.decision)) throw new Error(`--decision must be one of ${DECISIONS.join(', ')}`);
   if (!Number.isFinite(new Date(args.publication).getTime())) throw new Error('--publication must be an ISO date-time');
+  if (args.relay && args.decision !== 'compose') throw new Error('--relay lets the agent decide; drop --decision');
   args.publication = new Date(args.publication).toISOString();
   return args;
 }
@@ -152,13 +158,15 @@ function describe(context, args, log) {
  * and reports what it would create. Returns the job id and, for a compose
  * decision, the new draft's issue id.
  */
-async function seedCarouselComposeDraft(req, args, { log = () => {} } = {}) {
+async function seedCarouselComposeDraft(req, args, { log = () => {}, createAdminJob = createAdminComputeJob } = {}) {
   const listed = await listCarouselComposeScheduleAccounts(req);
   const owner = listed.accounts.find((account) => account.key === args.account);
   if (!owner?.cityKey) throw new Error(`${args.account} has no owner city yet; set the carousel account's owner tenant first.`);
 
   const stamp = new Date().toISOString().replace(/[:.]/g, '-');
-  const externalJobId = `job:compose-seed-${args.account.replace(/\./g, '-')}-${stamp}`;
+  // Job ids and idempotency keys allow only [a-zA-Z0-9:_-], so the account's dots become dashes.
+  const accountSlug = args.account.replace(/\./g, '-');
+  const externalJobId = `job:compose-seed-${accountSlug}-${stamp}`;
   const options = { editorialAccountKey: args.account, proposedPublicationAt: args.publication };
 
   if (!args.write) {
@@ -169,6 +177,23 @@ async function seedCarouselComposeDraft(req, args, { log = () => {} } = {}) {
     describe(preview.data.snapshot, args, log);
     log('dry run: nothing was written. Pass --write to create the job and the draft.');
     return { written: false, externalJobId: null, issueId: null };
+  }
+
+  if (args.relay) {
+    // The same request an admin would post to /admin/pivot/compute-jobs. Relay's
+    // worker claims it, Meridian serves the context, and the agent's own decision
+    // comes back through the worker path.
+    const created = await createAdminJob(req, {
+      request: {
+        contractVersion: '1', jobId: externalJobId, scheduleOccurrenceId: null, kind: 'carousel-compose',
+        cityKey: owner.cityKey, implementationRevision: WORKER_ID, contextVersion: 'ctx:pending',
+        requestedAt: new Date().toISOString(), idempotencyKey: `idem:compose-relay-${accountSlug}-${stamp}`, options,
+      },
+      actor: WORKER_ID,
+    });
+    log(`queued ${externalJobId} for Relay (wake: ${created.wake?.status || 'unknown'}).`);
+    log('Relay claims it, runs the agent and submits its decision; a compose decision appears under "Unapproved drafts".');
+    return { written: true, externalJobId, issueId: null, decision: null, wake: created.wake?.status || null };
   }
 
   const now = new Date();
@@ -184,7 +209,7 @@ async function seedCarouselComposeDraft(req, args, { log = () => {} } = {}) {
     kind: 'carousel-compose',
     cityKey: owner.cityKey,
     contextVersion: 'ctx:pending',
-    createIdempotencyKey: `idem:compose-seed-${args.account}-${stamp}`,
+    createIdempotencyKey: `idem:compose-seed-${accountSlug}-${stamp}`,
     origin: { type: 'admin' },
     options,
   });
