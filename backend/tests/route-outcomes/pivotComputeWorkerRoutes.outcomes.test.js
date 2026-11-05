@@ -115,7 +115,7 @@ describe('pivotComputeWorkerRoutes outcomes', () => {
     const response = await workerAuth(request(app).get(route));
     expect(response.status).toBe(200);
     expect(response.body).toEqual({ accounts: [
-      { key: 'just.go.ic', cityKey: 'iowacity', timezone: 'America/Chicago' },
+      { key: 'just.go.ic', cityKey: 'ic', timezone: 'America/Chicago' },
       { key: 'just.go.sf', cityKey: 'sf', timezone: 'America/Los_Angeles' },
       { key: 'sorry.u.missed.it', cityKey: null, timezone: null },
     ] });

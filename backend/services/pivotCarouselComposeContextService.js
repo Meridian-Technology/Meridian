@@ -42,7 +42,7 @@ async function resolveEditorialAccount(req, accountKey) {
   const { PivotCarouselAccount } = getGlobalModels(req, 'PivotCarouselAccount');
   // Both conventions are accepted by the existing account editor.
   const accounts = await PivotCarouselAccount.find({ handle: { $in: [definition.handle, definition.key] } }).limit(2).lean();
-  if (!accounts.length) return fail('Editorial account has not been created in the carousel editor.', 'EDITORIAL_ACCOUNT_NOT_FOUND', 404);
+  if (!accounts.length) return fail(`No carousel account has the handle ${definition.handle}; set it on the account first.`, 'EDITORIAL_ACCOUNT_NOT_FOUND', 404);
   if (accounts.length !== 1) return fail('Editorial handle matches multiple carousel accounts.', 'EDITORIAL_ACCOUNT_AMBIGUOUS', 409);
   const loaded = await loadAccount(req, String(accounts[0]._id));
   if (loaded.error) return loaded;
