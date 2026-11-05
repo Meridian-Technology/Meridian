@@ -106,6 +106,10 @@ jobs:
           ssh-private-key-base64: ${{ secrets.SSH_PRIVATE_KEY_BASE64 }}
 
       - name: Run backend coverage
+        # The whole suite runs in one process and peaks near Node's ~2 GB default heap
+        # (frontend: 1.9 GB locally; out of memory on main at 5c150fb8 with no frontend change).
+        env:
+          NODE_OPTIONS: --max-old-space-size=6144
         run: npm --prefix backend run test:coverage -- --json --outputFile=coverage/test-results.json --coverageReporters=text --coverageReporters=lcov --coverageReporters=clover --coverageReporters=json --coverageReporters=json-summary
 
       - name: Publish backend summary
@@ -138,6 +142,10 @@ jobs:
       - uses: ./.github/actions/setup-frontend
 
       - name: Run frontend coverage
+        # The whole suite runs in one process and peaks near Node's ~2 GB default heap
+        # (frontend: 1.9 GB locally; out of memory on main at 5c150fb8 with no frontend change).
+        env:
+          NODE_OPTIONS: --max-old-space-size=6144
         run: npm --prefix frontend run test:coverage -- --json --outputFile=coverage/test-results.json --coverageReporters=text --coverageReporters=lcov --coverageReporters=clover --coverageReporters=json --coverageReporters=json-summary
 
       - name: Publish frontend summary

@@ -1,5 +1,6 @@
 const path = require('path');
 const s3 = require('../aws-config');
+const { skipS3DeleteOnStaging } = require('../utilities/stagingEnvironment');
 const multer = require('multer');
 const crypto = require('crypto');
 
@@ -104,7 +105,7 @@ const deleteAndUploadImageToS3 = async (file, folderName, existingImageUrl, cust
         //if an existing image URL is provided, delete it
         if (existingImageUrl) {
             const existingKey = existingImageUrl.split(`${process.env.AWS_S3_BUCKET_NAME}/`)[1];
-            if (existingKey) {
+            if (existingKey && !skipS3DeleteOnStaging(`replaced image ${existingKey}`)) {
                 const s3ParamsDelete = {
                     Bucket: process.env.AWS_S3_BUCKET_NAME,
                     Key: existingKey,
