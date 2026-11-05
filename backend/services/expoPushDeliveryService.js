@@ -4,7 +4,6 @@ const getGlobalModels = require('./getGlobalModelService');
 const {
   STAGING_PUSH_NOTICE,
   isStagingEnvironment,
-  isPlatformAdminRoles,
 } = require('../utilities/stagingEnvironment');
 
 function isAdminLevelAccount(tenantUser, platformRoles = []) {
@@ -12,7 +11,7 @@ function isAdminLevelAccount(tenantUser, platformRoles = []) {
   const platform = Array.isArray(platformRoles) ? platformRoles : [];
   // Staging delivers to platform admins only; tenant admins are ordinary users there.
   const tenantAdmin = !isStagingEnvironment() && (tenantRoles.includes('admin') || tenantRoles.includes('root'));
-  const platformAdmin = isPlatformAdminRoles(platform);
+  const platformAdmin = platform.includes('platform_admin') || platform.includes('root');
   return tenantAdmin || platformAdmin;
 }
 

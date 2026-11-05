@@ -117,3 +117,43 @@ describe('staging delivery gate', () => {
     expect(skipS3DeleteOnStaging('test')).toBe(false);
   });
 });
+
+describe('production is unchanged when MERIDIAN_ENVIRONMENT is unset', () => {
+  const originalEnv = process.env;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    resetStagingEnvironmentCache();
+    process.env = { ...originalEnv, NODE_ENV: 'production', RESEND_API_KEY: 're_test' };
+    delete process.env.MERIDIAN_ENVIRONMENT;
+    axios.post.mockResolvedValue({ data: { data: [{ status: 'ok' }, { status: 'ok' }] } });
+  });
+
+  afterAll(() => {
+    process.env = originalEnv;
+  });
+
+  it('hands out the real Resend client and never looks up admins', () => {
+    const client = getResend();
+    expect(client).toBe(getResend());
+    expect(client.emails.send).toBe(mockSend);
+    expect(client.batch).toBeDefined();
+    expect(getGlobalModels).not.toHaveBeenCalled();
+  });
+
+  it('pushes to every recipient with the message untouched and no gate lookups', async () => {
+    const messages = [
+      { to: 'ExponentPushToken[a]', title: 'Drop is live', body: 'Swipe now' },
+      { to: 'ExponentPushToken[b]', title: 'Drop is live', body: 'Swipe now' },
+    ];
+    const result = await postExpoPushBatch(messages, { tenantKey: 'sf', recipients: [{ _id: 'u1', roles: ['user'] }, { _id: 'u2', roles: ['user'] }] });
+    expect(isDevelopmentExpoPushGateEnforced()).toBe(false);
+    expect(result.sent).toBe(2);
+    expect(axios.post.mock.calls[0][1]).toEqual(messages);
+    expect(connectToGlobalDatabase).not.toHaveBeenCalled();
+  });
+
+  it('still deletes S3 objects', () => {
+    expect(skipS3DeleteOnStaging('test')).toBe(false);
+  });
+});
