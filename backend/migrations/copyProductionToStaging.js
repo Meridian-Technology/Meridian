@@ -18,8 +18,10 @@
  * --write also asks Heroku for staging's MERIDIAN_ENVIRONMENT and requires
  * "staging", so data never lands before staging stops emailing and notifying users.
  *
- * With --write, each target database is first copied to
- * backup_<stamp>_<name> on the staging cluster, then dropped and replaced.
+ * With --write, every target database is first copied to
+ * backup_<stamp>_<name> on the staging cluster; then each is cleared collection
+ * by collection and refilled. A rerun after a failure is safe: it backs up and
+ * replaces whatever is there.
  *
  * What changes on the way:
  * - Only the kept tenants (sf, ic) and tenant-less global rows are copied.
@@ -291,17 +293,40 @@ async function copyDatabase(scope, sourceDb, targetDb, ctx, { write, log }) {
   return summary;
 }
 
-async function backupDatabase(client, name, stamp, log) {
-  const source = client.db(name);
-  const names = (await source.listCollections({ type: 'collection' }).toArray()).map((row) => row.name).filter((n) => !n.startsWith('system.'));
-  if (!names.length) return null;
-  const target = client.db(`backup_${stamp}_${name}`);
-  for (const collection of names) {
-    const docs = await source.collection(collection).find({}).toArray();
-    if (docs.length) await target.collection(collection).insertMany(docs, { ordered: false });
+async function collectionNames(db) {
+  return (await db.listCollections({ type: 'collection' }).toArray())
+    .map((row) => row.name).filter((name) => !name.startsWith('system.')).sort();
+}
+
+/** Every collection, empty ones and indexes included, so a restore matches what was there. */
+async function backupDatabase(source, stamp, log) {
+  const names = await collectionNames(source);
+  if (!names.length) {
+    log(`staging ${source.databaseName} is empty; nothing to back up`);
+    return null;
   }
-  log(`backed up staging ${name} to ${target.databaseName} (${names.length} collections)`);
+  const target = source.client.db(`backup_${stamp}_${source.databaseName}`);
+  let documents = 0;
+  for (const name of names) {
+    await target.createCollection(name);
+    let batch = [];
+    for await (const doc of source.collection(name).find({})) {
+      batch.push(doc);
+      if (batch.length >= BATCH_SIZE) { await target.collection(name).insertMany(batch, { ordered: false }); documents += batch.length; batch = []; }
+    }
+    if (batch.length) { await target.collection(name).insertMany(batch, { ordered: false }); documents += batch.length; }
+    const specs = indexSpecs(await source.collection(name).indexes());
+    if (specs.length) await target.collection(name).createIndexes(specs);
+  }
+  log(`backed up staging ${source.databaseName} to ${target.databaseName} (${names.length} collections, ${documents} documents)`);
   return target.databaseName;
+}
+
+/** Drops collection by collection: staging's database user may drop collections but not databases. */
+async function clearDatabase(db, log) {
+  const names = await collectionNames(db);
+  for (const name of names) await db.collection(name).drop();
+  log(`cleared staging ${db.databaseName} (${names.length} collections dropped)`);
 }
 
 async function copyProductionToStaging({ write = false, config = null, log = console.log } = {}) {
@@ -336,15 +361,12 @@ async function copyProductionToStaging({ write = false, config = null, log = con
     log('columns: collection, kept / read');
 
     if (write) {
-      const stamp = new Date().toISOString().replace(/[-:]/g, '').slice(0, 13);
-      for (const [index, [scope]] of plan.entries()) {
-        const targetDb = targets[index].db();
-        await backupDatabase(targets[index], targetDb.databaseName, stamp, log);
-        await targetDb.dropDatabase();
-        log(`dropped staging ${targetDb.databaseName} (${scope})`);
-      }
+      // Back up every target before clearing any of them.
+      const stamp = new Date().toISOString().replace(/[-:.]/g, '').slice(0, 18);
+      for (const target of targets) await backupDatabase(target.db(), stamp, log);
     }
     for (const [index, [scope]] of plan.entries()) {
+      if (write) await clearDatabase(targets[index].db(), log);
       await copyDatabase(scope, sources[index].db(), targets[index].db(), ctx, { write, log });
     }
     log(write ? '\nDone. Staging now holds the scrubbed copy.' : '\nDry run: nothing was written. Pass --write to replace staging.');
