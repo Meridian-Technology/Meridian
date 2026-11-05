@@ -1,5 +1,6 @@
 const { createHash } = require('crypto');
 const s3 = require('../aws-config');
+const { skipS3DeleteOnStaging } = require('../utilities/stagingEnvironment');
 
 const EXPORT_PREFIX_ROOT = 'pivot-exports';
 const TENANT_KEY_PATTERN = /^[a-z0-9][a-z0-9-]{0,62}$/;
@@ -174,6 +175,7 @@ async function deleteExportPrefix(prefix) {
   if (!String(prefix || '').startsWith(`${EXPORT_PREFIX_ROOT}/`) || !prefix.endsWith('/')) {
     throw serviceError('Refusing to delete an unscoped export prefix', 'INVALID_EXPORT_OBJECT_PREFIX');
   }
+  if (skipS3DeleteOnStaging(`export prefix ${prefix}`)) return { deleted: 0 };
   const bucket = resolveBucket();
   let continuationToken;
   let deleted = 0;

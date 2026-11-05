@@ -3,6 +3,7 @@ const path = require('path');
 const sharp = require('sharp');
 const QRCode = require('qrcode');
 const s3 = require('../aws-config');
+const { skipS3DeleteOnStaging } = require('../utilities/stagingEnvironment');
 const getGlobalModels = require('./getGlobalModelService');
 const { getTenantByKey } = require('./tenantConfigService');
 
@@ -177,7 +178,7 @@ async function deletePosterTemplate(req, tenantKey, id) {
   const doc = await PivotPosterTemplate.findOneAndDelete({ _id: id, tenantKey });
   if (!doc) return { error: 'Poster template not found.', status: 404 };
 
-  if (doc.imageKey) {
+  if (doc.imageKey && !skipS3DeleteOnStaging(`poster art ${doc.imageKey}`)) {
     try {
       await s3
         .deleteObject({ Bucket: process.env.AWS_S3_BUCKET_NAME, Key: doc.imageKey })

@@ -1,12 +1,18 @@
 const axios = require('axios');
 const { connectToGlobalDatabase } = require('../connectionsManager');
 const getGlobalModels = require('./getGlobalModelService');
+const {
+  STAGING_PUSH_NOTICE,
+  isStagingEnvironment,
+  isPlatformAdminRoles,
+} = require('../utilities/stagingEnvironment');
 
 function isAdminLevelAccount(tenantUser, platformRoles = []) {
   const tenantRoles = Array.isArray(tenantUser?.roles) ? tenantUser.roles : [];
   const platform = Array.isArray(platformRoles) ? platformRoles : [];
-  const tenantAdmin = tenantRoles.includes('admin') || tenantRoles.includes('root');
-  const platformAdmin = platform.includes('platform_admin') || platform.includes('root');
+  // Staging delivers to platform admins only; tenant admins are ordinary users there.
+  const tenantAdmin = !isStagingEnvironment() && (tenantRoles.includes('admin') || tenantRoles.includes('root'));
+  const platformAdmin = isPlatformAdminRoles(platform);
   return tenantAdmin || platformAdmin;
 }
 
@@ -15,9 +21,13 @@ const EXPO_BATCH_SIZE = 100;
 
 /**
  * In development, Expo push is restricted to admin-level accounts unless explicitly
- * overridden with EXPO_PUSH_ALLOW_ALL_IN_DEVELOPMENT=true.
+ * overridden with EXPO_PUSH_ALLOW_ALL_IN_DEVELOPMENT=true. Staging always enforces
+ * the gate, for platform admins only, with no override.
  */
 function isDevelopmentExpoPushGateEnforced() {
+  if (isStagingEnvironment()) {
+    return true;
+  }
   if (process.env.NODE_ENV !== 'development') {
     return false;
   }
@@ -25,6 +35,9 @@ function isDevelopmentExpoPushGateEnforced() {
 }
 
 function hasTenantAdminPrivileges(tenantUser) {
+  if (isStagingEnvironment()) {
+    return false;
+  }
   const roles = Array.isArray(tenantUser?.roles) ? tenantUser.roles : [];
   return roles.includes('admin') || roles.includes('root');
 }
@@ -295,7 +308,19 @@ async function postExpoPushBatch(messages, options = {}) {
     }
   }
 
+  if (isStagingEnvironment()) {
+    messagesToSend = messagesToSend.map(markStagingPush);
+  }
+
   return postExpoPushBatchUnchecked(messagesToSend, { developmentGateBlocked });
+}
+
+function markStagingPush(message) {
+  return {
+    ...message,
+    title: `[Staging] ${message.title || ''}`.trim(),
+    body: message.body ? `${message.body}\n${STAGING_PUSH_NOTICE}` : STAGING_PUSH_NOTICE,
+  };
 }
 
 async function postExpoPushBatchUnchecked(messages, meta = {}) {
