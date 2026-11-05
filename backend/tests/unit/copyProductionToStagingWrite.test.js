@@ -1,7 +1,11 @@
 jest.mock('child_process', () => ({ ...jest.requireActual('child_process'), execFileSync: jest.fn(() => 'staging\n') }));
 
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
 const { MongoMemoryServer } = require('mongodb-memory-server');
-const { MongoClient, Db } = require('mongoose').mongo;
+const { MongoClient, Db, BSON } = require('mongoose').mongo;
+const { EJSON } = BSON;
 const { copyProductionToStaging } = require('../../migrations/copyProductionToStaging');
 
 jest.setTimeout(60000);
@@ -12,6 +16,7 @@ describe('copyProductionToStaging --write', () => {
   let prod;
   let stage;
   const originalEnv = process.env;
+  let backupDir;
 
   beforeAll(async () => {
     [production, staging] = await Promise.all([MongoMemoryServer.create(), MongoMemoryServer.create()]);
@@ -27,6 +32,7 @@ describe('copyProductionToStaging --write', () => {
   });
 
   beforeEach(async () => {
+    backupDir = fs.mkdtempSync(path.join(os.tmpdir(), 'staging-backups-'));
     process.env = {
       ...originalEnv,
       SOURCE_GLOBAL_URI: production.getUri('global'),
@@ -55,6 +61,7 @@ describe('copyProductionToStaging --write', () => {
     ]);
     await prod.db('sf').collection('users').createIndex({ email: 1 }, { unique: true });
     await prod.db('ic').collection('events').insertOne({ name: 'IC event' });
+    await prod.db('ic').createCollection('empty_in_production');
 
     await stage.db('global').collection('stale').insertOne({ old: true });
     await stage.db('global').createCollection('empty_with_index');
@@ -68,13 +75,20 @@ describe('copyProductionToStaging --write', () => {
     for (const name of ['global', 'sf', 'ic']) await prod.db(name).dropDatabase();
   });
 
-  it('backs up, clears collection by collection, and refills staging without dropping databases', async () => {
+  const readBackup = (directory, db, name) => {
+    const bytes = fs.readFileSync(path.join(directory, db, `${name}.bson`));
+    const docs = [];
+    for (let offset = 0; offset < bytes.length; offset += bytes.readInt32LE(offset)) docs.push(BSON.deserialize(bytes.subarray(offset)));
+    return { docs, metadata: EJSON.parse(fs.readFileSync(path.join(directory, db, `${name}.metadata.json`), 'utf8')) };
+  };
+
+  it('backs up to disk, clears collection by collection, and refills staging without dropping databases', async () => {
     const dropDatabase = jest.spyOn(Db.prototype, 'dropDatabase').mockImplementation(() => {
       throw new Error('user is not allowed to do action [dropDatabase]');
     });
     const lines = [];
     try {
-      await copyProductionToStaging({ write: true, log: (line) => lines.push(line) });
+      await copyProductionToStaging({ write: true, backupDir, log: (line) => lines.push(line) });
     } finally {
       dropDatabase.mockRestore();
     }
@@ -93,22 +107,37 @@ describe('copyProductionToStaging --write', () => {
     ]);
     expect((await stage.db('sf').collection('users').indexes()).map((index) => index.name)).toContain('email_1');
     expect(await stage.db('ic').collection('events').countDocuments()).toBe(1);
+    expect(await stage.db('ic').listCollections({ name: 'empty_in_production' }).toArray()).toEqual([]);
 
-    const backups = (await stage.db().admin().listDatabases({ nameOnly: true })).databases.map((row) => row.name).filter((name) => name.startsWith('backup_'));
-    expect(backups.map((name) => name.replace(/^backup_\d{8}T\d{9}_/, '')).sort()).toEqual(['global', 'sf']);
-    const globalBackup = stage.db(backups.find((name) => name.endsWith('_global')));
-    expect(await globalBackup.collection('stale').countDocuments()).toBe(1);
-    expect((await globalBackup.collection('empty_with_index').indexes()).map((index) => index.name)).toContain('key_1');
-    expect(await stage.db(backups.find((name) => name.endsWith('_sf'))).collection('users').findOne()).toMatchObject({ email: 'old@staging.test' });
+    const { databases } = await stage.db().admin().listDatabases({ nameOnly: true });
+    expect(databases.map((row) => row.name).filter((name) => name.startsWith('backup'))).toEqual([]);
+    const [stamp] = fs.readdirSync(backupDir);
+    const directory = path.join(backupDir, stamp);
+    expect(fs.readdirSync(directory).sort()).toEqual(['global', 'sf']);
+    expect(readBackup(directory, 'global', 'stale').docs).toMatchObject([{ old: true }]);
+    const empty = readBackup(directory, 'global', 'empty_with_index');
+    expect(empty.docs).toEqual([]);
+    expect(empty.metadata.indexes.map((index) => index.name)).toContain('key_1');
+    expect(readBackup(directory, 'sf', 'users').docs).toMatchObject([{ email: 'old@staging.test' }]);
+    expect(fs.statSync(path.join(directory, 'sf', 'users.bson')).mode & 0o077).toBe(0);
+    expect(lines.find((line) => line.startsWith('staging collections:'))).toMatch(/^staging collections: \d+ now, \d+ after the copy/);
 
     expect(lines.findIndex((line) => line.startsWith('cleared staging global')))
       .toBeGreaterThan(lines.findIndex((line) => line.startsWith('backed up staging sf')));
   });
 
   it('can be rerun after a partial copy', async () => {
-    await copyProductionToStaging({ write: true, log: () => {} });
+    await copyProductionToStaging({ write: true, backupDir, log: () => {} });
     await stage.db('sf').collection('users').deleteMany({});
-    await copyProductionToStaging({ write: true, log: () => {} });
+    await copyProductionToStaging({ write: true, backupDir, log: () => {} });
     expect(await stage.db('sf').collection('users').countDocuments()).toBe(2);
+  });
+
+  it('refuses --write before touching staging when the copy would exceed the collection limit', async () => {
+    const before = await stage.db('global').listCollections().toArray();
+    await expect(copyProductionToStaging({ write: true, backupDir, collectionLimit: 3, log: () => {} }))
+      .rejects.toThrow(/more collection\(s\) than staging's limit of 3/);
+    expect(await stage.db('global').listCollections().toArray()).toHaveLength(before.length);
+    expect(fs.readdirSync(backupDir)).toEqual([]);
   });
 });

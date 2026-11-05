@@ -18,10 +18,15 @@
  * --write also asks Heroku for staging's MERIDIAN_ENVIRONMENT and requires
  * "staging", so data never lands before staging stops emailing and notifying users.
  *
- * With --write, every target database is first copied to
- * backup_<stamp>_<name> on the staging cluster; then each is cleared collection
- * by collection and refilled. A rerun after a failure is safe: it backs up and
+ * With --write, every target database is first backed up to this computer, in
+ * mongodump's layout (~/meridian-staging-backups/<stamp>/<db>/, or --backup-dir),
+ * so mongorestore can put it back. Then each database is cleared collection by
+ * collection and refilled. A rerun after a failure is safe: it backs up and
  * replaces whatever is there.
+ *
+ * Staging's Atlas tier allows 500 collections per cluster. Every run counts them
+ * first, and --write refuses if the copy would exceed the limit. Only collections
+ * with documents are created; the app creates the empty ones as it uses them.
  *
  * What changes on the way:
  * - Only the kept tenants (sf, ic) and tenant-less global rows are copied.
@@ -32,14 +37,18 @@
  */
 const crypto = require('crypto');
 const fs = require('fs');
+const os = require('os');
+const path = require('path');
 const { execFileSync } = require('child_process');
 const dotenv = require('dotenv');
-const { MongoClient } = require('mongoose').mongo;
+const { MongoClient, BSON } = require('mongoose').mongo;
+const { EJSON } = BSON;
 
 const KEPT_TENANTS = ['sf', 'ic'];
 const PLATFORM_ADMIN_ROLES = ['platform_admin', 'root'];
 const SCRUBBED_DOMAIN = 'staging.invalid';
 const BATCH_SIZE = 1000;
+const ATLAS_COLLECTION_LIMIT = 500;
 
 const SKIPPED = {
   global: new Set([
@@ -64,7 +73,11 @@ function parseArgs(argv) {
   const index = argv.indexOf('--config');
   const config = inline ? inline.slice('--config='.length) : (index >= 0 ? argv[index + 1] : null);
   if (index >= 0 && !config) throw new Error('--config needs a file path');
-  return { write: argv.includes('--write'), config };
+  const backupInline = argv.find((arg) => arg.startsWith('--backup-dir='));
+  const backupIndex = argv.indexOf('--backup-dir');
+  const backupDir = backupInline ? backupInline.slice('--backup-dir='.length) : (backupIndex >= 0 ? argv[backupIndex + 1] : null);
+  if (backupIndex >= 0 && !backupDir) throw new Error('--backup-dir needs a directory');
+  return { write: argv.includes('--write'), config, ...(backupDir ? { backupDir } : {}) };
 }
 
 function idOf(value) {
@@ -276,9 +289,10 @@ async function copyDatabase(scope, sourceDb, targetDb, ctx, { write, log }) {
       batch.push(doc);
       if (batch.length >= BATCH_SIZE) await flush();
     }
-    if (write) {
-      if (kept) await flush();
-      else await targetDb.createCollection(name).catch(() => {});
+    // Empty collections are not created: the cluster's collection budget is tight,
+    // and the app creates them (with their indexes) as it uses them.
+    if (write && kept) {
+      await flush();
       const specs = indexSpecs(await sourceDb.collection(name).indexes());
       if (specs.length) await targetDb.collection(name).createIndexes(specs);
     }
@@ -298,28 +312,60 @@ async function collectionNames(db) {
     .map((row) => row.name).filter((name) => !name.startsWith('system.')).sort();
 }
 
-/** Every collection, empty ones and indexes included, so a restore matches what was there. */
-async function backupDatabase(source, stamp, log) {
-  const names = await collectionNames(source);
+/**
+ * Writes every collection, empty ones and indexes included, in mongodump's layout
+ * (<dir>/<db>/<collection>.bson + .metadata.json), so `mongorestore` restores it.
+ * Backups stay on this computer: they take none of the cluster's collection budget.
+ */
+async function backupDatabase(db, directory, log) {
+  const names = await collectionNames(db);
   if (!names.length) {
-    log(`staging ${source.databaseName} is empty; nothing to back up`);
+    log(`staging ${db.databaseName} is empty; nothing to back up`);
     return null;
   }
-  const target = source.client.db(`backup_${stamp}_${source.databaseName}`);
+  const folder = path.join(directory, db.databaseName);
+  fs.mkdirSync(folder, { recursive: true, mode: 0o700 });
   let documents = 0;
   for (const name of names) {
-    await target.createCollection(name);
-    let batch = [];
-    for await (const doc of source.collection(name).find({})) {
-      batch.push(doc);
-      if (batch.length >= BATCH_SIZE) { await target.collection(name).insertMany(batch, { ordered: false }); documents += batch.length; batch = []; }
+    const file = fs.openSync(path.join(folder, `${name}.bson`), 'w', 0o600);
+    try {
+      for await (const doc of db.collection(name).find({})) {
+        fs.writeSync(file, BSON.serialize(doc));
+        documents += 1;
+      }
+    } finally {
+      fs.closeSync(file);
     }
-    if (batch.length) { await target.collection(name).insertMany(batch, { ordered: false }); documents += batch.length; }
-    const specs = indexSpecs(await source.collection(name).indexes());
-    if (specs.length) await target.collection(name).createIndexes(specs);
+    const metadata = { indexes: await db.collection(name).indexes(), uuid: '', collectionName: name, type: 'collection' };
+    fs.writeFileSync(path.join(folder, `${name}.metadata.json`), EJSON.stringify(metadata, { relaxed: false }), { mode: 0o600 });
   }
-  log(`backed up staging ${source.databaseName} to ${target.databaseName} (${names.length} collections, ${documents} documents)`);
-  return target.databaseName;
+  log(`backed up staging ${db.databaseName} to ${folder} (${names.length} collections, ${documents} documents)`);
+  return folder;
+}
+
+async function countCollections(db) {
+  return (await db.listCollections({}, { nameOnly: true }).toArray()).length;
+}
+
+/**
+ * Cluster-wide collection count now, after the copy (each target replaced by the
+ * source's non-empty collections), and once the app has created every empty one.
+ */
+async function collectionBudget(targetClient, targetDbs, sourceDbs) {
+  const { databases } = await targetClient.db().admin().listDatabases({ nameOnly: true });
+  let now = 0;
+  for (const { name } of databases) now += await countCollections(targetClient.db(name));
+  let replaced = 0;
+  for (const db of targetDbs) replaced += await countCollections(db);
+  let afterCopy = 0;
+  let eventually = 0;
+  for (const db of sourceDbs) {
+    for (const name of await collectionNames(db)) {
+      eventually += 1;
+      if (await db.collection(name).estimatedDocumentCount()) afterCopy += 1;
+    }
+  }
+  return { now, afterCopy: now - replaced + afterCopy, eventually: now - replaced + eventually };
 }
 
 /** Drops collection by collection: staging's database user may drop collections but not databases. */
@@ -329,7 +375,10 @@ async function clearDatabase(db, log) {
   log(`cleared staging ${db.databaseName} (${names.length} collections dropped)`);
 }
 
-async function copyProductionToStaging({ write = false, config = null, log = console.log } = {}) {
+async function copyProductionToStaging({
+  write = false, config = null, backupDir = path.join(os.homedir(), 'meridian-staging-backups'),
+  collectionLimit = ATLAS_COLLECTION_LIMIT, log = console.log,
+} = {}) {
   const env = loadSettings(config);
   const plan = [
     ['global', env.SOURCE_GLOBAL_URI, env.TARGET_GLOBAL_URI],
@@ -358,12 +407,24 @@ async function copyProductionToStaging({ write = false, config = null, log = con
     const targets = await Promise.all(plan.map(([, , uri]) => open(uri)));
     const ctx = await loadContext(sources[0].db());
     log(`${write ? 'WRITE' : 'DRY RUN'}: tenants ${KEPT_TENANTS.join(', ')}; ${ctx.adminGlobalUserIds.size} platform admin(s) kept unscrubbed; ${ctx.keptGlobalUserIds.size} global user(s) kept`);
+    const budget = await collectionBudget(targets[0], targets.map((client) => client.db()), sources.map((client) => client.db()));
+    log(`staging collections: ${budget.now} now, ${budget.afterCopy} after the copy, up to ${budget.eventually} once the app creates its empty ones (limit ${collectionLimit})`);
+    if (budget.afterCopy > collectionLimit) {
+      const message = `the copy needs ${budget.afterCopy - collectionLimit} more collection(s) than staging's limit of ${collectionLimit}; free some before --write`;
+      if (write) throw new Error(message);
+      log(`warning: ${message}`);
+    } else if (budget.eventually > collectionLimit) {
+      log(`warning: once the app creates its empty collections, staging would pass its limit by ${budget.eventually - collectionLimit}`);
+    }
     log('columns: collection, kept / read');
 
     if (write) {
       // Back up every target before clearing any of them.
       const stamp = new Date().toISOString().replace(/[-:.]/g, '').slice(0, 18);
-      for (const target of targets) await backupDatabase(target.db(), stamp, log);
+      const directory = path.join(backupDir, stamp);
+      fs.mkdirSync(directory, { recursive: true, mode: 0o700 });
+      for (const target of targets) await backupDatabase(target.db(), directory, log);
+      log(`restore with: mongorestore --uri <staging URI> --drop ${directory}`);
     }
     for (const [index, [scope]] of plan.entries()) {
       if (write) await clearDatabase(targets[index].db(), log);
@@ -382,4 +443,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { KEPT_TENANTS, transformDocument, residualEmails, belongsToKeptTenant, describeUri, loadSettings, parseArgs, copyProductionToStaging };
+module.exports = { KEPT_TENANTS, transformDocument, residualEmails, belongsToKeptTenant, describeUri, loadSettings, parseArgs, collectionBudget, copyProductionToStaging };
