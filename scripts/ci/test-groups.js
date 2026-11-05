@@ -26,7 +26,7 @@ const groups = {
       /\/route-outcomes\/pivotCrewRoutes/,
     ],
     'jobs-notifications': [
-      /\/unit\/(?:expoPushDelivery|meridian|notificationService)/,
+      /\/unit\/(?:expoPushDelivery|meridian|notificationService|stagingEnvironment)/,
       /\/route-outcomes\/meridianJobRoutes/,
     ],
     'creator-editorial': [
@@ -35,7 +35,7 @@ const groups = {
     ],
     'platform-core': [
       /\/integration\//,
-      /\/unit\/(?:adminTenant|analyticsIngestionAcknowledgement|appVersion|atlasPolicy|budgetService|cookieUtils|corsOrigins|googleLocation|mobileAnalyticsMigration|mobileAssociation|orgPermission|pivotConfig|pivotIsoWeek|pivotLaunchDate|pivotLogger|pivotMobileConfig|platformAdmin|requireMinAppVersion|requirePivotCreator|reservationMetrics|resourceReservation|richLocationMigration|rootOperator|semesterHelpers|tenantHostRouting|testServerLoopback|tenantKeyRename|tenantLandingMode|timeBlockHelper|workflowUtilities|wwwPathAllowlist)/,
+      /\/unit\/(?:adminTenant|analyticsIngestionAcknowledgement|appVersion|atlasPolicy|budgetService|cookieUtils|copyProductionToStaging|corsOrigins|googleLocation|mobileAnalyticsMigration|mobileAssociation|orgPermission|pivotConfig|pivotIsoWeek|pivotLaunchDate|pivotLogger|pivotMobileConfig|platformAdmin|requireMinAppVersion|requirePivotCreator|reservationMetrics|resourceReservation|richLocationMigration|rootOperator|semesterHelpers|tenantHostRouting|testServerLoopback|tenantKeyRename|tenantLandingMode|timeBlockHelper|workflowUtilities|wwwPathAllowlist)/,
       /\/route-outcomes\/(?:adminPlatformAdmins|analyticsDashboardRoutes|authRoutes|orgBudgetRoutes|orgRoleRoutes|userRoutes)/,
     ],
   },
