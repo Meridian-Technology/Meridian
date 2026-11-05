@@ -1,0 +1,26 @@
+# Settings for migrations/copyProductionToStaging.js.
+#
+#   cp migrations/copyProductionToStaging.config.example .env.staging-copy
+#   chmod 600 .env.staging-copy
+#   npx -y node@22 migrations/copyProductionToStaging.js --config .env.staging-copy
+#
+# .env.staging-copy is gitignored (backend/.gitignore ignores .env*). Never commit
+# the filled-in copy. Each value is shown with the command that prints it.
+
+# Production: copied FROM. Read only.
+# heroku config:get MONGO_URI_PLATFORM -a meridian-production
+SOURCE_GLOBAL_URI=<production MONGO_URI_PLATFORM>
+# heroku config:get MONGO_URI_SF -a meridian-production
+SOURCE_SF_URI=<production MONGO_URI_SF>
+# heroku config:get MONGO_URI_IC -a meridian-production
+SOURCE_IC_URI=<production MONGO_URI_IC>
+
+# Staging: copied TO. These databases are backed up, then replaced.
+# heroku config:get MONGO_URI_GLOBAL -a meridian-staging-env
+TARGET_GLOBAL_URI=<staging MONGO_URI_GLOBAL>
+# heroku config:get MONGODB_URI -a meridian-staging-env
+# (staging's sf and ic databases are this URI with the database name swapped)
+TARGET_BASE_URI=<staging MONGODB_URI>
+
+# Heroku app asked for MERIDIAN_ENVIRONMENT before --write.
+STAGING_HEROKU_APP=meridian-staging-env

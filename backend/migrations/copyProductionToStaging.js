@@ -6,15 +6,17 @@
  * and prints per-collection counts plus any email addresses that survived the
  * scrub. Nothing is written without --write.
  *
- *   SOURCE_GLOBAL_URI=… SOURCE_SF_URI=… SOURCE_IC_URI=… \
- *   TARGET_GLOBAL_URI=… TARGET_BASE_URI=… STAGING_GATE=… \
- *   node migrations/copyProductionToStaging.js [--write]
+ *   cp migrations/copyProductionToStaging.config.example .env.staging-copy   # gitignored
+ *   node migrations/copyProductionToStaging.js --config .env.staging-copy [--write]
  *
- * SOURCE_* are production's MONGO_URI_PLATFORM / MONGO_URI_SF / MONGO_URI_IC.
- * TARGET_GLOBAL_URI is staging's MONGO_URI_GLOBAL; TARGET_BASE_URI is staging's
+ * The config file (or the same names in the environment) holds:
+ * SOURCE_* — production's MONGO_URI_PLATFORM / MONGO_URI_SF / MONGO_URI_IC.
+ * TARGET_GLOBAL_URI — staging's MONGO_URI_GLOBAL; TARGET_BASE_URI — staging's
  * MONGODB_URI, from which staging derives each tenant database by name.
- * STAGING_GATE is staging's MERIDIAN_ENVIRONMENT; --write requires "staging",
- * so data never lands before staging stops emailing and notifying users.
+ * Every run first prints where each URI points (password hidden).
+ *
+ * --write also asks Heroku for staging's MERIDIAN_ENVIRONMENT and requires
+ * "staging", so data never lands before staging stops emailing and notifying users.
  *
  * With --write, each target database is first copied to
  * backup_<stamp>_<name> on the staging cluster, then dropped and replaced.
@@ -27,6 +29,9 @@
  * - Sessions, lead lists, contact hashes and in-app notifications are not copied.
  */
 const crypto = require('crypto');
+const fs = require('fs');
+const { execFileSync } = require('child_process');
+const dotenv = require('dotenv');
 const { MongoClient } = require('mongoose').mongo;
 
 const KEPT_TENANTS = ['sf', 'ic'];
@@ -48,9 +53,16 @@ const USER_CREDENTIALS = [
 const ADMIN_SESSION_FIELDS = ['refreshToken', 'sessions'];
 const TRACKING_FIELDS = ['ip_hash', 'ipAddress', 'user_agent_summary', 'userAgent'];
 const EMAIL_PATTERN = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi;
+const SETTINGS = ['SOURCE_GLOBAL_URI', 'SOURCE_SF_URI', 'SOURCE_IC_URI', 'TARGET_GLOBAL_URI', 'TARGET_BASE_URI'];
+const DEFAULT_STAGING_APP = 'meridian-staging-env';
+const URI_PATTERN = /^mongodb(?:\+srv)?:\/\/(?:([^:@/]+)(?::[^@/]*)?@)?([^/?]+)(?:\/([^?]*))?/;
 
 function parseArgs(argv) {
-  return { write: argv.includes('--write') };
+  const inline = argv.find((arg) => arg.startsWith('--config='));
+  const index = argv.indexOf('--config');
+  const config = inline ? inline.slice('--config='.length) : (index >= 0 ? argv[index + 1] : null);
+  if (index >= 0 && !config) throw new Error('--config needs a file path');
+  return { write: argv.includes('--write'), config };
 }
 
 function idOf(value) {
@@ -194,18 +206,48 @@ async function loadContext(globalDb) {
   return { adminGlobalUserIds, keptGlobalUserIds, adminTenantUserIds, adminEmails };
 }
 
+function parseUri(name, uri) {
+  const match = String(uri).match(URI_PATTERN);
+  if (!match) throw new Error(`${name} is not a mongodb:// or mongodb+srv:// URI`);
+  return { user: match[1] || null, host: match[2].toLowerCase(), database: match[3] || '' };
+}
+
 function hostOf(uri) {
-  return new URL(uri.replace(/^mongodb(\+srv)?:/, 'http:')).host.toLowerCase();
+  return parseUri('URI', uri).host;
+}
+
+/** user@host/database with the password left out, for the pre-flight listing. */
+function describeUri(name, uri) {
+  const { user, host, database } = parseUri(name, uri);
+  return `${user ? `${user}@` : ''}${host}/${database || '(default)'}`;
 }
 
 function withDatabase(uri, name) {
   return uri.replace(/\/([^/?]*)(\?|$)/, `/${name}$2`);
 }
 
-function requireEnv(names) {
-  const missing = names.filter((name) => !process.env[name]);
-  if (missing.length) throw new Error(`Missing ${missing.join(', ')}`);
-  return Object.fromEntries(names.map((name) => [name, process.env[name]]));
+/** Config file values, with the environment filling anything the file leaves out. */
+function loadSettings(configPath) {
+  let file = {};
+  if (configPath) {
+    const mode = fs.statSync(configPath).mode;
+    if (mode & 0o077) console.warn(`warning: ${configPath} is readable by other users; run chmod 600 ${configPath}`);
+    file = dotenv.parse(fs.readFileSync(configPath));
+  }
+  const settings = {};
+  for (const name of [...SETTINGS, 'STAGING_HEROKU_APP']) settings[name] = (file[name] || process.env[name] || '').trim();
+  const missing = SETTINGS.filter((name) => !settings[name] || /^<.*>$|REPLACE_ME/.test(settings[name]));
+  if (missing.length) throw new Error(`Fill in ${missing.join(', ')}${configPath ? ` in ${configPath}` : ''}`);
+  settings.STAGING_HEROKU_APP ||= DEFAULT_STAGING_APP;
+  return settings;
+}
+
+function readStagingGate(app) {
+  try {
+    return execFileSync('heroku', ['config:get', 'MERIDIAN_ENVIRONMENT', '-a', app], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+  } catch {
+    return null;
+  }
 }
 
 function indexSpecs(indexes) {
@@ -262,21 +304,28 @@ async function backupDatabase(client, name, stamp, log) {
   return target.databaseName;
 }
 
-async function copyProductionToStaging({ write = false, log = console.log } = {}) {
-  const env = requireEnv(['SOURCE_GLOBAL_URI', 'SOURCE_SF_URI', 'SOURCE_IC_URI', 'TARGET_GLOBAL_URI', 'TARGET_BASE_URI']);
-  const sourceHosts = new Set([env.SOURCE_GLOBAL_URI, env.SOURCE_SF_URI, env.SOURCE_IC_URI].map(hostOf));
-  for (const uri of [env.TARGET_GLOBAL_URI, env.TARGET_BASE_URI]) {
-    if (sourceHosts.has(hostOf(uri))) throw new Error('A staging URI points at a production cluster; refusing to run.');
-  }
-  if (write && process.env.STAGING_GATE !== 'staging') {
-    throw new Error('Staging must have MERIDIAN_ENVIRONMENT=staging (and the delivery gate deployed) before --write.');
-  }
-
+async function copyProductionToStaging({ write = false, config = null, log = console.log } = {}) {
+  const env = loadSettings(config);
   const plan = [
     ['global', env.SOURCE_GLOBAL_URI, env.TARGET_GLOBAL_URI],
     ['sf', env.SOURCE_SF_URI, withDatabase(env.TARGET_BASE_URI, 'sf')],
     ['ic', env.SOURCE_IC_URI, withDatabase(env.TARGET_BASE_URI, 'ic')],
   ];
+  log('production -> staging');
+  for (const [scope, source, target] of plan) {
+    log(`  ${scope.padEnd(7)} ${describeUri(`${scope} source`, source)}  ->  ${describeUri(`${scope} target`, target)}`);
+  }
+  const gate = readStagingGate(env.STAGING_HEROKU_APP);
+  log(`  staging gate (${env.STAGING_HEROKU_APP}): MERIDIAN_ENVIRONMENT=${gate === null ? '(could not ask Heroku)' : gate || '(not set)'}\n`);
+
+  const sourceHosts = new Set([env.SOURCE_GLOBAL_URI, env.SOURCE_SF_URI, env.SOURCE_IC_URI].map(hostOf));
+  for (const uri of [env.TARGET_GLOBAL_URI, env.TARGET_BASE_URI]) {
+    if (sourceHosts.has(hostOf(uri))) throw new Error('A staging URI points at a production cluster; refusing to run.');
+  }
+  if (write && gate !== 'staging') {
+    throw new Error(`${env.STAGING_HEROKU_APP} must have MERIDIAN_ENVIRONMENT=staging (and the delivery gate deployed) before --write.`);
+  }
+
   const clients = [];
   const open = async (uri) => { const client = await new MongoClient(uri).connect(); clients.push(client); return client; };
   try {
@@ -305,10 +354,10 @@ async function copyProductionToStaging({ write = false, log = console.log } = {}
 }
 
 if (require.main === module) {
-  copyProductionToStaging(parseArgs(process.argv.slice(2))).catch((error) => {
+  Promise.resolve().then(() => copyProductionToStaging(parseArgs(process.argv.slice(2)))).catch((error) => {
     console.error(`[copy-production-to-staging] failed: ${error.message}`);
     process.exit(1);
   });
 }
 
-module.exports = { KEPT_TENANTS, transformDocument, residualEmails, belongsToKeptTenant, copyProductionToStaging };
+module.exports = { KEPT_TENANTS, transformDocument, residualEmails, belongsToKeptTenant, describeUri, loadSettings, parseArgs, copyProductionToStaging };

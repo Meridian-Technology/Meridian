@@ -1,4 +1,7 @@
-const { transformDocument, residualEmails } = require('../../migrations/copyProductionToStaging');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+const { transformDocument, residualEmails, describeUri, loadSettings, parseArgs } = require('../../migrations/copyProductionToStaging');
 
 const ctx = {
   adminGlobalUserIds: new Set(['g-admin']),
@@ -57,5 +60,36 @@ describe('copyProductionToStaging transform', () => {
   it('reports emails that survive the scrub, ignoring scrubbed and admin addresses', () => {
     const found = residualEmails({ email: 'user-1@staging.invalid', owner: 'admin@meridian.study', description: 'Contact host@venue.com', nested: [{ to: 'x@y.org' }] }, ctx);
     expect([...found]).toEqual([['description', 1], ['nested[].to', 1]]);
+  });
+});
+
+describe('copyProductionToStaging settings', () => {
+  const write = (contents) => {
+    const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'staging-copy-')), '.env.staging-copy');
+    fs.writeFileSync(file, contents, { mode: 0o600 });
+    return file;
+  };
+
+  it('parses --config in both forms', () => {
+    expect(parseArgs(['--config', 'a.env', '--write'])).toEqual({ write: true, config: 'a.env' });
+    expect(parseArgs(['--config=b.env'])).toEqual({ write: false, config: 'b.env' });
+  });
+
+  it('lists a URI without its password', () => {
+    expect(describeUri('x', 'mongodb+srv://meridian:s3cret@cluster0.abc.mongodb.net/global?retryWrites=true'))
+      .toBe('meridian@cluster0.abc.mongodb.net/global');
+    expect(describeUri('x', 'mongodb://h1:27017,h2:27017/sf')).toBe('h1:27017,h2:27017/sf');
+  });
+
+  it('reads the config file and refuses placeholders', () => {
+    const filled = write([
+      'SOURCE_GLOBAL_URI=mongodb+srv://u:p@prod.net/global', 'SOURCE_SF_URI=mongodb+srv://u:p@prod.net/sf',
+      'SOURCE_IC_URI=mongodb+srv://u:p@prod.net/ic', 'TARGET_GLOBAL_URI=mongodb+srv://u:p@staging.net/global',
+      'TARGET_BASE_URI=mongodb+srv://u:p@staging.net/app',
+    ].join('\n'));
+    expect(loadSettings(filled)).toMatchObject({ SOURCE_SF_URI: 'mongodb+srv://u:p@prod.net/sf', STAGING_HEROKU_APP: 'meridian-staging-env' });
+
+    const template = write(fs.readFileSync(path.join(__dirname, '../../migrations/copyProductionToStaging.config.example'), 'utf8'));
+    expect(() => loadSettings(template)).toThrow(/Fill in SOURCE_GLOBAL_URI, SOURCE_SF_URI, SOURCE_IC_URI, TARGET_GLOBAL_URI, TARGET_BASE_URI/);
   });
 });
