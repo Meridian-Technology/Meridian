@@ -1276,6 +1276,7 @@ async function updateIngestEvent(req, options = {}) {
   }
 
   setPayload['customFields.pivot'] = pivotPatch;
+  setJustGoSemanticText({ ...existing, ...setPayload, customFields: { ...existing.customFields, pivot: pivotPatch } });
 
   const updated = await Event.findByIdAndUpdate(
     eventId,

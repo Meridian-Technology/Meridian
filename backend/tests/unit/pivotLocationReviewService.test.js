@@ -1,8 +1,12 @@
 jest.mock('../../services/getModelService', () => jest.fn());
 jest.mock('../../connectionsManager', () => ({ connectToDatabase: jest.fn() }));
 jest.mock('../../services/pivotIngestPublishService', () => ({ resolvePivotTenant: jest.fn() }));
+jest.mock('../../utilities/justGoSemanticText', () => ({
+  refreshJustGoSemanticText: jest.fn().mockResolvedValue(0),
+}));
 
 const getModels = require('../../services/getModelService');
+const { refreshJustGoSemanticText } = require('../../utilities/justGoSemanticText');
 const { connectToDatabase } = require('../../connectionsManager');
 const { resolvePivotTenant } = require('../../services/pivotIngestPublishService');
 const {
@@ -191,6 +195,8 @@ describe('pivot location review', () => {
       originalInput: 'never rewrite this SOURCE text' });
     expect(update.$set['customFields.pivot.locationReview'].decisionHistory.at(-1))
       .toMatchObject({ appliedFromEventId: 'event-1', candidateSource: 'matching_text' });
+    expect(refreshJustGoSemanticText).toHaveBeenCalledWith(expect.anything(), ['event-1']);
+    expect(refreshJustGoSemanticText).toHaveBeenCalledWith(expect.anything(), ['event-2']);
   });
 
   test('does not remember dismissed matches', async () => {

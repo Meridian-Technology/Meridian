@@ -15,6 +15,9 @@ jest.mock('../../services/pivotBatchService', () => ({
   serializePivotBatch: jest.requireActual('../../services/pivotBatchService').serializePivotBatch,
   DEFAULT_TARGET_EVENT_COUNT: 40,
 }));
+jest.mock('../../utilities/justGoSemanticText', () => ({
+  refreshJustGoSemanticText: jest.fn().mockResolvedValue(0),
+}));
 jest.mock('../../services/meridianJobHandlers/eventDiscoveryEnqueue', () => ({
   enqueueEventDiscoveryOnCatalogPublish: jest.fn().mockResolvedValue({ skipped: 'test', enqueued: [] }),
 }));
@@ -24,6 +27,7 @@ const { connectToDatabase } = require('../../connectionsManager');
 const { resolvePivotTenant } = require('../../services/pivotIngestPublishService');
 const { rebuildWeeklySnapshot } = require('../../services/pivotWeeklySnapshotService');
 const { ensurePivotBatch } = require('../../services/pivotBatchService');
+const { refreshJustGoSemanticText } = require('../../utilities/justGoSemanticText');
 const {
   enqueueEventDiscoveryOnCatalogPublish,
 } = require('../../services/meridianJobHandlers/eventDiscoveryEnqueue');
@@ -187,6 +191,9 @@ describe('releaseBatch', () => {
     expect(Event.updateMany.mock.calls[0][1]).toEqual({
       $set: { 'customFields.pivot.ingestStatus': 'published' },
     });
+    expect(refreshJustGoSemanticText.mock.calls.at(-1)[0]).toBe(Event);
+    expect(refreshJustGoSemanticText.mock.calls.at(-1)[1].map(String).sort())
+      .toEqual([EVENT_A, EVENT_B, EVENT_C].sort());
 
     expect(PivotBatch.findOneAndUpdate).toHaveBeenCalledWith(
       { batchWeek: BATCH_WEEK },
@@ -382,7 +389,10 @@ describe('unreleaseBatch', () => {
         'customFields.pivot.batchWeek': BATCH_WEEK,
         'customFields.pivot.ingestStatus': 'published',
       }),
-      { $set: { 'customFields.pivot.ingestStatus': 'staged' } },
+      {
+        $set: { 'customFields.pivot.ingestStatus': 'staged' },
+        $unset: { 'customFields.pivot.semanticText': '', 'customFields.pivot.semanticTextVersion': '' },
+      },
     );
     expect(PivotBatch.findOneAndUpdate).toHaveBeenCalledWith(
       { batchWeek: BATCH_WEEK },
