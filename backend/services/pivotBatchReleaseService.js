@@ -13,6 +13,7 @@ const { PIVOT_FEED_INGEST_STATUS } = require('../utilities/pivotIngestStatus');
 const { logPivot, pivotRequestContext } = require('../utilities/pivotLogger');
 const { REVIEW_REASON_COPY } = require('./pivotLocationReviewService');
 const { explainCoverImageSkip, partitionDocsByCoverProbe } = require('../utilities/pivotCoverImage');
+const { refreshJustGoSemanticText } = require('../utilities/justGoSemanticText');
 
 const UNRELEASE_CONFIRM_TOKEN = 'UNRELEASE';
 const STAGED_STATUS = 'staged';
@@ -240,6 +241,14 @@ async function releaseBatch(req, options = {}) {
       { $set: { 'customFields.pivot.ingestStatus': PIVOT_FEED_INGEST_STATUS } },
     );
     releasedCount = updateResult.modifiedCount ?? updateResult.nModified ?? 0;
+    try {
+      // Staged events carry no semanticText, so related-event search can't see them until now.
+      await refreshJustGoSemanticText(Event, plan.eligibleIds);
+    } catch (error) {
+      logPivot('warn', 'semantic text refresh failed after release', {
+        ...pivotRequestContext(req), tenantKey, batchWeek, message: error.message,
+      });
+    }
   }
 
   await ensurePivotBatch(tenantReq, {
@@ -395,6 +404,7 @@ async function unreleaseBatch(req, options = {}) {
 
   const updateResult = await Event.updateMany(match, {
     $set: { 'customFields.pivot.ingestStatus': STAGED_STATUS },
+    $unset: { 'customFields.pivot.semanticText': '', 'customFields.pivot.semanticTextVersion': '' },
   });
   const unreleasedCount = updateResult.modifiedCount ?? updateResult.nModified ?? 0;
 

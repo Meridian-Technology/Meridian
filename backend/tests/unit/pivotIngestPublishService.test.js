@@ -1145,6 +1145,25 @@ describe('pivotIngestPublishService updateIngestEvent', () => {
     );
   });
 
+  it('rewrites related-search text from the edited event', async () => {
+    await updateIngestEvent(
+      { globalDb: {} },
+      { tenantKey: 'nyc', eventId: '507f1f77bcf86cd799439012', overrides: { name: 'Rooftop Vinyl Night' } },
+    );
+    const pivot = Event.findByIdAndUpdate.mock.calls[0][1].$set['customFields.pivot'];
+    expect(pivot.semanticText).toContain('Title: Rooftop Vinyl Night');
+    expect(pivot.semanticTextVersion).toBeTruthy();
+  });
+
+  it('drops related-search text when an edit unpublishes the event', async () => {
+    await updateIngestEvent(
+      { globalDb: {} },
+      { tenantKey: 'nyc', eventId: '507f1f77bcf86cd799439012', overrides: { ingestStatus: 'draft' } },
+    );
+    const pivot = Event.findByIdAndUpdate.mock.calls[0][1].$set['customFields.pivot'];
+    expect(pivot).not.toHaveProperty('semanticText');
+  });
+
   it('updates host name and ingest status', async () => {
     const result = await updateIngestEvent(
       { globalDb: {} },

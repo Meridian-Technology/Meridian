@@ -9,7 +9,7 @@ const {
   relatedPipeline, chooseNeighbors, findRelatedCurationEvents, orderGroupSeeds, seedSignal,
   findSuggestedCurationGroups,
 } = require('../../services/pivotCarouselRelatedService');
-const { setJustGoSemanticText } = require('../../utilities/justGoSemanticText');
+const { setJustGoSemanticText, refreshJustGoSemanticText } = require('../../utilities/justGoSemanticText');
 
 const id = (n) => n.toString(16).padStart(24, '0');
 const now = new Date('2026-09-28T12:00:00Z');
@@ -33,6 +33,23 @@ test('materializes only published public event text', () => {
   published.customFields.pivot.ingestStatus = 'draft';
   setJustGoSemanticText(published);
   expect(published.customFields.pivot.semanticText).toBeUndefined();
+});
+
+test('refreshes stored text after in-place status changes', async () => {
+  const published = event(1, 'Jazz Night', ['jazz']);
+  const staged = event(2, 'Jazz Brunch');
+  staged.customFields.pivot.ingestStatus = 'staged';
+  const lean = jest.fn().mockResolvedValue([published, staged]);
+  const Event = { find: jest.fn(() => ({ lean })), bulkWrite: jest.fn() };
+  await expect(refreshJustGoSemanticText(Event, [id(1), id(2)])).resolves.toBe(2);
+  expect(Event.find.mock.calls[0][0]).toEqual({ _id: { $in: [id(1), id(2)] } });
+  const [first, second] = Event.bulkWrite.mock.calls[0][0].map((op) => op.updateOne);
+  expect(first.filter._id).toBe(id(1));
+  expect(first.update.$set['customFields.pivot.semanticText']).toContain('Title: Jazz Night');
+  expect(second.update).toEqual({ $unset: {
+    'customFields.pivot.semanticText': '', 'customFields.pivot.semanticTextVersion': '',
+  } });
+  await expect(refreshJustGoSemanticText(Event, [])).resolves.toBe(0);
 });
 
 test('uses Atlas text query, one indexed publication filter, and bounded ANN', () => {

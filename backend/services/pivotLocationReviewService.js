@@ -2,6 +2,7 @@ const getModels = require('./getModelService');
 const { connectToDatabase } = require('../connectionsManager');
 const { resolvePivotTenant } = require('./pivotIngestPublishService');
 const googleLocationService = require('./googleLocationService');
+const { refreshJustGoSemanticText } = require('../utilities/justGoSemanticText');
 const { preciseLocationInScope } = require('./justGoRichLocationWriteService');
 const { resolvedPhysicalLocation } = require('./pivotLocationBackfillService');
 const {
@@ -347,6 +348,7 @@ async function reviewLocationCandidate(req, options = {}) {
     { $set: mutation.set },
     { new: true, runValidators: true },
   ).lean();
+  await refreshJustGoSemanticText(Event, [eventId]);
 
   const resolved = mutation.decision.action !== 'reject_match';
   const sourceText = mutation.set['customFields.pivot.rawLocationText'];
@@ -423,6 +425,7 @@ async function applyToMatchingEvents(Event, options) {
     );
     result.updated += 1;
   }
+  await refreshJustGoSemanticText(Event, events.map((event) => event._id));
   return result;
 }
 
