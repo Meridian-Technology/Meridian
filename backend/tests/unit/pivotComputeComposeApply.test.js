@@ -454,6 +454,26 @@ describe('compose compute result apply with real persistence', () => {
     expect(kept.document).toEqual(saved.document);
   });
 
+  test('a revised cover may use the poster of an eligible event the draft does not feature', async () => {
+    await getModels({ db: await connectToDatabase('ic') }, 'Event').Event.create(eventDoc('Four'));
+    const { issue, job, context } = await queueRevision();
+    const result = reviseResult(job, context);
+    const featured = new Set(result.composition.selectedEventRefs.map(ref => ref.eventId));
+    const unfeatured = context.candidates.find(candidate => !featured.has(candidate.ref.eventId));
+    expect(unfeatured).toBeDefined();
+    result.composition.cover.assetRef = { kind: 'event-poster', eventRef: unfeatured.ref };
+    expect(validateExecutionResult(result)).toEqual({ valid: true });
+    await submitComputeJobResult(req, { externalJobId: job.externalJobId, workerId: 'revise-worker',
+      leaseToken: (await findJobByExternalId(req, job.externalJobId)).lease.token, result, requiresReview: false, now: new Date() });
+
+    const applied = await applyRevision(job.externalJobId);
+    expect(applied).toMatchObject({ duplicate: false, decision: 'revise', issueId: issue.id });
+    const saved = (await getCarouselIssue(req, account.id, issue.id)).data.issue;
+    expect(saved).toMatchObject({ revision: 2, agentRevision: 2, socialCaption: 'Revised caption' });
+    expect(saved.composition.cover.assetRef).toEqual({ kind: 'event-poster', eventRef: unfeatured.ref });
+    expect(saved.sources).toEqual(result.composition.selectedEventRefs);
+  });
+
   test('a draft that moved on or was edited by hand stores a conflict and keeps the hand edit', async () => {
     const { issue, job, context } = await queueRevision();
     await submitComputeJobResult(req, { externalJobId: job.externalJobId, workerId: 'revise-worker',

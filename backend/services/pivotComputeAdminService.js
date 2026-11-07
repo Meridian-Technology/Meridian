@@ -398,13 +398,52 @@ function composeOptionPayloads(result, externalJobId, { composeIssueId, composeO
   return [{ composition: result.composition, issueId: composeIssueId(externalJobId) }];
 }
 
+/**
+ * Recheck every event the compositions name before a draft is written: none
+ * selected has been posted on this account since, each was in the context the
+ * worker saw, and each still reads from its tenant catalog. A cover poster may
+ * come from an eligible event the draft does not feature, so it is read too.
+ * Returns the posted history and the current catalog rows.
+ */
+async function recheckCompositionEvents(req, { accountId, context, compositions, now }) {
+  const { refKey } = require('./pivotCarouselCompositionService');
+  const { postedHistory } = require('./pivotCarouselComposeContextService');
+  const { searchEditorialCatalogPage } = require('./pivotCarouselCurationQueryService');
+  const history = await postedHistory(req, accountId);
+  if (history.error) throw serviceError(history.error, history.code, history.status);
+  const requested = [];
+  for (const composition of compositions) {
+    const selected = composition.selectedEventRefs;
+    if (selected.some(ref => history.used.has(refKey(ref)))) {
+      throw serviceError('A selected event has already been posted on this account.', 'COMPOSE_EVENT_ALREADY_POSTED', 422);
+    }
+    requested.push(...selected);
+    if (composition.cover.assetRef.kind === 'event-poster') requested.push(composition.cover.assetRef.eventRef);
+  }
+  if (requested.some(ref => !context.candidates.some(candidate => refKey(candidate.ref) === refKey(ref)))) {
+    throw serviceError('A selected event was not in the worker context.', 'COMPOSE_EVENT_INELIGIBLE', 422);
+  }
+  const candidates = [];
+  for (const sourceTenantKey of new Set(requested.map(ref => ref.sourceTenantKey))) {
+    const read = await searchEditorialCatalogPage(req, sourceTenantKey, {
+      dateFrom: context.window.from, dateTo: context.window.to, dateToExclusive: context.window.toExclusive,
+      timezone: context.window.timezone, sort: 'date-asc', limit: 24,
+    }, { now, ingestStatuses: context.policy?.catalogIngestStatuses || ['published'],
+      onlyEventIds: [...new Set(requested.filter(ref => ref.sourceTenantKey === sourceTenantKey).map(ref => ref.eventId))] });
+    if (read.error || read.data.sources.some(source => source.status !== 'ok')) {
+      throw serviceError('Could not recheck selected catalog events.', 'COMPOSE_CATALOG_UNAVAILABLE', 409);
+    }
+    candidates.push(...read.data.candidates);
+  }
+  return { history, candidates };
+}
+
 /** Create any missing drafts. An issue that already belongs to this job is left as it is. */
 async function createMissingComposeIssues(req, { externalJobId, context, payloads, publicationAt, actor, now }) {
   const getGlobalModels = require('./getGlobalModelService');
   const { PivotCarouselDeck } = getGlobalModels(req, 'PivotCarouselDeck');
   const { refKey, buildCompositionDocument } = require('./pivotCarouselCompositionService');
-  const { resolveEditorialAccount, postedHistory, composeWindow } = require('./pivotCarouselComposeContextService');
-  const { searchEditorialCatalogPage } = require('./pivotCarouselCurationQueryService');
+  const { resolveEditorialAccount, composeWindow } = require('./pivotCarouselComposeContextService');
   const existingDocs = await PivotCarouselDeck.find({ _id: { $in: payloads.map(payload => payload.issueId) } }).lean();
   const existingById = new Map(existingDocs.map(doc => [String(doc._id), doc]));
   for (const payload of payloads) {
@@ -424,32 +463,9 @@ async function createMissingComposeIssues(req, { externalJobId, context, payload
     || resolved.account.ownerTenantKey !== context.account.ownerTenantKey) {
     throw serviceError('The account publication window changed.', 'COMPOSE_ACCOUNT_CHANGED', 409);
   }
-  const history = await postedHistory(req, resolved.account._id);
-  if (history.error) throw serviceError(history.error, history.code, history.status);
-  const requested = [];
-  for (const payload of missing) {
-    const selected = payload.composition.selectedEventRefs;
-    if (selected.some(ref => history.used.has(refKey(ref)))) {
-      throw serviceError('A selected event has already been posted on this account.', 'COMPOSE_EVENT_ALREADY_POSTED', 422);
-    }
-    requested.push(...selected);
-    if (payload.composition.cover.assetRef.kind === 'event-poster') requested.push(payload.composition.cover.assetRef.eventRef);
-  }
-  if (requested.some(ref => !context.candidates.some(candidate => refKey(candidate.ref) === refKey(ref)))) {
-    throw serviceError('A selected event was not in the worker context.', 'COMPOSE_EVENT_INELIGIBLE', 422);
-  }
-  const candidates = [];
-  for (const sourceTenantKey of new Set(requested.map(ref => ref.sourceTenantKey))) {
-    const read = await searchEditorialCatalogPage(req, sourceTenantKey, {
-      dateFrom: context.window.from, dateTo: context.window.to, dateToExclusive: context.window.toExclusive,
-      timezone: context.window.timezone, sort: 'date-asc', limit: 24,
-    }, { now, ingestStatuses: context.policy?.catalogIngestStatuses || ['published'],
-      onlyEventIds: [...new Set(requested.filter(ref => ref.sourceTenantKey === sourceTenantKey).map(ref => ref.eventId))] });
-    if (read.error || read.data.sources.some(source => source.status !== 'ok')) {
-      throw serviceError('Could not recheck selected catalog events.', 'COMPOSE_CATALOG_UNAVAILABLE', 409);
-    }
-    candidates.push(...read.data.candidates);
-  }
+  const { history, candidates } = await recheckCompositionEvents(req, {
+    accountId: resolved.account._id, context, compositions: missing.map(payload => payload.composition), now,
+  });
   const documents = missing.map(payload => ({
     payload,
     document: buildCompositionDocument(payload.composition, { ...context, lastPostedIssues: history.recent }, candidates),
@@ -647,32 +663,11 @@ async function applyCarouselReviseJob(req, externalJobId, { tenantKey, actor = n
       });
     }
     const { refKey, buildCompositionDocument } = require('./pivotCarouselCompositionService');
-    const { postedHistory } = require('./pivotCarouselComposeContextService');
-    const { searchEditorialCatalogPage } = require('./pivotCarouselCurationQueryService');
     const { updateCarouselIssue } = require('./pivotCarouselIssueService');
     const selected = result.composition.selectedEventRefs;
-    const history = await postedHistory(req, issue.accountId);
-    if (history.error) throw serviceError(history.error, history.code, history.status);
-    if (selected.some(ref => history.used.has(refKey(ref)))) {
-      throw serviceError('A selected event has already been posted on this account.', 'COMPOSE_EVENT_ALREADY_POSTED', 422);
-    }
-    if (selected.some(ref => !context.candidates.some(candidate => refKey(candidate.ref) === refKey(ref)))) {
-      throw serviceError('A selected event was not in the worker context.', 'COMPOSE_EVENT_INELIGIBLE', 422);
-    }
-    const candidates = [];
-    for (const sourceTenantKey of new Set(selected.map(ref => ref.sourceTenantKey))) {
-      const read = await searchEditorialCatalogPage(req, sourceTenantKey, {
-        dateFrom: context.window.from, dateTo: context.window.to, dateToExclusive: context.window.toExclusive,
-        timezone: context.window.timezone, sort: 'date-asc', limit: 24,
-      }, {
-        now, ingestStatuses: context.policy?.catalogIngestStatuses || ['published'],
-        onlyEventIds: [...new Set(selected.filter(ref => ref.sourceTenantKey === sourceTenantKey).map(ref => ref.eventId))],
-      });
-      if (read.error || read.data.sources.some(source => source.status !== 'ok')) {
-        throw serviceError('Could not recheck selected catalog events.', 'COMPOSE_CATALOG_UNAVAILABLE', 409);
-      }
-      candidates.push(...read.data.candidates);
-    }
+    const { history, candidates } = await recheckCompositionEvents(req, {
+      accountId: issue.accountId, context, compositions: [result.composition], now,
+    });
     const document = buildCompositionDocument(result.composition, { ...context, lastPostedIssues: history.recent }, candidates);
     const saved = await updateCarouselIssue({ ...req, user: { ...req.user, globalUserId: req.user?.globalUserId || actor } },
       context.account.id, issueId, {
