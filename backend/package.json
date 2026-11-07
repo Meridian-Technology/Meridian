@@ -1,5 +1,6 @@
 {
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.32.2",
     "@react-email/components": "0.0.32",
     "@react-email/render": "^1.0.4",
     "@simplewebauthn/server": "^13.3.0",
@@ -38,7 +39,8 @@
     "socket.io": "^4.7.5",
     "ws": "^8.18.0",
     "xml-crypto": "^6.1.2",
-    "xml2js": "^0.6.2"
+    "xml2js": "^0.6.2",
+    "zod": "^4.1.12"
   },
   "name": "study-compass",
   "version": "1.0.0",

@@ -309,6 +309,7 @@ function createApp() {
   const taskManagementRoutes = require('./routes/taskManagementRoutes.js');
   const roomRoutes = require('./routes/roomRoutes.js');
   const adminRoutes = require('./routes/adminRoutes.js');
+  const carouselMcpRoutes = require('./routes/carouselMcpRoutes.js');
   const platformTenantRoutes = require('./routes/platformTenantRoutes.js');
   const pivotWeeklyDropRoutes = require('./routes/pivotWeeklyDropRoutes.js');
   const meridianJobAdminRoutes = require('./routes/meridianJobAdminRoutes.js');
@@ -355,6 +356,8 @@ function createApp() {
   app.use('/org-event-management', orgEventManagementRoutes);
   app.use('/org-event-management', taskManagementRoutes);
   app.use('/admin', roomRoutes);
+  // Personal access tokens are accepted only on this route.
+  app.use('/mcp/carousel', carouselMcpRoutes);
   app.use(adminRoutes);
   app.use(platformTenantRoutes);
   app.use(pivotWeeklyDropRoutes);

@@ -758,6 +758,14 @@ async function submitComputeJobResult(req, {
   if (notifyType) {
     notifyComputeJobAdminsBestEffort(req, { job: serialized, type: notifyType });
   }
+  if (serialized.kind === 'carousel-export' && nextStatus === 'completed') {
+    await require('./pivotCarouselGrokbotNotifyService').notifyPreviewReady(req, serialized);
+  } else if (
+    (serialized.kind === 'carousel-compose' || serialized.kind === 'carousel-revise')
+    && nextStatus === 'failed'
+  ) {
+    await require('./pivotCarouselGrokbotNotifyService').notifyCarouselJobEnded(req, serialized);
+  }
   if (nextStatus === 'review-required') {
     scheduleMaybeAutoApplyComputeJob(req, serialized.externalJobId);
   }

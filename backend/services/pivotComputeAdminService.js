@@ -558,6 +558,7 @@ async function applyCarouselComposeJob(req, externalJobId, { tenantKey, actor = 
     } });
     const job = await completeComputeJobApply(req, { externalJobId, actor, idempotencyKey: key,
       summary: { creates: issueIds.length }, now });
+    await require('./pivotCarouselGrokbotNotifyService').notifyCarouselJobEnded(req, job);
     return {
       job: serializeAdminJob(job), duplicate: false, decision: result.decision,
       issueId: issueIds[0] || null, issueIds,
@@ -576,6 +577,7 @@ async function finishReviseApply(req, { externalJobId, actor, key, now, decision
     reviseOutcome: { decision, reason, issueId, requestId },
   } });
   const job = await completeComputeJobApply(req, { externalJobId, actor, idempotencyKey: key, summary, now });
+  await require('./pivotCarouselGrokbotNotifyService').notifyCarouselJobEnded(req, job);
   return {
     job: serializeAdminJob(job), duplicate: false, decision,
     issueId: String(issueId), requestId: String(requestId),

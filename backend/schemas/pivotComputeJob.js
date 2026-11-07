@@ -228,9 +228,23 @@ const notificationEmailSchema = new mongoose.Schema(
   { _id: false },
 );
 
+const grokbotNoticeSchema = new mongoose.Schema(
+  {
+    event: {
+      type: String,
+      required: true,
+      enum: ['preview-ready', 'wait', 'needs-editor', 'cannot-revise', 'conflict', 'failure'],
+    },
+    sentAt: { type: Date, required: true },
+  },
+  { _id: false },
+);
+
 const notificationsSchema = new mongoose.Schema(
   {
     email: { type: [notificationEmailSchema], default: undefined },
+    // One row per grokbot carousel event, reserved before the webhook is sent.
+    grokbot: { type: [grokbotNoticeSchema], default: undefined },
   },
   { _id: false },
 );
@@ -410,6 +424,9 @@ pivotComputeJobSchema.pre('validate', function normalizeComputeJobFields() {
   }
   if (Array.isArray(this.notifications?.email) && this.notifications.email.length > MAX_NOTIFICATION_EMAILS) {
     this.invalidate('notifications.email', `notification emails exceed ${MAX_NOTIFICATION_EMAILS}`);
+  }
+  if (Array.isArray(this.notifications?.grokbot) && this.notifications.grokbot.length > 8) {
+    this.invalidate('notifications.grokbot', 'grokbot notices exceed 8');
   }
 });
 
