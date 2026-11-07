@@ -40,7 +40,7 @@ const DESTRUCTIVE = {
 
 const issueId = z.string().regex(/^[0-9a-fA-F]{24}$/).describe('The carousel issue id.');
 const revision = z.number().int().min(1).describe('The issue revision this action was read from. A stale revision is refused.');
-const idempotencyKey = z.string().regex(/^[a-zA-Z0-9:_-]{8,128}$/).describe('Caller key. A repeat returns the first result and does not run again.');
+const idempotencyKey = z.string().regex(/^[a-zA-Z0-9:_-]{8,128}$/).describe('Caller key. A repeat returns the first result and does not run again. A server error keeps nothing, so retry with the same key. IN_PROGRESS means a call with this key is still running; retry it shortly.');
 
 function toolResult(result) {
   if (result?.error) {

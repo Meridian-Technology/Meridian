@@ -38,7 +38,7 @@ On the Meridian process set `GROKBOT_CAROUSEL_WEBHOOK_URL` to grokbot's inbound 
 
 ## Daily routine
 
-Once a day, call `list_editorial_accounts`, then `start_compose` for each account that has an account id. Pass `accountKey`, an ISO-8601 `publicationTime` for the draft, and an `idempotencyKey` of 8–128 characters (`^[a-zA-Z0-9:_-]{8,128}$`), stable for that account and day, such as `compose:just.go.ic:2026-11-07`. The call returns a `jobId` and queues the job. It does not write a draft. Keep the job id and stop. The webhook routine presents the result. The same key returns the first result and does not queue a second job. `just.go.ic` and `just.go.sf` are the city accounts. An account with no owner tenant cannot start a compose.
+Once a day, call `list_editorial_accounts`, then `start_compose` for each account that has an account id. Pass `accountKey`, an ISO-8601 `publicationTime` for the draft, and an `idempotencyKey` of 8–128 characters (`^[a-zA-Z0-9:_-]{8,128}$`), stable for that account and day, such as `compose:just.go.ic:2026-11-07`. The call returns a `jobId` and queues the job. It does not write a draft. Keep the job id and stop. The webhook routine presents the result. The same key returns the first result and does not queue a second job. A server error is not stored, so retry with the same key. While a call with that key is still running, another returns `IN_PROGRESS`; retry it shortly with the same key. `just.go.ic` and `just.go.sf` are the city accounts. An account with no owner tenant cannot start a compose.
 
 ## Webhook routine
 

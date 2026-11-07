@@ -35,9 +35,53 @@ function composeIdentity(owner, idempotencyKey) {
   };
 }
 
+function inProgress() {
+  return {
+    ...fail('This action is still running. Retry with the same idempotency key.', 409, 'IN_PROGRESS'),
+    retryable: true,
+  };
+}
+
+// A success or a deliberate refusal. A thrown error or a server fault is not
+// kept, so the same key can run again.
+function storable(outcome) {
+  if (!outcome?.error) return true;
+  return outcome.status >= 400 && outcome.status < 500;
+}
+
+/**
+ * Claim the key with a pending row. The unique index lets one caller in. Any
+ * other finds the pending row and is told to retry, or finds the stored result.
+ */
+async function claim(CarouselMcpAction, row) {
+  const identity = { globalUserId: row.globalUserId, tool: row.tool, idempotencyKey: row.idempotencyKey };
+  // Two tries: the holder may release the key between our insert and our read.
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      return { claimed: await CarouselMcpAction.create({ ...row, state: 'pending' }) };
+    } catch (error) {
+      if (error?.code !== 11000) throw error;
+    }
+    const prior = await CarouselMcpAction.findOne(identity).lean();
+    if (!prior) continue;
+    if (prior.state === 'pending') return { outcome: inProgress() };
+    return { outcome: prior.outcome };
+  }
+  return { outcome: inProgress() };
+}
+
+async function release(CarouselMcpAction, claimed) {
+  try {
+    await CarouselMcpAction.deleteOne({ _id: claimed._id, state: 'pending' });
+  } catch (error) {
+    console.error('[carouselMcp] could not release an idempotency key', error);
+  }
+}
+
 /**
  * Return the stored result for this owner, tool and key. Otherwise run the
- * action once and store that result, including a service error.
+ * action once and store a success or a deliberate refusal. A thrown error or
+ * a 5xx releases the key, so the caller can retry it.
  */
 async function settle(req, tool, idempotencyKey, perform) {
   const owner = ownerId(req);
@@ -46,46 +90,45 @@ async function settle(req, tool, idempotencyKey, perform) {
     return fail('Platform admin required.', 403, 'NOT_PLATFORM_ADMIN');
   }
   const { CarouselMcpAction } = getGlobalModels(req, 'CarouselMcpAction');
-  const key = idempotencyKey || null;
-  if (key) {
-    const prior = await CarouselMcpAction.findOne({
-      globalUserId: owner,
-      tool,
-      idempotencyKey: key,
-    }).lean();
-    if (prior?.outcome) return prior.outcome;
+  const row = {
+    globalUserId: owner,
+    tokenId: token.id,
+    tokenLabel: token.label,
+    tool,
+    idempotencyKey: idempotencyKey || null,
+  };
+
+  let claimed = null;
+  if (row.idempotencyKey) {
+    const result = await claim(CarouselMcpAction, row);
+    if (!result.claimed) return result.outcome;
+    claimed = result.claimed;
   }
 
   let outcome;
   try {
     outcome = await perform();
   } catch (error) {
-    outcome = fail(
+    console.error(`[carouselMcp] ${tool} failed`, error);
+    if (claimed) await release(CarouselMcpAction, claimed);
+    return fail(
       error.message || 'The action failed.',
       error.status || 500,
       error.code || 'MCP_ACTION_FAILED',
     );
   }
 
-  try {
-    await CarouselMcpAction.create({
-      globalUserId: owner,
-      tokenId: token.id,
-      tokenLabel: token.label,
-      tool,
-      idempotencyKey: key,
-      outcome,
-    });
-  } catch (error) {
-    if (error?.code === 11000 && key) {
-      const prior = await CarouselMcpAction.findOne({
-        globalUserId: owner,
-        tool,
-        idempotencyKey: key,
-      }).lean();
-      if (prior?.outcome) return prior.outcome;
-    }
-    throw error;
+  if (!storable(outcome)) {
+    if (claimed) await release(CarouselMcpAction, claimed);
+    return outcome;
+  }
+  if (claimed) {
+    await CarouselMcpAction.updateOne(
+      { _id: claimed._id, state: 'pending' },
+      { $set: { state: 'done', outcome } },
+    );
+  } else {
+    await CarouselMcpAction.create({ ...row, state: 'done', outcome });
   }
   return outcome;
 }

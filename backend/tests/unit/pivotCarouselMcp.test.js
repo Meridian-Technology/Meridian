@@ -95,6 +95,8 @@ describe('carousel MCP read tools', () => {
   beforeEach(async () => {
     await mongo.reset();
     await ensurePivotComputeJobIndexes(req, { force: true });
+    // The idempotency claim relies on this unique index; reset drops it.
+    await getGlobalModels(req, 'CarouselMcpAction').CarouselMcpAction.createIndexes();
     s3.getSignedUrlPromise.mockReset();
     s3.getSignedUrlPromise.mockImplementation(async (_operation, params) => (
       `https://s3.test/${params.Key}?expires=${params.Expires}`
@@ -660,6 +662,101 @@ describe('carousel MCP read tools', () => {
       expect(String(row.globalUserId)).toBe(ownerId);
       expect(row.tokenLabel).toBe('grokbot');
     }
+  });
+
+  it('does not keep a thrown error under an idempotency key, so a retry runs', async () => {
+    const adminService = require('../../services/pivotComputeAdminService');
+    const create = jest.spyOn(adminService, 'createAdminComputeJob')
+      .mockRejectedValueOnce(new Error('connection reset'));
+    const args = {
+      accountKey: 'just.go.ic',
+      publicationTime: '2026-11-08T18:00:00.000Z',
+      idempotencyKey: 'compose-ic-retry',
+    };
+    try {
+      const failed = await callTool('start_compose', args);
+      expect(failed.isError).toBe(true);
+      expect(failed.content[0].text).toMatch(/connection reset/);
+      const { CarouselMcpAction, PivotComputeJob } = getGlobalModels(req, 'CarouselMcpAction', 'PivotComputeJob');
+      expect(await CarouselMcpAction.countDocuments({ idempotencyKey: args.idempotencyKey })).toBe(0);
+
+      const retried = readJson(await callTool('start_compose', args));
+      expect(retried).toMatchObject({ accountKey: 'just.go.ic', status: 'pending', created: true });
+      expect(await PivotComputeJob.countDocuments({ kind: 'carousel-compose' })).toBe(1);
+      const stored = await CarouselMcpAction.findOne({ idempotencyKey: args.idempotencyKey }).lean();
+      expect(stored).toMatchObject({ state: 'done', outcome: retried });
+    } finally {
+      create.mockRestore();
+    }
+  });
+
+  it('runs one request_revision when two calls share a key', async () => {
+    const { CarouselMcpAction, PivotCarouselDeck, PivotComputeJob } = getGlobalModels(
+      req,
+      'CarouselMcpAction',
+      'PivotCarouselDeck',
+      'PivotComputeJob',
+    );
+    const draft = await generated(sfAccountId, {
+      name: 'Twice',
+      theme: 'Twice',
+      rationale: 'Sent twice at once',
+      caption: 'Once only.',
+    });
+    const args = {
+      issueId: draft.id,
+      revision: 1,
+      text: 'Shorten the caption.',
+      idempotencyKey: 'revise-twice-1',
+    };
+    const results = await Promise.all([
+      callTool('request_revision', args),
+      callTool('request_revision', args),
+    ]);
+
+    const stored = await PivotCarouselDeck.findById(draft.id).lean();
+    expect(stored.revisionRequests).toHaveLength(1);
+    expect(stored.feedbackNotes).toHaveLength(1);
+    expect(await PivotComputeJob.countDocuments({ kind: 'carousel-revise' })).toBe(1);
+    const succeeded = results.filter((result) => !result.isError).map(readJson);
+    expect(succeeded.length).toBeGreaterThanOrEqual(1);
+    for (const body of succeeded) expect(body.requestId).toBe(String(stored.revisionRequests[0]._id));
+    for (const result of results.filter((entry) => entry.isError)) {
+      expect(result.content[0].text).toMatch(/still running/);
+    }
+  });
+
+  it('answers IN_PROGRESS while a key is claimed and does not act', async () => {
+    const { CarouselMcpAction, PivotCarouselDeck, PivotComputeJob } = getGlobalModels(
+      req,
+      'CarouselMcpAction',
+      'PivotCarouselDeck',
+      'PivotComputeJob',
+    );
+    const draft = await generated(sfAccountId, {
+      name: 'Claimed',
+      theme: 'Claimed',
+      rationale: 'Another call holds the key',
+      caption: 'Wait.',
+    });
+    await CarouselMcpAction.create({
+      globalUserId: req.user.globalUserId,
+      tokenId: new mongoose.Types.ObjectId(),
+      tokenLabel: 'grokbot',
+      tool: 'request_revision',
+      idempotencyKey: 'revise-claimed-1',
+      state: 'pending',
+    });
+
+    const service = require('../../services/pivotCarouselMcpActionService');
+    const answer = await service.requestRevision({
+      globalDb: mongo.globalConnection,
+      user: { globalUserId: req.user.globalUserId },
+      platformAccessToken: { id: String(new mongoose.Types.ObjectId()), label: 'grokbot' },
+    }, { issueId: draft.id, revision: 1, text: 'Shorten it.', idempotencyKey: 'revise-claimed-1' });
+    expect(answer).toMatchObject({ status: 409, code: 'IN_PROGRESS', retryable: true });
+    expect((await PivotCarouselDeck.findById(draft.id).lean()).revisionRequests).toHaveLength(0);
+    expect(await PivotComputeJob.countDocuments({ kind: 'carousel-revise' })).toBe(0);
   });
 
   it('refuses a stale revision and returns service errors as tool errors', async () => {
