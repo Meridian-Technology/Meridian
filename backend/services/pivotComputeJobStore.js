@@ -122,6 +122,7 @@ function serializeJob(doc, { includeApplyManifest = true } = {}) {
       : null,
     result: value.result ?? null,
     ...(value.kind === 'carousel-compose' ? { composeOutcome: value.composeOutcome ?? null } : {}),
+    ...(value.kind === 'carousel-revise' ? { reviseOutcome: value.reviseOutcome ?? null } : {}),
     exportArtifacts: value.exportArtifacts
       ? {
         attemptId: String(value.exportArtifacts.attemptId),
@@ -703,7 +704,7 @@ async function submitComputeJobResult(req, {
   const nextStatus = resolveResultSubmissionStatus({
     outcome: result.outcome,
     retryable,
-    requiresReview: job.kind === 'carousel-export' ? false : job.kind === 'carousel-compose' ? true : requiresReview,
+    requiresReview: job.kind === 'carousel-export' ? false : (job.kind === 'carousel-compose' || job.kind === 'carousel-revise') ? true : requiresReview,
   });
   assertComputeJobTransition(job.status, nextStatus);
 
@@ -756,6 +757,14 @@ async function submitComputeJobResult(req, {
   const notifyType = notifyTypeForTerminalJob(serialized, nextStatus);
   if (notifyType) {
     notifyComputeJobAdminsBestEffort(req, { job: serialized, type: notifyType });
+  }
+  if (serialized.kind === 'carousel-export' && nextStatus === 'completed') {
+    await require('./pivotCarouselGrokbotNotifyService').notifyPreviewReady(req, serialized);
+  } else if (
+    (serialized.kind === 'carousel-compose' || serialized.kind === 'carousel-revise')
+    && nextStatus === 'failed'
+  ) {
+    await require('./pivotCarouselGrokbotNotifyService').notifyCarouselJobEnded(req, serialized);
   }
   if (nextStatus === 'review-required') {
     scheduleMaybeAutoApplyComputeJob(req, serialized.externalJobId);
@@ -1202,13 +1211,18 @@ async function listComputeJobAttempts(req, externalJobId) {
   return attempts.map(serializeAttempt);
 }
 
-async function updateComputeJobContextVersion(req, externalJobId, contextVersion, { composeContext, leaseToken } = {}) {
+async function updateComputeJobContextVersion(req, externalJobId, contextVersion, { composeContext, reviseContext, leaseToken } = {}) {
   const { PivotComputeJob } = await getModels(req);
+  const storedContext = composeContext
+    ? { kind: 'carousel-compose', field: 'composeContext', value: composeContext }
+    : reviseContext
+      ? { kind: 'carousel-revise', field: 'reviseContext', value: reviseContext }
+      : null;
   const job = await PivotComputeJob.findOneAndUpdate(
-    { externalJobId: trimString(externalJobId), ...(composeContext ? {
-      kind: 'carousel-compose', status: { $in: ACTIVE_LEASE_STATUSES }, 'lease.token': leaseToken,
+    { externalJobId: trimString(externalJobId), ...(storedContext ? {
+      kind: storedContext.kind, status: { $in: ACTIVE_LEASE_STATUSES }, 'lease.token': leaseToken,
     } : {}) },
-    { $set: { contextVersion: trimString(contextVersion), ...(composeContext ? { composeContext } : {}) } },
+    { $set: { contextVersion: trimString(contextVersion), ...(storedContext ? { [storedContext.field]: storedContext.value } : {}) } },
     { new: true },
   );
   if (!job) {

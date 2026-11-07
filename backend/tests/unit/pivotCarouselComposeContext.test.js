@@ -6,9 +6,9 @@ const getModels = require('../../services/getModelService');
 const getGlobalModels = require('../../services/getGlobalModelService');
 const { getMergedTenants } = require('../../services/tenantConfigService');
 const { EDITORIAL_ACCOUNTS, editorialAccountFor } = require('../../constants/pivotCarouselEditorialAccounts');
-const { composeWindow, buildCarouselComposeContextSnapshot } = require('../../services/pivotCarouselComposeContextService');
+const { composeWindow, buildCarouselComposeContextSnapshot, buildCarouselReviseContextSnapshot } = require('../../services/pivotCarouselComposeContextService');
 const { createCarouselAccount, createCarouselIssue, createGeneratedCarouselIssue, updateCarouselIssue,
-  approveCarouselIssue, markCarouselIssuePosted } = require('../../services/pivotCarouselIssueService');
+  approveCarouselIssue, markCarouselIssuePosted, requestCarouselRevision } = require('../../services/pivotCarouselIssueService');
 const { addCarouselIssueFeedback, listEditorialFeedback } = require('../../services/pivotCarouselEditorialFeedbackService');
 const { validateContextSnapshot } = require('../../utilities/pivotAdminComputeJobContract');
 const { createComputeJob, claimNextPendingJob } = require('../../services/pivotComputeJobStore');
@@ -386,6 +386,61 @@ describe('carousel compose catalog context with real persistence', () => {
         search.mockRestore();
       }
     });
+  });
+
+  test('a revise context re-reads the stored window and leaves posted events out', async () => {
+    const window = {
+      from: '2026-10-01T05:00:00.000Z', to: '2026-10-08T05:00:00.000Z', toExclusive: true,
+      timezone: 'America/Chicago', mode: 'past', days: 7,
+    };
+    const [inside] = await events('ic', ['Inside'], '2026-10-03T18:00:00.000Z');
+    const [posted] = await events('ic', ['Already posted'], '2026-10-04T18:00:00.000Z');
+    await events('ic', ['Outside the stored window'], '2026-10-20T18:00:00.000Z');
+    await events('ic', ['Current week'], '2026-11-12T18:00:00.000Z');
+    const postedIssue = await issue('just.go.ic', { sourceTenantKey: 'ic', eventId: String(posted._id) }, 'Posted headline');
+    await post('just.go.ic', postedIssue, '2026-10-20T20:00:00Z');
+    const created = await createGeneratedCarouselIssue(req, accounts['just.go.ic'], {
+      name: 'Draft', document: studioDocument({ sourceTenantKey: 'ic', eventId: String(inside._id) }, 'Draft headline'),
+      socialCaption: 'Keep the caption',
+    }, {
+      composition: { socialCaption: 'Keep the caption', theme: 'stored' },
+      contextWindow: window, agentRevision: 1,
+    });
+    expect(created.error).toBeUndefined();
+    const first = await requestCarouselRevision(req, accounts['just.go.ic'], created.data.issue.id, { revision: 1, text: 'First note' });
+    const second = await requestCarouselRevision(req, accounts['just.go.ic'], created.data.issue.id, { revision: 1, text: 'Swap the cover line.' });
+    expect(second.error).toBeUndefined();
+    const result = await buildCarouselReviseContextSnapshot(req, { job: second.data.job, now: new Date('2026-11-10T00:00:00Z') });
+    expect(result.error).toBeUndefined();
+    expect(validateContextSnapshot(result.data.snapshot)).toEqual({ valid: true });
+    const snapshot = result.data.snapshot;
+    expect(snapshot).toMatchObject({
+      kind: 'carousel-revise', editorialAccountKey: 'just.go.ic', issueId: created.data.issue.id, revision: 1,
+      socialCaption: 'Keep the caption', window,
+      composition: { socialCaption: 'Keep the caption', theme: 'stored' },
+    });
+    expect(snapshot.candidates.map(row => row.snapshot.name)).toEqual(['Inside']);
+    expect(snapshot.candidates.some(row => row.ref.eventId === String(posted._id))).toBe(false);
+    expect(snapshot.lastPostedIssues.some(row => row.events.some(ref => ref.eventId === String(posted._id)))).toBe(true);
+    expect(snapshot.revisionRequests.map(row => [row.text, row.current])).toEqual([
+      ['First note', false], ['Swap the cover line.', true],
+    ]);
+    expect(snapshot.revisionRequests.find(row => row.current).id).toBe(second.data.job.options.requestId);
+    expect(snapshot.templates.version).toBe(2);
+    expect(snapshot.editorialFeedback.items.filter(item => item.kind === 'note').map(item => item.text)).toEqual([
+      'Swap the cover line.', 'First note',
+    ]);
+    const claim = await claimNextPendingJob(req, { externalJobId: second.data.job.externalJobId, workerId: 'revise-worker', now: new Date(),
+      capability: { contractVersion: '1', implementationRevision: 'relay-worker@test',
+        supportedContractVersions: ['1'], supportedKinds: ['carousel-revise'] } });
+    const fetched = await fetchJobContext(req, { workerId: 'revise-worker', externalJobId: second.data.job.externalJobId,
+      leaseToken: claim.job.lease.token, now: new Date() });
+    expect(fetched.context.window).toEqual(window);
+    expect(fetched.context.candidates.map(row => row.snapshot.name)).toEqual(['Inside']);
+    expect(fetched.job.contextVersion).toBe(fetched.context.contextVersion);
+    const stored = await getGlobalModels(req, 'PivotComputeJob').PivotComputeJob.findOne({ externalJobId: second.data.job.externalJobId }).lean();
+    expect(stored.reviseContext.candidates.map(row => row.snapshot.name)).toEqual(['Inside']);
+    expect(first.error).toBeUndefined();
   });
 
   test('rejects unknown, missing, ambiguous and wrongly owned accounts or invalid publication times', async () => {

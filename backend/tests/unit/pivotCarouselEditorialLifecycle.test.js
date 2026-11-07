@@ -110,6 +110,28 @@ describe('carousel editorial lifecycle', () => {
       expect(raw).not.toHaveProperty('origin');
     });
 
+    test('a manual issue cannot keep an agent composition, and a generated issue can', async () => {
+      const { PivotCarouselDeck } = models();
+      const window = {
+        from: '2026-10-01T00:00:00.000Z', to: '2026-10-15T00:00:00.000Z',
+        toExclusive: false, timezone: 'America/Los_Angeles', mode: 'upcoming', days: 14,
+      };
+      const manual = new PivotCarouselDeck({
+        tenantKey: 'sf', title: 'Manual', origin: 'manual',
+        composition: { socialCaption: 'no' }, contextWindow: window, agentRevision: 1,
+      });
+      await expect(manual.validate()).rejects.toThrow(/generated issue/);
+      const partial = new PivotCarouselDeck({
+        tenantKey: 'sf', title: 'Generated', origin: 'agent-generated', agentRevision: 1,
+      });
+      await expect(partial.validate()).rejects.toThrow(/composition, window, and revision/);
+      const generated = new PivotCarouselDeck({
+        tenantKey: 'sf', title: 'Generated', origin: 'agent-generated',
+        composition: { socialCaption: 'yes' }, contextWindow: window, agentRevision: 1,
+      });
+      await generated.validate();
+    });
+
     test('the schema defaults generated issues to unapproved and accepts all three review states', async () => {
       const { PivotCarouselDeck } = models();
       const doc = new PivotCarouselDeck({ tenantKey: 'sf', title: 'Generated', origin: 'agent-generated' });

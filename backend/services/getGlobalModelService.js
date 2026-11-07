@@ -1,5 +1,7 @@
 const globalUserSchema = require('../schemas/globalUser');
 const platformRoleSchema = require('../schemas/platformRole');
+const platformAccessTokenSchema = require('../schemas/platformAccessToken');
+const carouselMcpActionSchema = require('../schemas/carouselMcpAction');
 const platformAdminInviteSchema = require('../schemas/platformAdminInvite');
 const tenantMembershipSchema = require('../schemas/tenantMembership');
 const pendingRegistrationSchema = require('../schemas/pendingRegistration');
@@ -52,7 +54,7 @@ const meridianNotificationDefinitionSchema = require('../schemas/meridianNotific
  * Requires req.globalDb to be set (see app.js middleware).
  *
  * @param {object} req - request with req.globalDb
- * @param {...string} names - model names including 'GlobalUser', 'PlatformRole', 'PlatformAdminInvite', 'PivotCitySource', 'PivotCreatorGrant', 'PivotCopyPack', 'PivotCarouselDeck', 'PivotCarouselVoice', 'PivotCarouselAccount', 'PivotCarouselSavedSearch', 'JustGoLandingEvent', 'JustGoWaitlist', 'JustGoLandingQr', 'MeridianJobRun', 'MeridianJobAttempt', 'MeridianJobDelivery', 'MeridianNotificationDefinition', …
+ * @param {...string} names - model names including 'GlobalUser', 'PlatformRole', 'PlatformAccessToken', 'CarouselMcpAction', 'PlatformAdminInvite', 'PivotCitySource', 'PivotCreatorGrant', 'PivotCopyPack', 'PivotCarouselDeck', 'PivotCarouselVoice', 'PivotCarouselAccount', 'PivotCarouselSavedSearch', 'JustGoLandingEvent', 'JustGoWaitlist', 'JustGoLandingQr', 'MeridianJobRun', 'MeridianJobAttempt', 'MeridianJobDelivery', 'MeridianNotificationDefinition', …
  * @returns {object} map of requested models
  */
 const getGlobalModels = (req, ...names) => {
@@ -75,6 +77,16 @@ const getGlobalModels = (req, ...names) => {
         PivotExploreTheme: model('PivotExploreTheme', pivotExploreThemeSchema, 'pivot_explore_themes'),
         GlobalUser: model('GlobalUser', globalUserSchema, 'global_users'),
         PlatformRole: model('PlatformRole', platformRoleSchema, 'platform_roles'),
+        PlatformAccessToken: model(
+            'PlatformAccessToken',
+            platformAccessTokenSchema,
+            'platform_access_tokens'
+        ),
+        CarouselMcpAction: model(
+            'CarouselMcpAction',
+            carouselMcpActionSchema,
+            'carousel_mcp_actions'
+        ),
         PlatformAdminInvite: model(
             'PlatformAdminInvite',
             platformAdminInviteSchema,

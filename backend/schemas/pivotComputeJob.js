@@ -228,9 +228,23 @@ const notificationEmailSchema = new mongoose.Schema(
   { _id: false },
 );
 
+const grokbotNoticeSchema = new mongoose.Schema(
+  {
+    event: {
+      type: String,
+      required: true,
+      enum: ['preview-ready', 'wait', 'needs-editor', 'cannot-revise', 'conflict', 'failure'],
+    },
+    sentAt: { type: Date, required: true },
+  },
+  { _id: false },
+);
+
 const notificationsSchema = new mongoose.Schema(
   {
     email: { type: [notificationEmailSchema], default: undefined },
+    // One row per grokbot carousel event, reserved before the webhook is sent.
+    grokbot: { type: [grokbotNoticeSchema], default: undefined },
   },
   { _id: false },
 );
@@ -331,12 +345,27 @@ const pivotComputeJobSchema = new mongoose.Schema(
     lease: { type: leaseSchema, default: null },
     progress: { type: progressSchema, default: null },
     result: { type: storedResultSchema, default: null },
-    // Trusted context served to a compose worker; never supplied by its result.
+    // Trusted context served to a compose or revise worker; never supplied by its result.
     composeContext: { type: mongoose.Schema.Types.Mixed, default: null },
+    reviseContext: { type: mongoose.Schema.Types.Mixed, default: null },
     composeOutcome: {
       decision: { type: String, enum: ['compose', 'wait', 'needs-editor'] },
       reason: { type: String, maxlength: 1000 },
       issueId: { type: mongoose.Schema.Types.ObjectId, default: null },
+      issueIds: {
+        type: [{ type: mongoose.Schema.Types.ObjectId }],
+        default: undefined,
+        validate: {
+          validator: (ids) => !ids || ids.length <= 3,
+          message: 'A compose run creates at most three drafts.',
+        },
+      },
+    },
+    reviseOutcome: {
+      decision: { type: String, enum: ['revise', 'cannot-revise', 'conflict'] },
+      reason: { type: String, maxlength: 1000, default: null },
+      issueId: { type: mongoose.Schema.Types.ObjectId, default: null },
+      requestId: { type: mongoose.Schema.Types.ObjectId, default: null },
     },
     exportArtifacts: { type: exportArtifactsSchema, default: null },
     applicationAudit: { type: applicationAuditSchema, default: null },
@@ -367,6 +396,9 @@ pivotComputeJobSchema.pre('validate', function normalizeComputeJobFields() {
   if (boundedByteLength(this.composeContext) > 2 * 1024 * 1024) {
     this.invalidate('composeContext', 'compose context exceeds 2 MiB');
   }
+  if (boundedByteLength(this.reviseContext) > 2 * 1024 * 1024) {
+    this.invalidate('reviseContext', 'revise context exceeds 2 MiB');
+  }
   if (this.result?.mode === 'embedded' && this.result.embedded != null) {
     if (boundedByteLength(this.result.embedded, MAX_EMBEDDED_RESULT_BYTES) > MAX_EMBEDDED_RESULT_BYTES) {
       this.invalidate('result.embedded', `embedded result exceeds ${MAX_EMBEDDED_RESULT_BYTES} bytes`);
@@ -392,6 +424,9 @@ pivotComputeJobSchema.pre('validate', function normalizeComputeJobFields() {
   }
   if (Array.isArray(this.notifications?.email) && this.notifications.email.length > MAX_NOTIFICATION_EMAILS) {
     this.invalidate('notifications.email', `notification emails exceed ${MAX_NOTIFICATION_EMAILS}`);
+  }
+  if (Array.isArray(this.notifications?.grokbot) && this.notifications.grokbot.length > 8) {
+    this.invalidate('notifications.grokbot', 'grokbot notices exceed 8');
   }
 });
 

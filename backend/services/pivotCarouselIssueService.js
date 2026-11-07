@@ -11,7 +11,7 @@ const getGlobalModels = require('./getGlobalModelService');
 const { getTenantByKey } = require('./tenantConfigService');
 const { isPivotTenant } = require('../utilities/pivotDropSchedule');
 const { FORMATS } = require('../schemas/pivotCarouselAccount');
-const { MAX_SOCIAL_CAPTION_LENGTH } = require('../schemas/pivotCarouselDeck');
+const { MAX_SOCIAL_CAPTION_LENGTH, REVISION_REQUEST_LIMIT, MAX_REVISION_REQUEST_TEXT } = require('../schemas/pivotCarouselDeck');
 const { slideTypeFor } = require('../constants/zineSlideTypes');
 const {
   LIMITS: ISSUE_LIMITS,
@@ -118,6 +118,36 @@ function serializePosting(posting) {
   };
 }
 
+function serializeRevisionRequest(request) {
+  const row = request.toObject ? request.toObject() : request;
+  return {
+    id: String(row._id),
+    requester: row.requester || null,
+    time: row.time,
+    revision: row.revision,
+    text: row.text,
+    ...(row.reason ? { reason: row.reason } : {}),
+  };
+}
+
+/** True once a studio save has moved the issue past the revision the agent wrote. */
+function editsSinceAgent(doc) {
+  return doc?.agentRevision != null && (doc.revision || 1) !== doc.agentRevision;
+}
+
+function serializeContextWindow(window) {
+  if (!window) return null;
+  const value = window.toObject ? window.toObject() : window;
+  return {
+    from: value.from,
+    to: value.to,
+    toExclusive: value.toExclusive,
+    timezone: value.timezone,
+    mode: value.mode,
+    days: value.days,
+  };
+}
+
 function serializeIssue(doc) {
   const row = doc.toObject ? doc.toObject() : doc;
   const origin = row.origin || 'manual';
@@ -141,9 +171,27 @@ function serializeIssue(doc) {
     // so the editor cannot show "Unapproved draft" over someone's own work.
     reviewState: origin === 'agent-generated' ? (row.reviewState || 'unapproved') : null,
     trendRefs: origin === 'agent-generated' ? [...(row.trendRefs || [])] : [],
+    ...(row.optionSetId ? {
+      optionSetId: row.optionSetId,
+      optionIndex: row.optionIndex,
+      themeLabel: row.themeLabel,
+      optionPick: row.optionPick?.pickedAt ? {
+        pickedAt: row.optionPick.pickedAt,
+        pickedBy: row.optionPick.pickedBy || null,
+      } : null,
+    } : {}),
+    // Present only after the agent has written this draft. A manual issue,
+    // and a generated issue from before this was stored, omit all of them.
+    ...(origin === 'agent-generated' && row.agentRevision != null ? {
+      composition: row.composition || null,
+      contextWindow: serializeContextWindow(row.contextWindow),
+      agentRevision: row.agentRevision,
+      hasEditsSinceAgent: (row.revision || 1) !== row.agentRevision,
+    } : {}),
     socialCaption: row.socialCaption || '',
     editorialVersion: row.editorialVersion || 0,
     feedbackNotes: (row.feedbackNotes || []).map(require('./pivotCarouselEditorialFeedbackService').serializeFeedbackRecord),
+    revisionRequests: (row.revisionRequests || []).map(serializeRevisionRequest),
     approval: row.approval
       ? {
         revision: row.approval.revision,
@@ -293,7 +341,17 @@ async function createIssue(req, accountId, body, origin, trusted = {}) {
   const { PivotCarouselDeck } = getGlobalModels(req, 'PivotCarouselDeck');
   const doc = await PivotCarouselDeck.create({
     ...(trusted.issueId ? { _id: trusted.issueId, composeJobId: trusted.composeJobId } : {}),
+    ...(trusted.optionSetId ? {
+      optionSetId: trusted.optionSetId,
+      optionIndex: trusted.optionIndex,
+      themeLabel: trusted.themeLabel,
+    } : {}),
     ...(trusted.trendRefs?.length ? { trendRefs: trusted.trendRefs } : {}),
+    ...(trusted.agentRevision != null ? {
+      composition: trusted.composition,
+      contextWindow: trusted.contextWindow,
+      agentRevision: trusted.agentRevision,
+    } : {}),
     tenantKey: loaded.account.ownerTenantKey,
     title: name,
     name,
@@ -328,6 +386,118 @@ async function getCarouselIssue(req, accountId, issueId) {
   const doc = await PivotCarouselDeck.findOne({ _id: issueId, accountId: loaded.account._id });
   if (!doc) return fail('Issue not found.', 404, 'ISSUE_NOT_FOUND');
   return { data: { issue: serializeIssue(doc) } };
+}
+
+const PREVIEW_URL_TTL_SECONDS = 60 * 60;
+const EXPORT_JOB_ID_PATTERN = /^job:export:([0-9a-f]{24}):r([1-9]\d*)$/;
+const SLIDE_PNG_PATTERN = /^slide-(\d{2})\.png$/;
+const PREVIEW_IN_FLIGHT = new Set(['pending', 'leased', 'running', 'retryable', 'review-required', 'applying']);
+
+function exportJobId(issueId, revision) {
+  return `job:export:${issueId}:r${revision}`;
+}
+
+function slidePngs(artifacts) {
+  return (artifacts || [])
+    .flatMap((artifact) => {
+      const match = SLIDE_PNG_PATTERN.exec(String(artifact?.logicalName || ''));
+      if (!match) return [];
+      return [{ artifact, slideNumber: Number(match[1]), logicalName: match[0] }];
+    })
+    .sort((left, right) => left.slideNumber - right.slideNumber);
+}
+
+async function loadRevisionExport(req, issueId, revision) {
+  const { findJobByExternalId } = require('./pivotComputeJobStore');
+  const job = await findJobByExternalId(req, exportJobId(issueId, revision));
+  if (!job || job.kind !== 'carousel-export' || String(job.options?.deckId || '') !== issueId) return null;
+  return job;
+}
+
+async function signReadySlides(job, revision) {
+  const slides = job.status === 'completed' && !job.exportArtifacts?.expired
+    ? slidePngs(job.exportArtifacts?.artifacts)
+    : [];
+  if (!slides.length) return { data: { status: 'failed', revision } };
+  const {
+    createPresignedGetUrl,
+    assertObjectKeyBelongsToPrefix,
+    buildExportPrefix,
+  } = require('./pivotExportArtifactStorage');
+  const prefix = job.exportArtifacts.prefix || buildExportPrefix({
+    tenantKey: job.tenantKey,
+    externalJobId: job.externalJobId,
+    attemptNumber: job.exportArtifacts.attemptNumber,
+  });
+  const signed = [];
+  for (const slide of slides) {
+    try {
+      assertObjectKeyBelongsToPrefix(slide.artifact.objectKey, prefix);
+      const presign = await createPresignedGetUrl({
+        objectKey: slide.artifact.objectKey,
+        contentType: slide.artifact.mimeType || 'image/png',
+        filename: slide.logicalName,
+        expiresInSeconds: PREVIEW_URL_TTL_SECONDS,
+      });
+      signed.push({
+        slideNumber: slide.slideNumber,
+        logicalName: slide.logicalName,
+        url: presign.downloadUrl,
+        expiresInSeconds: presign.expiresInSeconds,
+      });
+    } catch (error) {
+      if (error.code) return fail(error.message, error.status || 500, error.code);
+      throw error;
+    }
+  }
+  return {
+    data: {
+      status: 'ready',
+      revision,
+      expiresInSeconds: signed[0].expiresInSeconds,
+      slides: signed.map(({ slideNumber, logicalName, url }) => ({ slideNumber, logicalName, url })),
+    },
+  };
+}
+
+async function newestReadyOlderRevision(req, issueId, revision) {
+  const { PivotComputeJob } = getGlobalModels(req, 'PivotComputeJob');
+  const jobs = await PivotComputeJob.find({
+    kind: 'carousel-export',
+    'options.deckId': issueId,
+  }).select('externalJobId status exportArtifacts.expired exportArtifacts.artifacts.logicalName').lean();
+  let older = null;
+  for (const job of jobs) {
+    const match = EXPORT_JOB_ID_PATTERN.exec(job.externalJobId || '');
+    if (!match || match[1] !== issueId) continue;
+    const jobRevision = Number(match[2]);
+    if (!Number.isInteger(jobRevision) || jobRevision >= revision) continue;
+    if (job.status !== 'completed' || job.exportArtifacts?.expired) continue;
+    if (!slidePngs(job.exportArtifacts?.artifacts).length) continue;
+    if (older == null || jobRevision > older) older = jobRevision;
+  }
+  return older;
+}
+
+/**
+ * Preview of the issue's current revision.
+ * pending and failed describe that revision's export. ready includes a new
+ * one-hour URL for every slide image, in slide order. A rendered preview from
+ * an earlier revision is stale and names that revision.
+ */
+async function getCarouselIssuePreview(req, accountId, issueId) {
+  const loaded = await getCarouselIssue(req, accountId, issueId);
+  if (loaded.error) return loaded;
+  const id = loaded.data.issue.id;
+  const revision = loaded.data.issue.revision || 1;
+  const current = await loadRevisionExport(req, id, revision);
+  if (current) {
+    if (PREVIEW_IN_FLIGHT.has(current.status)) return { data: { status: 'pending', revision } };
+    return signReadySlides(current, revision);
+  }
+  const older = await newestReadyOlderRevision(req, id, revision);
+  if (older != null) return { data: { status: 'stale', revision: older } };
+  return { data: { status: 'pending', revision } };
 }
 
 /**
@@ -475,7 +645,7 @@ async function renameCarouselIssue(req, accountId, issueId, body = {}) {
   });
 }
 
-async function updateCarouselIssue(req, accountId, issueId, body = {}, snapshotMeta = null) {
+async function updateCarouselIssue(req, accountId, issueId, body = {}, snapshotMeta = null, trusted = null) {
   if (body.format && !FORMATS.includes(body.format)) {
     return fail('Unknown issue format.', 400, 'FORMAT_INVALID');
   }
@@ -484,6 +654,13 @@ async function updateCarouselIssue(req, accountId, issueId, body = {}, snapshotM
     if (body.curation !== undefined) {
       doc.curation = body.curation;
       doc.markModified('curation');
+    }
+    // Only the revise apply path sets these. A studio save leaves the agent
+    // composition where it was, so the next revision reads as a hand edit.
+    if (trusted?.agentRevision != null) {
+      doc.composition = trusted.composition;
+      doc.markModified('composition');
+      doc.agentRevision = trusted.agentRevision;
     }
   }, snapshotMeta);
 }
@@ -520,12 +697,95 @@ async function loadIssueForDecision(req, accountId, issueId) {
   return { account: loaded.account, doc };
 }
 
+function serializeOption(doc) {
+  return { ...serializeIssue(doc), picked: Boolean(doc.optionPick?.pickedAt) };
+}
+
+/**
+ * Every draft from one compose run, archived or still active.
+ * An issue that is not part of a set has no options.
+ */
+async function listCarouselOptionSet(req, accountId, issueId) {
+  const loaded = await loadIssueForDecision(req, accountId, issueId);
+  if (loaded.error) return loaded;
+  const { doc } = loaded;
+  if (!doc.optionSetId) return { data: { optionSetId: null, pickedIssueId: null, options: [] } };
+  const { PivotCarouselDeck } = getGlobalModels(req, 'PivotCarouselDeck');
+  const docs = await PivotCarouselDeck.find({
+    accountId: loaded.account._id,
+    optionSetId: doc.optionSetId,
+  }).sort({ optionIndex: 1, _id: 1 });
+  const picked = docs.find(item => item.optionPick?.pickedAt);
+  return {
+    data: {
+      optionSetId: doc.optionSetId,
+      pickedIssueId: picked ? String(picked._id) : null,
+      options: docs.map(serializeOption),
+    },
+  };
+}
+
+/**
+ * Keep one option and archive the others.
+ *
+ * Sibling archival goes through the ordinary archive path. The pick itself is
+ * recorded on this issue without moving its revision, so a later restore of a
+ * sibling does not forget which option was chosen.
+ */
+async function pickCarouselOption(req, accountId, issueId, body = {}) {
+  const loaded = await loadIssueForDecision(req, accountId, issueId);
+  if (loaded.error) return loaded;
+  const { doc } = loaded;
+  if ((doc.origin || 'manual') !== 'agent-generated' || !doc.optionSetId) {
+    return fail('Only a generated option can be picked.', 409, 'NOT_AN_OPTION');
+  }
+  const conflict = checkRevision(doc.revision || 1, body.revision);
+  if (conflict) return { ...conflict, issue: serializeIssue(doc) };
+  const { PivotCarouselDeck } = getGlobalModels(req, 'PivotCarouselDeck');
+  const members = await PivotCarouselDeck.find({
+    accountId: loaded.account._id,
+    optionSetId: doc.optionSetId,
+  });
+  for (const sibling of members) {
+    if (String(sibling._id) === String(doc._id) || sibling.status === 'archived') continue;
+    const archived = await archiveCarouselIssue(req, accountId, sibling._id, { revision: sibling.revision || 1 });
+    if (archived.error) return archived;
+  }
+  await PivotCarouselDeck.updateMany(
+    {
+      accountId: loaded.account._id,
+      optionSetId: doc.optionSetId,
+      _id: { $ne: doc._id },
+      'optionPick.pickedAt': { $exists: true },
+    },
+    { $unset: { optionPick: 1 } },
+  );
+  let saved = doc;
+  if (!doc.optionPick?.pickedAt) {
+    saved = await PivotCarouselDeck.findOneAndUpdate(
+      { _id: doc._id, accountId: loaded.account._id, revision: body.revision },
+      { $set: { optionPick: { pickedAt: new Date(), pickedBy: actorId(req) } } },
+      { new: true, runValidators: true },
+    );
+    if (!saved) {
+      const current = await PivotCarouselDeck.findOne({ _id: doc._id, accountId: loaded.account._id });
+      return fail('The issue changed while picking it.', 409, 'REVISION_CONFLICT', {
+        storedRevision: current?.revision,
+        presentedRevision: body.revision,
+        issue: current ? serializeIssue(current) : undefined,
+      });
+    }
+  }
+  return { data: { issue: serializeIssue(saved) } };
+}
+
 /**
  * Approve one exact revision, slides and caption together.
  *
  * The compare-and-swap is on `revision` without changing it: approving is not
  * an edit, but it must fail outright if the issue moved since the approver
  * read it. Two approvals of the same revision are the same approval.
+ * Approving an option picks it, archiving every unarchived sibling.
  */
 async function approveCarouselIssue(req, accountId, issueId, body = {}) {
   const loaded = await loadIssueForDecision(req, accountId, issueId);
@@ -536,8 +796,17 @@ async function approveCarouselIssue(req, accountId, issueId, body = {}) {
   }
   const conflict = checkRevision(doc.revision || 1, body.revision);
   if (conflict) return { ...conflict, issue: serializeIssue(doc) };
+  if (doc.optionSetId) {
+    const picked = await pickCarouselOption(req, accountId, issueId, { revision: body.revision });
+    if (picked.error) return picked;
+  }
   if (doc.approval && doc.approval.revision === (doc.revision || 1)) {
-    return { data: { issue: serializeIssue(doc), alreadyApproved: true } };
+    const current = doc.optionSetId
+      ? await getGlobalModels(req, 'PivotCarouselDeck').PivotCarouselDeck.findOne({
+        _id: issueId, accountId: loaded.account._id,
+      })
+      : doc;
+    return { data: { issue: serializeIssue(current), alreadyApproved: true } };
   }
 
   const approval = {
@@ -572,6 +841,147 @@ async function approveCarouselIssue(req, accountId, issueId, body = {}) {
     });
   }
   return { data: { issue: serializeIssue(saved) } };
+}
+
+/**
+ * Ask the compose agent to revise this exact draft.
+ *
+ * The request is recorded on the issue and as editorial feedback, then a
+ * carousel-revise job is queued. Nothing here rewrites the draft: the agent
+ * does that later, and only if this revision is still the one it wrote.
+ */
+async function requestCarouselRevision(req, accountId, issueId, { revision, text } = {}) {
+  const loaded = await loadIssueForDecision(req, accountId, issueId);
+  if (loaded.error) return loaded;
+  const { doc, account } = loaded;
+  if ((doc.origin || 'manual') !== 'agent-generated') {
+    return fail('Only a generated draft can be revised.', 409, 'NOT_GENERATED_ISSUE');
+  }
+  const conflict = checkRevision(doc.revision || 1, revision);
+  if (conflict) return { ...conflict, issue: serializeIssue(doc) };
+  if (doc.reviewState === 'posted') {
+    return fail('A posted draft cannot be revised.', 409, 'POSTED_ISSUE');
+  }
+  if (editsSinceAgent(doc)) {
+    return fail(
+      'This draft was edited in the studio after the agent last wrote it.',
+      409,
+      'EDITS_SINCE_AGENT',
+    );
+  }
+  if (typeof text !== 'string' || !text.trim()) {
+    return fail('A revision request needs text.', 422, 'INVALID_REVISION_REQUEST');
+  }
+  const trimmed = text.replace(/\r\n/g, '\n').trim();
+  if (trimmed.length > MAX_REVISION_REQUEST_TEXT) {
+    return fail(
+      `A revision request can hold ${MAX_REVISION_REQUEST_TEXT} characters.`,
+      422,
+      'INVALID_REVISION_REQUEST',
+    );
+  }
+  if ((doc.revisionRequests || []).length >= REVISION_REQUEST_LIMIT) {
+    return fail('This draft already has the maximum number of revision requests.', 409, 'REVISION_THREAD_FULL');
+  }
+
+  const entry = doc.revisionRequests.create({
+    requester: actorId(req),
+    time: new Date(),
+    revision,
+    text: trimmed,
+  });
+  await entry.validate();
+  const requestId = String(entry._id);
+  const externalJobId = `job:revise:${issueId}:${requestId}`;
+  const idempotencyKey = `revise:${issueId}:${requestId}`;
+  const { CONTRACT_VERSION, validateJobRequest } = require('../utilities/pivotAdminComputeJobContract');
+  const { resolveImplementationRevision } = require('../utilities/pivotComputeContextVersion');
+  const jobRequest = {
+    contractVersion: CONTRACT_VERSION,
+    jobId: externalJobId,
+    scheduleOccurrenceId: null,
+    kind: 'carousel-revise',
+    cityKey: account.ownerTenantKey,
+    implementationRevision: resolveImplementationRevision(),
+    contextVersion: 'ctx:revise.pending',
+    requestedAt: entry.time.toISOString(),
+    idempotencyKey,
+    options: { issueId: String(issueId), revision, requestId },
+  };
+  const requestValidation = validateJobRequest(jobRequest);
+  if (!requestValidation.valid) {
+    return fail('Could not queue a revision of this draft.', 422, 'INVALID_REVISION_REQUEST');
+  }
+
+  const { PivotCarouselDeck } = getGlobalModels(req, 'PivotCarouselDeck');
+  const saved = await PivotCarouselDeck.findOneAndUpdate(
+    {
+      _id: issueId,
+      accountId: account._id,
+      revision,
+      origin: 'agent-generated',
+      reviewState: { $ne: 'posted' },
+      $expr: { $lt: [{ $size: { $ifNull: ['$revisionRequests', []] } }, REVISION_REQUEST_LIMIT] },
+      $or: [
+        { agentRevision: { $exists: false } },
+        { agentRevision: null },
+        { agentRevision: revision },
+      ],
+    },
+    { $push: { revisionRequests: entry.toObject() } },
+    { new: true, runValidators: true },
+  );
+  if (!saved) {
+    const current = await PivotCarouselDeck.findOne({ _id: issueId, accountId: account._id });
+    if (!current) return fail('Issue not found.', 404, 'ISSUE_NOT_FOUND');
+    if ((current.revision || 1) !== revision) {
+      return fail('The issue changed since it was opened.', 409, 'REVISION_CONFLICT', {
+        storedRevision: current.revision,
+        presentedRevision: revision,
+        issue: serializeIssue(current),
+      });
+    }
+    if (current.reviewState === 'posted') {
+      return fail('A posted draft cannot be revised.', 409, 'POSTED_ISSUE', { issue: serializeIssue(current) });
+    }
+    if (editsSinceAgent(current)) {
+      return fail(
+        'This draft was edited in the studio after the agent last wrote it.',
+        409,
+        'EDITS_SINCE_AGENT',
+        { issue: serializeIssue(current) },
+      );
+    }
+    return fail('This draft already has the maximum number of revision requests.', 409, 'REVISION_THREAD_FULL');
+  }
+
+  const feedback = await require('./pivotCarouselEditorialFeedbackService').addCarouselIssueFeedback(
+    req, accountId, issueId, { revision, text: trimmed, disposition: 'change' },
+  );
+  if (feedback.error) return feedback;
+
+  const { createComputeJob } = require('./pivotComputeJobStore');
+  const { job } = await createComputeJob(req, {
+    externalJobId,
+    kind: 'carousel-revise',
+    cityKey: account.ownerTenantKey,
+    contractVersion: CONTRACT_VERSION,
+    implementationRevision: jobRequest.implementationRevision,
+    contextVersion: jobRequest.contextVersion,
+    createIdempotencyKey: idempotencyKey,
+    requestedAt: entry.time.toISOString(),
+    origin: { type: 'admin', requestedBy: actorId(req) },
+    options: jobRequest.options,
+  });
+  await require('./pivotComputeWakeService').notifyComputeWorkerWake({ externalJobId });
+
+  return {
+    data: {
+      issue: serializeIssue(saved),
+      request: serializeRevisionRequest(saved.revisionRequests.id(entry._id)),
+      job,
+    },
+  };
 }
 
 /**
@@ -831,13 +1241,17 @@ module.exports = {
   MAX_SOCIAL_CAPTION_LENGTH,
   normalizeCaption,
   createGeneratedCarouselIssue,
+  listCarouselOptionSet,
+  pickCarouselOption,
   approveCarouselIssue,
+  requestCarouselRevision,
   markCarouselIssuePosted,
   createCarouselAccount,
   getCarouselAccount,
   listCarouselIssues,
   createCarouselIssue,
   getCarouselIssue,
+  getCarouselIssuePreview,
   renameCarouselIssue,
   updateCarouselIssue,
   archiveCarouselIssue,

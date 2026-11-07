@@ -58,11 +58,53 @@ const feedbackNoteSchema = new mongoose.Schema({
   text: { type: String, required: true, trim: true },
   disposition: { type: String, enum: FEEDBACK_DISPOSITIONS, required: true },
 });
+
+/** How many revision requests one draft keeps. Older ones stay in editorial feedback. */
+const REVISION_REQUEST_LIMIT = 20;
+const MAX_REVISION_REQUEST_TEXT = 2000;
+
+/**
+ * An explicit ask for the compose agent to revise this draft. The id is what
+ * the carousel-revise job is bound to. A later refusal can record its reason
+ * on the same row.
+ */
+const revisionRequestSchema = new mongoose.Schema({
+  requester: { type: String, default: null, trim: true, maxlength: 256 },
+  time: { type: Date, required: true },
+  revision: { type: Number, required: true, min: 1 },
+  text: { type: String, required: true, trim: true, maxlength: MAX_REVISION_REQUEST_TEXT },
+  reason: { type: String, default: null, trim: true, maxlength: 1000 },
+});
 /**
  * An approval covers one exact revision, slides and caption together. It is
  * cleared whenever that revision stops being current, so it can never describe
  * content nobody read.
  */
+const optionPickSchema = new mongoose.Schema(
+  {
+    pickedAt: { type: Date, required: true },
+    pickedBy: { type: String, default: null, trim: true, maxlength: 256 },
+  },
+  { _id: false },
+);
+
+/**
+ * The publication window the agent composed against. Same shape as the
+ * compose context's `window`, stored so a later revision can re-read that
+ * window instead of guessing from the current clock.
+ */
+const contextWindowSchema = new mongoose.Schema(
+  {
+    from: { type: String, required: true },
+    to: { type: String, required: true },
+    toExclusive: { type: Boolean, required: true },
+    timezone: { type: String, required: true, maxlength: 64 },
+    mode: { type: String, enum: ['past', 'upcoming'], required: true },
+    days: { type: Number, enum: [7, 14], required: true },
+  },
+  { _id: false },
+);
+
 const approvalSchema = new mongoose.Schema(
   {
     revision: { type: Number, required: true, min: 1 },
@@ -223,6 +265,32 @@ const pivotCarouselDeckSchema = new mongoose.Schema(
     origin: { type: String, enum: ORIGINS, default: 'manual' },
     // Internal provenance; the job also deterministically supplies the issue _id.
     composeJobId: { type: String, maxlength: 128, immutable: true },
+    /*
+     * Several themed drafts from one compose run. optionSetId is that run's job
+     * id. A single stored composition has none of these fields.
+     */
+    optionSetId: { type: String, maxlength: 128, immutable: true },
+    optionIndex: { type: Number, min: 0, max: 2, immutable: true },
+    themeLabel: { type: String, maxlength: 80, trim: true, immutable: true },
+    // Which option in the set was picked. Restoring a sibling does not clear it.
+    optionPick: { type: optionPickSchema },
+    /*
+     * What the agent last wrote. `composition` is the validated compose
+     * result, `contextWindow` is the window that result was written against,
+     * and `agentRevision` is the issue revision of that write. A studio edit
+     * moves `revision` and leaves these where the agent left them. Manual
+     * issues have none of them. Absent together on older generated drafts.
+     */
+    composition: { type: mongoose.Schema.Types.Mixed },
+    contextWindow: { type: contextWindowSchema },
+    agentRevision: {
+      type: Number,
+      min: 1,
+      validate: {
+        validator(value) { return value == null || Number.isInteger(value); },
+        message: 'agentRevision must be a whole revision',
+      },
+    },
     /**
      * Online trends a generated draft cites (`trend:<source>:<slug>`), so a
      * reviewer can judge the reference. Absent on manual issues and on drafts
@@ -246,6 +314,14 @@ const pivotCarouselDeckSchema = new mongoose.Schema(
     editorialVersion: { type: Number, default: 0, min: 0 },
     editLog: { type: [editorialEditSchema], default: [] },
     feedbackNotes: { type: [feedbackNoteSchema], default: [] },
+    revisionRequests: {
+      type: [revisionRequestSchema],
+      default: [],
+      validate: {
+        validator: (rows) => !rows || rows.length <= REVISION_REQUEST_LIMIT,
+        message: `A draft keeps at most ${REVISION_REQUEST_LIMIT} revision requests.`,
+      },
+    },
   },
   { timestamps: true },
 );
@@ -281,11 +357,26 @@ pivotCarouselDeckSchema.pre('validate', function normalizeFields() {
   if (this.reviewState === 'posted' && (!this.posting || this.posting.revision !== this.revision)) {
     this.invalidate('reviewState', 'a posted issue needs a posting record for its current revision');
   }
+  const optionFields = [this.optionSetId, this.optionIndex, this.themeLabel];
+  const optionCount = optionFields.filter(value => value != null && value !== '').length;
+  if (optionCount !== 0 && optionCount !== optionFields.length) {
+    this.invalidate('optionSetId', 'an option needs a set, an index, and a theme');
+  }
+  // Read stored values. Touching a missing nested path must not materialize one.
+  const agentFields = ['composition', 'contextWindow', 'agentRevision'].map(path => this.get(path));
+  const agentCount = agentFields.filter(value => value != null).length;
+  if (this.origin !== 'agent-generated' && agentCount) {
+    this.invalidate('composition', 'only a generated issue keeps the agent composition');
+  }
+  if (agentCount !== 0 && agentCount !== agentFields.length) {
+    this.invalidate('composition', 'an agent write needs its composition, window, and revision');
+  }
 });
 
 pivotCarouselDeckSchema.index({ tenantKey: 1, updatedAt: -1 });
 pivotCarouselDeckSchema.index({ accountId: 1, status: 1, updatedAt: -1 });
 pivotCarouselDeckSchema.index({ tenantKey: 1, status: 1, updatedAt: -1 });
+pivotCarouselDeckSchema.index({ optionSetId: 1, optionIndex: 1 }, { sparse: true });
 
 module.exports = pivotCarouselDeckSchema;
 module.exports.EDITIONS = EDITIONS;
@@ -294,3 +385,5 @@ module.exports.REVIEW_STATES = REVIEW_STATES;
 module.exports.MAX_SOCIAL_CAPTION_LENGTH = MAX_SOCIAL_CAPTION_LENGTH;
 module.exports.EDITORIAL_FIELDS = EDITORIAL_FIELDS;
 module.exports.FEEDBACK_DISPOSITIONS = FEEDBACK_DISPOSITIONS;
+module.exports.REVISION_REQUEST_LIMIT = REVISION_REQUEST_LIMIT;
+module.exports.MAX_REVISION_REQUEST_TEXT = MAX_REVISION_REQUEST_TEXT;

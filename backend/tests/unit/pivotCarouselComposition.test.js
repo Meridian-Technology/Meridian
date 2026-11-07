@@ -1,4 +1,4 @@
-const { buildCompositionDocument, safeUnsplashAsset, composeIssueId } = require('../../services/pivotCarouselCompositionService');
+const { buildCompositionDocument, safeUnsplashAsset, composeIssueId, composeOptionIssueId } = require('../../services/pivotCarouselCompositionService');
 const { walkElements, titleOf } = require('../../services/pivotCarouselPresets');
 const { validateDocument } = require('../../services/pivotCarouselIssueService');
 const { loadFixture } = require('../../utilities/pivotAdminComputeJobContract');
@@ -105,6 +105,13 @@ describe('compose studio documents', () => {
     expect(composeIssueId('job:one')).toMatch(/^[0-9a-f]{24}$/);
     expect(composeIssueId('job:one')).toBe(composeIssueId('job:one'));
     expect(composeIssueId('job:two')).not.toBe(composeIssueId('job:one'));
+    expect(composeOptionIssueId('job:one', 0)).toBe(composeOptionIssueId('job:one', 0));
+    expect(new Set([
+      composeIssueId('job:one'),
+      composeOptionIssueId('job:one', 0),
+      composeOptionIssueId('job:one', 1),
+      composeOptionIssueId('job:one', 2),
+    ]).size).toBe(4);
     for (const src of ['https://images.unsplash.com.evil.test/photo', 'http://images.unsplash.com/photo', 'https://secret:password@images.unsplash.com/photo']) {
       expect(safeUnsplashAsset({ provider: 'unsplash', photoId: 'photo', src })).toBeNull();
     }
