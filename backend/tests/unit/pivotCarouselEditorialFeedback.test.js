@@ -326,6 +326,38 @@ describe('carousel editorial edits and feedback', () => {
     expect(await jobs()).toBe(0);
   });
 
+  test('a revision request whose job cannot be created leaves no request and no feedback note', async () => {
+    const issue = await agentDraft();
+    const store = require('../../services/pivotComputeJobStore');
+    jest.spyOn(store, 'createComputeJob').mockRejectedValueOnce(new Error('job store unavailable'));
+    await expect(requestCarouselRevision(req, accountId, issue.id, { revision: 1, text: 'Swap the cover line.' }))
+      .rejects.toThrow('job store unavailable');
+
+    const stored = await model().findById(issue.id).lean();
+    expect(stored.revisionRequests).toEqual([]);
+    expect(stored.feedbackNotes).toEqual([]);
+    expect(stored.revision).toBe(1);
+    expect(await jobs()).toBe(0);
+
+    const retried = await requestCarouselRevision(req, accountId, issue.id, { revision: 1, text: 'Swap the cover line.' });
+    expect(retried.error).toBeUndefined();
+    expect((await model().findById(issue.id).lean()).revisionRequests).toHaveLength(1);
+  });
+
+  test('a revision request whose feedback note is refused leaves no request', async () => {
+    const issue = await agentDraft();
+    const feedbackService = require('../../services/pivotCarouselEditorialFeedbackService');
+    jest.spyOn(feedbackService, 'addCarouselIssueFeedback')
+      .mockResolvedValueOnce({ error: 'The issue changed while saving feedback.', status: 409, code: 'REVISION_CONFLICT' });
+    expect(await requestCarouselRevision(req, accountId, issue.id, { revision: 1, text: 'Swap the cover line.' }))
+      .toMatchObject({ code: 'REVISION_CONFLICT', status: 409 });
+
+    const stored = await model().findById(issue.id).lean();
+    expect(stored.revisionRequests).toEqual([]);
+    expect(stored.feedbackNotes).toEqual([]);
+    expect(await jobs()).toBe(0);
+  });
+
   test('a revision request refuses a generated draft with no stored composition and writes nothing', async () => {
     const legacy = await generated();
     expect(legacy.agentRevision).toBeUndefined();

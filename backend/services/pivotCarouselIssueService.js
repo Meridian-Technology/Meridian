@@ -980,24 +980,47 @@ async function requestCarouselRevision(req, accountId, issueId, { revision, text
     return fail('This draft already has the maximum number of revision requests.', 409, 'REVISION_THREAD_FULL');
   }
 
-  const feedback = await require('./pivotCarouselEditorialFeedbackService').addCarouselIssueFeedback(
-    req, accountId, issueId, { revision, text: trimmed, disposition: 'change' },
-  );
-  if (feedback.error) return feedback;
+  // The request, its feedback note, and its job are separate writes. If a
+  // later one fails, take the earlier ones back off the issue, so no request
+  // is left waiting on a job that does not exist.
+  let noteId = null;
+  const takeBack = async () => {
+    const pull = { revisionRequests: { _id: entry._id } };
+    if (noteId) pull.feedbackNotes = { _id: noteId };
+    try {
+      await PivotCarouselDeck.updateOne({ _id: issueId, accountId: account._id }, { $pull: pull });
+    } catch (error) {
+      console.error('carousel revision request rollback failed', error);
+    }
+  };
+  let job;
+  try {
+    const feedback = await require('./pivotCarouselEditorialFeedbackService').addCarouselIssueFeedback(
+      req, accountId, issueId, { revision, text: trimmed, disposition: 'change' },
+    );
+    if (feedback.error) {
+      await takeBack();
+      return feedback;
+    }
+    noteId = feedback.data.note.id;
 
-  const { createComputeJob } = require('./pivotComputeJobStore');
-  const { job } = await createComputeJob(req, {
-    externalJobId,
-    kind: 'carousel-revise',
-    cityKey: account.ownerTenantKey,
-    contractVersion: CONTRACT_VERSION,
-    implementationRevision: jobRequest.implementationRevision,
-    contextVersion: jobRequest.contextVersion,
-    createIdempotencyKey: idempotencyKey,
-    requestedAt: entry.time.toISOString(),
-    origin: { type: 'admin', requestedBy: actorId(req) },
-    options: jobRequest.options,
-  });
+    const { createComputeJob } = require('./pivotComputeJobStore');
+    ({ job } = await createComputeJob(req, {
+      externalJobId,
+      kind: 'carousel-revise',
+      cityKey: account.ownerTenantKey,
+      contractVersion: CONTRACT_VERSION,
+      implementationRevision: jobRequest.implementationRevision,
+      contextVersion: jobRequest.contextVersion,
+      createIdempotencyKey: idempotencyKey,
+      requestedAt: entry.time.toISOString(),
+      origin: { type: 'admin', requestedBy: actorId(req) },
+      options: jobRequest.options,
+    }));
+  } catch (error) {
+    await takeBack();
+    throw error;
+  }
   await require('./pivotComputeWakeService').notifyComputeWorkerWake({ externalJobId });
 
   return {
