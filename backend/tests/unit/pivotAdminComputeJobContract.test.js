@@ -348,7 +348,11 @@ describe('Pivot admin compute job contracts v1 (Phase 1, Step 1.2)', () => {
       expect(three.compositions[1].curatedGroupId).toEqual(expect.any(String));
       expect(validateExecutionResult(three)).toEqual({ valid: true });
 
-      const four = loadFixture('result-compose-options-four-invalid.json');
+      const four = loadFixture('result-compose-options-three-valid.json');
+      four.compositions.push({
+        ...JSON.parse(JSON.stringify(four.compositions[0])),
+        themeLabel: 'A fourth theme',
+      });
       expect(four.compositions).toHaveLength(4);
       expect(validateExecutionResult(four)).toEqual({
         valid: false,
