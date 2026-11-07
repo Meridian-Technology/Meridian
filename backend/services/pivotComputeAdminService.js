@@ -414,7 +414,7 @@ async function createMissingComposeIssues(req, { externalJobId, context, payload
     }
   }
   const missing = payloads.filter(payload => !existingById.has(payload.issueId));
-  if (!missing.length) return;
+  if (!missing.length) return [];
 
   const resolved = await resolveEditorialAccount(req, context.editorialAccountKey);
   if (resolved.error) throw serviceError(resolved.error, resolved.code, resolved.status);
@@ -455,6 +455,7 @@ async function createMissingComposeIssues(req, { externalJobId, context, payload
     document: buildCompositionDocument(payload.composition, { ...context, lastPostedIssues: history.recent }, candidates),
   }));
   const { createGeneratedCarouselIssue } = require('./pivotCarouselIssueService');
+  const written = [];
   for (const { payload, document } of documents) {
     const selected = payload.composition.selectedEventRefs;
     const created = await createGeneratedCarouselIssue({ ...req, user: { ...req.user,
@@ -477,6 +478,32 @@ async function createMissingComposeIssues(req, { externalJobId, context, payload
       } : {}),
     });
     if (created.error) throw serviceError(created.error, created.code, created.status);
+    written.push({ issueId: String(created.data.issue.id), revision: created.data.issue.revision });
+  }
+  return written;
+}
+
+/**
+ * Render the revision an agent just wrote. The export is a separate job: a
+ * failure here is logged and the draft apply still stands. The same issue
+ * revision is queued at most once.
+ */
+async function queueWrittenRevisionExports(req, issues, { tenantKey, actor, now }) {
+  if (!issues?.length) return;
+  const { queueCarouselExportForIssueRevision } = require('./pivotCarouselArtifactTransportService');
+  for (const issue of issues) {
+    try {
+      await queueCarouselExportForIssueRevision(req, {
+        issueId: issue.issueId, revision: issue.revision, tenantKey, actor, now,
+      });
+    } catch (error) {
+      logPivot('warn', 'carousel export queue failed', {
+        code: error?.code || 'CAROUSEL_EXPORT_QUEUE_FAILED',
+        message: error?.message || String(error),
+        issueId: issue.issueId ? String(issue.issueId) : null,
+        revision: issue.revision ?? null,
+      });
+    }
   }
 }
 
@@ -518,11 +545,10 @@ async function applyCarouselComposeJob(req, externalJobId, { tenantKey, actor = 
   try {
     const payloads = composeOptionPayloads(result, externalJobId, { composeIssueId, composeOptionIssueId });
     const issueIds = payloads.map(payload => payload.issueId);
-    if (payloads.length) {
-      await createMissingComposeIssues(req, {
-        externalJobId, context, payloads, publicationAt: stored.options?.proposedPublicationAt, actor, now,
-      });
-    }
+    const written = payloads.length ? await createMissingComposeIssues(req, {
+      externalJobId, context, payloads, publicationAt: stored.options?.proposedPublicationAt, actor, now,
+    }) : [];
+    await queueWrittenRevisionExports(req, written, { tenantKey: stored.tenantKey, actor, now });
     // Durable issue ids survive a crash between issue creation and job completion.
     await PivotComputeJob.updateOne({ externalJobId, status: 'applying' }, { $set: {
       composeOutcome: {
@@ -665,6 +691,9 @@ async function applyCarouselReviseJob(req, externalJobId, { tenantKey, actor = n
       }
       throw serviceError(saved.error, saved.code, saved.status);
     }
+    await queueWrittenRevisionExports(req, [{
+      issueId: String(saved.data.issue.id), revision: saved.data.issue.revision,
+    }], { tenantKey: stored.tenantKey, actor, now });
     return finishReviseApply(req, {
       externalJobId, actor, key, now, decision: 'revise', issueId, requestId, summary: { updates: 1 },
     });

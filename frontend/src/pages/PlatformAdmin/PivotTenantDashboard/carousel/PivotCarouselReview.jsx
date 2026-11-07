@@ -1,7 +1,23 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { authenticatedRequest } from '../../../../hooks/useFetch';
 
 const TREND_SOURCES = { kym: 'Know Your Meme', later: 'Later', google: 'Google Trends', giphy: 'GIPHY' };
+
+const REVIEW_LABELS = { unapproved: 'Unapproved', approved: 'Approved', posted: 'Posted' };
+
+function optionState(option) {
+  const parts = [];
+  if (option.status === 'archived') parts.push('Archived');
+  if (option.picked) parts.push('Picked');
+  if (REVIEW_LABELS[option.reviewState]) parts.push(REVIEW_LABELS[option.reviewState]);
+  return parts.join(' · ') || 'Active';
+}
+
+function requestTime(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  return date.toISOString().slice(0, 16).replace('T', ' ');
+}
 
 /** `trend:kym:chinamaxxing` reads as "Chinamaxxing · Know Your Meme". */
 export function trendLabel(ref) {
@@ -20,8 +36,35 @@ export default function PivotCarouselReview({ issue, revision, caption, onCaptio
   const [disposition, setDisposition] = useState('change');
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
+  const [options, setOptions] = useState([]);
   const blocked = disabled || busy;
   const approved = issue.reviewState === 'approved' && issue.approval?.revision === revision;
+  const issueId = issue.id || issue._id;
+
+  useEffect(() => {
+    if (!issue.optionSetId || !issue.accountId || !issueId) {
+      setOptions([]);
+      return undefined;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const result = await authenticatedRequest(
+          `/admin/pivot/carousel-accounts/${issue.accountId}/issues/${issueId}/options`,
+        );
+        if (cancelled) return;
+        if (!result?.data?.success) {
+          setError(result?.error || result?.data?.message || 'Could not load the other options.');
+          return;
+        }
+        const listed = result.data.data?.options || [];
+        setOptions(listed.filter(option => String(option.id) !== String(issueId)));
+      } catch (err) {
+        if (!cancelled) setError(err.message || 'Could not load the other options.');
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [issue.accountId, issue.optionSetId, issueId]);
 
   const submit = async (action, data = {}) => {
     if (blocked) return;
@@ -55,11 +98,51 @@ export default function PivotCarouselReview({ issue, revision, caption, onCaptio
     }
   };
 
+  const restoreOption = async (option) => {
+    if (busy) return;
+    setBusy(true);
+    setError('');
+    setMessage('');
+    try {
+      const result = await authenticatedRequest(
+        `/admin/pivot/carousel-accounts/${issue.accountId}/issues/${option.id}/restore`,
+        { method: 'POST', data: { revision: option.revision } },
+      );
+      if (!result?.data?.success) {
+        setError(result?.error || result?.data?.message || 'Could not restore that option.');
+        return;
+      }
+      const restored = result.data.data?.issue;
+      setOptions(current => current.map(item => (item.id === option.id ? { ...item, ...restored, id: option.id } : item)));
+      setMessage('Option restored.');
+    } catch (err) {
+      setError(err.message || 'Could not restore that option.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return <section aria-label="Issue review">
     <h2>Issue review</h2>
     {issue.trendRefs?.length > 0 && <div aria-label="Trends this draft uses">
       <p>Trends this draft uses. Check each fits before approving:</p>
       <ul>{issue.trendRefs.map(ref => <li key={ref}>{trendLabel(ref)}</li>)}</ul>
+    </div>}
+    {options.length > 0 && <div>
+      <h3>Other options</h3>
+      <ul aria-label="Other options">{options.map(option => <li key={option.id}>
+        <span>{option.themeLabel || option.name}</span>
+        <span>{optionState(option)}</span>
+        {option.status === 'archived' && <button type="button" disabled={busy} onClick={() => restoreOption(option)}>Restore</button>}
+      </li>)}</ul>
+    </div>}
+    {issue.revisionRequests?.length > 0 && <div>
+      <h3>Revision requests</h3>
+      <ol aria-label="Revision requests">{issue.revisionRequests.map(request => <li key={request.id}>
+        Revision {request.revision}{request.requester ? ` · ${request.requester}` : ''}{request.time ? ` · ${requestTime(request.time)}` : ''}
+        <p>{request.text}</p>
+        {request.reason ? <p>Reason: {request.reason}</p> : null}
+      </li>)}</ol>
     </div>}
     <label>Social caption<textarea value={caption} onChange={event => onCaption(event.target.value)} disabled={busy} rows={5} /></label>
     {disabled && <p>Save your changes before reviewing this revision.</p>}

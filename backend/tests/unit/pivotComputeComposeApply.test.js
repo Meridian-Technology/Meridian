@@ -1,6 +1,13 @@
 const mongoose = require('mongoose');
 const { createMongoMemoryConnection } = require('../helpers/mongoMemory');
 jest.mock('../../connectionsManager', () => ({ connectToDatabase: jest.fn() }));
+jest.mock('../../utilities/pivotLogger', () => {
+  const actual = jest.requireActual('../../utilities/pivotLogger');
+  return { ...actual, logPivot: jest.fn() };
+});
+jest.mock('../../services/imageUploadService', () => ({
+  uploadImageToS3: jest.fn(async (_file, folder, name) => `https://assets.example/${folder}/${name}`),
+}));
 const { connectToDatabase } = require('../../connectionsManager');
 const getModels = require('../../services/getModelService');
 const getGlobalModels = require('../../services/getGlobalModelService');
@@ -12,10 +19,15 @@ const { applyStoredComputeJob, previewStoredComputeJob } = require('../../servic
 const { createCarouselAccount, createCarouselIssue, createGeneratedCarouselIssue, updateCarouselIssue,
   approveCarouselIssue, requestCarouselRevision, markCarouselIssuePosted, getCarouselIssue } = require('../../services/pivotCarouselIssueService');
 const { loadFixture, validateExecutionResult } = require('../../utilities/pivotAdminComputeJobContract');
+const { logPivot } = require('../../utilities/pivotLogger');
 const { composeIssueId, composeOptionIssueId } = require('../../services/pivotCarouselCompositionService');
 const { walkElements } = require('../../services/pivotCarouselPresets');
 
 const PUBLICATION = '2026-10-12T23:00:00.000Z';
+const EXPORT_PNG = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+ip1sAAAAASUVORK5CYII=',
+  'base64',
+);
 const STORED_WINDOW = {
   from: PUBLICATION, to: '2026-10-26T23:00:00.000Z', toExclusive: false,
   timezone: 'America/Chicago', mode: 'upcoming', days: 14,
@@ -39,14 +51,17 @@ const eventDoc = (name, start = '2026-10-13T23:00:00Z') => ({ name, description:
   customFields: { pivot: { ingestStatus: 'published', batchWeek: '2026-W42', tags: ['music'] } } });
 
 describe('compose compute result apply with real persistence', () => {
-  let mongo; let req; let account; let globalAccount; let dbs; let postingClock;
+  let mongo; let req; let account; let globalAccount; let dbs; let postingClock; let originalFetch;
   beforeAll(async () => {
+    originalFetch = global.fetch;
     mongo = await createMongoMemoryConnection({ withGlobalDb: true,
       connectionOptions: { autoCreate: false, autoIndex: false } });
     req = { globalDb: mongo.globalConnection, user: { globalUserId: 'editor' } };
   });
   beforeEach(async () => {
     await mongo.reset();
+    logPivot.mockClear();
+    global.fetch = jest.fn(async () => ({ ok: false, status: 404 }));
     postingClock = jest.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-11-10T00:00:00Z'));
     dbs = new Map();
     connectToDatabase.mockReset();
@@ -70,7 +85,12 @@ describe('compose compute result apply with real persistence', () => {
     const db = await connectToDatabase('ic');
     await getModels({ db }, 'Event').Event.create(['One', 'Two', 'Three'].map(name => eventDoc(name)));
   });
-  afterEach(async () => { postingClock?.mockRestore(); jest.restoreAllMocks(); if (dbs) for (const db of dbs.values()) await db.dropDatabase(); });
+  afterEach(async () => {
+    global.fetch = originalFetch;
+    postingClock?.mockRestore();
+    jest.restoreAllMocks();
+    if (dbs) for (const db of dbs.values()) await db.dropDatabase();
+  });
   afterAll(async () => { if (mongo) await mongo.cleanup(); });
 
   async function prepare({ decision = 'compose', accountKey = 'just.go.ic', submit = true } = {}) {
@@ -100,6 +120,20 @@ describe('compose compute result apply with real persistence', () => {
     return { result, context, job, claim, now };
   }
   const apply = () => applyStoredComputeJob(req, 'job:compose-ic-001', { tenantKey: 'ic', actor: 'editor' });
+  function allowExportPins() {
+    global.fetch = jest.fn(async () => ({
+      ok: true,
+      arrayBuffer: async () => Uint8Array.from(EXPORT_PNG).buffer,
+    }));
+  }
+  async function exportJobs() {
+    const { PivotComputeJob } = getGlobalModels(req, 'PivotComputeJob');
+    return PivotComputeJob.find({ kind: 'carousel-export' }).sort({ externalJobId: 1 }).lean();
+  }
+  async function exportPins(issueId) {
+    const { PivotCarouselRevision } = getGlobalModels(req, 'PivotCarouselRevision');
+    return PivotCarouselRevision.find({ issueId, kind: 'export' }).lean();
+  }
   async function changeResult(change) {
     const { PivotComputeJob } = getGlobalModels(req, 'PivotComputeJob');
     const job = await PivotComputeJob.findOne({ externalJobId: 'job:compose-ic-001' });
@@ -166,7 +200,9 @@ describe('compose compute result apply with real persistence', () => {
     expect(applied.job).toMatchObject({ status: 'completed', composeOutcome: { decision, reason: result.reason, issueId: null } });
     const { PivotCarouselDeck } = getGlobalModels(req, 'PivotCarouselDeck');
     expect(await PivotCarouselDeck.countDocuments({})).toBe(0);
+    expect(await exportJobs()).toEqual([]);
     expect((await apply()).duplicate).toBe(true);
+    expect(await exportJobs()).toEqual([]);
   });
 
   test('three themed options become one unapproved set, and applying again keeps that set', async () => {
@@ -437,6 +473,7 @@ describe('compose compute result apply with real persistence', () => {
     expect(again).toMatchObject({ duplicate: true, decision: 'conflict' });
     const kept = (await getCarouselIssue(req, account.id, issue.id)).data.issue;
     expect(kept).toMatchObject({ revision: 2, editorialVersion: after.editorialVersion, socialCaption: 'Hand edited caption' });
+    expect(await exportJobs()).toEqual([]);
   });
 
   test('cannot-revise stores the reason on the request and a second apply writes nothing', async () => {
@@ -458,6 +495,99 @@ describe('compose compute result apply with real persistence', () => {
     const kept = (await getCarouselIssue(req, account.id, issue.id)).data.issue;
     expect(kept).toMatchObject({ revision: 1, editorialVersion: after.editorialVersion, socialCaption: 'Before caption' });
     expect(kept.revisionRequests.find(row => row.id === request.id).reason).toBe(result.reason);
+    expect(await exportJobs()).toEqual([]);
+  });
+
+  test('a compose apply queues one export per written option, and applying again does not queue another', async () => {
+    allowExportPins();
+    await prepare();
+    const applied = await apply();
+    const issueId = String(applied.issueId);
+    let jobs = await exportJobs();
+    expect(jobs.map(job => job.externalJobId)).toEqual([`job:export:${issueId}:r1`]);
+    expect(jobs[0]).toMatchObject({
+      status: 'pending', kind: 'carousel-export', cityKey: 'ic',
+      createIdempotencyKey: `export:${issueId}:r1`,
+      options: { deckId: issueId },
+    });
+    const deck = await getGlobalModels(req, 'PivotCarouselDeck').PivotCarouselDeck.findById(issueId).lean();
+    expect(jobs[0].options.deckRevision).toBe(new Date(deck.updatedAt).toISOString());
+    expect(await exportPins(issueId)).toMatchObject([
+      { headRevision: 1, sourceRevision: jobs[0].options.deckRevision },
+    ]);
+    expect((await apply()).duplicate).toBe(true);
+    expect(await exportJobs()).toHaveLength(1);
+    expect(await exportPins(issueId)).toHaveLength(1);
+  });
+
+  test('three themed options each queue one export, and applying again does not queue another', async () => {
+    allowExportPins();
+    const themes = [
+      { themeLabel: 'Jazz this weekend', rationale: 'Featured jazz shows that belong together.' },
+      { themeLabel: 'Late downtown nights', rationale: 'A separate curated group of late shows.' },
+      { themeLabel: 'Campus weekdays', rationale: 'Student events from another group, distinct from downtown.' },
+    ];
+    await prepare();
+    await changeResult(result => {
+      result.compositions = themes.map(theme => {
+        const composition = JSON.parse(JSON.stringify(result.composition));
+        return { ...theme, ...composition, cover: { ...composition.cover, headline: theme.themeLabel } };
+      });
+      delete result.composition;
+    });
+    const optionIds = themes.map((_, index) => composeOptionIssueId('job:compose-ic-001', index));
+    const applied = await apply();
+    expect(applied.issueIds).toEqual(optionIds);
+    const jobs = await exportJobs();
+    expect(jobs.map(job => job.options.deckId).sort()).toEqual([...optionIds].sort());
+    expect(jobs.map(job => job.externalJobId).sort()).toEqual(optionIds.map(id => `job:export:${id}:r1`).sort());
+    expect(jobs.every(job => job.status === 'pending' && job.createIdempotencyKey === `export:${job.options.deckId}:r1`)).toBe(true);
+    for (const issueId of optionIds) {
+      expect(await exportPins(issueId)).toHaveLength(1);
+    }
+    expect((await apply()).duplicate).toBe(true);
+    expect(await exportJobs()).toHaveLength(3);
+    for (const issueId of optionIds) expect(await exportPins(issueId)).toHaveLength(1);
+  });
+
+  test('a revise apply queues one export for the new revision, and applying again does not queue another', async () => {
+    allowExportPins();
+    const { issue, job, context } = await queueRevision();
+    expect(await exportJobs()).toEqual([]);
+    await submitComputeJobResult(req, {
+      externalJobId: job.externalJobId, workerId: 'revise-worker',
+      leaseToken: (await findJobByExternalId(req, job.externalJobId)).lease.token,
+      result: reviseResult(job, context), requiresReview: false, now: new Date(),
+    });
+    const revised = await applyRevision(job.externalJobId);
+    expect(revised).toMatchObject({ duplicate: false, decision: 'revise', issueId: issue.id });
+    const jobs = await exportJobs();
+    expect(jobs).toHaveLength(1);
+    expect(jobs[0]).toMatchObject({
+      status: 'pending', externalJobId: `job:export:${issue.id}:r2`,
+      createIdempotencyKey: `export:${issue.id}:r2`, options: { deckId: issue.id },
+    });
+    expect((await exportPins(issue.id))[0].headRevision).toBe(2);
+    expect((await applyRevision(job.externalJobId)).duplicate).toBe(true);
+    expect(await exportJobs()).toHaveLength(1);
+    expect(await exportPins(issue.id)).toHaveLength(1);
+  });
+
+  test('a failed export queue is logged and does not fail the apply', async () => {
+    logPivot.mockClear();
+    await prepare();
+    const applied = await apply();
+    expect(applied.job.status).toBe('completed');
+    expect(applied.duplicate).toBe(false);
+    expect(await exportJobs()).toEqual([]);
+    expect((await getCarouselIssue(req, account.id, applied.issueId)).data.issue.revision).toBe(1);
+    expect(logPivot).toHaveBeenCalledWith('warn', 'carousel export queue failed', expect.objectContaining({
+      code: 'ASSET_UNAVAILABLE',
+      issueId: String(applied.issueId),
+      revision: 1,
+    }));
+    expect((await apply()).duplicate).toBe(true);
+    expect(logPivot).toHaveBeenCalledTimes(1);
   });
 
   test('rejects mismatched accounts, missing captured contexts, wrong tenants and contextless manual uploads', async () => {

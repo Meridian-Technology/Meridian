@@ -388,6 +388,118 @@ async function getCarouselIssue(req, accountId, issueId) {
   return { data: { issue: serializeIssue(doc) } };
 }
 
+const PREVIEW_URL_TTL_SECONDS = 60 * 60;
+const EXPORT_JOB_ID_PATTERN = /^job:export:([0-9a-f]{24}):r([1-9]\d*)$/;
+const SLIDE_PNG_PATTERN = /^slide-(\d{2})\.png$/;
+const PREVIEW_IN_FLIGHT = new Set(['pending', 'leased', 'running', 'retryable', 'review-required', 'applying']);
+
+function exportJobId(issueId, revision) {
+  return `job:export:${issueId}:r${revision}`;
+}
+
+function slidePngs(artifacts) {
+  return (artifacts || [])
+    .flatMap((artifact) => {
+      const match = SLIDE_PNG_PATTERN.exec(String(artifact?.logicalName || ''));
+      if (!match) return [];
+      return [{ artifact, slideNumber: Number(match[1]), logicalName: match[0] }];
+    })
+    .sort((left, right) => left.slideNumber - right.slideNumber);
+}
+
+async function loadRevisionExport(req, issueId, revision) {
+  const { findJobByExternalId } = require('./pivotComputeJobStore');
+  const job = await findJobByExternalId(req, exportJobId(issueId, revision));
+  if (!job || job.kind !== 'carousel-export' || String(job.options?.deckId || '') !== issueId) return null;
+  return job;
+}
+
+async function signReadySlides(job, revision) {
+  const slides = job.status === 'completed' && !job.exportArtifacts?.expired
+    ? slidePngs(job.exportArtifacts?.artifacts)
+    : [];
+  if (!slides.length) return { data: { status: 'failed', revision } };
+  const {
+    createPresignedGetUrl,
+    assertObjectKeyBelongsToPrefix,
+    buildExportPrefix,
+  } = require('./pivotExportArtifactStorage');
+  const prefix = job.exportArtifacts.prefix || buildExportPrefix({
+    tenantKey: job.tenantKey,
+    externalJobId: job.externalJobId,
+    attemptNumber: job.exportArtifacts.attemptNumber,
+  });
+  const signed = [];
+  for (const slide of slides) {
+    try {
+      assertObjectKeyBelongsToPrefix(slide.artifact.objectKey, prefix);
+      const presign = await createPresignedGetUrl({
+        objectKey: slide.artifact.objectKey,
+        contentType: slide.artifact.mimeType || 'image/png',
+        filename: slide.logicalName,
+        expiresInSeconds: PREVIEW_URL_TTL_SECONDS,
+      });
+      signed.push({
+        slideNumber: slide.slideNumber,
+        logicalName: slide.logicalName,
+        url: presign.downloadUrl,
+        expiresInSeconds: presign.expiresInSeconds,
+      });
+    } catch (error) {
+      if (error.code) return fail(error.message, error.status || 500, error.code);
+      throw error;
+    }
+  }
+  return {
+    data: {
+      status: 'ready',
+      revision,
+      expiresInSeconds: signed[0].expiresInSeconds,
+      slides: signed.map(({ slideNumber, logicalName, url }) => ({ slideNumber, logicalName, url })),
+    },
+  };
+}
+
+async function newestReadyOlderRevision(req, issueId, revision) {
+  const { PivotComputeJob } = getGlobalModels(req, 'PivotComputeJob');
+  const jobs = await PivotComputeJob.find({
+    kind: 'carousel-export',
+    'options.deckId': issueId,
+  }).select('externalJobId status exportArtifacts.expired exportArtifacts.artifacts.logicalName').lean();
+  let older = null;
+  for (const job of jobs) {
+    const match = EXPORT_JOB_ID_PATTERN.exec(job.externalJobId || '');
+    if (!match || match[1] !== issueId) continue;
+    const jobRevision = Number(match[2]);
+    if (!Number.isInteger(jobRevision) || jobRevision >= revision) continue;
+    if (job.status !== 'completed' || job.exportArtifacts?.expired) continue;
+    if (!slidePngs(job.exportArtifacts?.artifacts).length) continue;
+    if (older == null || jobRevision > older) older = jobRevision;
+  }
+  return older;
+}
+
+/**
+ * Preview of the issue's current revision.
+ * pending and failed describe that revision's export. ready includes a new
+ * one-hour URL for every slide image, in slide order. A rendered preview from
+ * an earlier revision is stale and names that revision.
+ */
+async function getCarouselIssuePreview(req, accountId, issueId) {
+  const loaded = await getCarouselIssue(req, accountId, issueId);
+  if (loaded.error) return loaded;
+  const id = loaded.data.issue.id;
+  const revision = loaded.data.issue.revision || 1;
+  const current = await loadRevisionExport(req, id, revision);
+  if (current) {
+    if (PREVIEW_IN_FLIGHT.has(current.status)) return { data: { status: 'pending', revision } };
+    return signReadySlides(current, revision);
+  }
+  const older = await newestReadyOlderRevision(req, id, revision);
+  if (older != null) return { data: { status: 'stale', revision: older } };
+  return { data: { status: 'pending', revision } };
+}
+
 /**
  * A caption is content: it is approved with the slides, it goes out with the
  * post, and it is saved under the same revision contract.
@@ -1139,6 +1251,7 @@ module.exports = {
   listCarouselIssues,
   createCarouselIssue,
   getCarouselIssue,
+  getCarouselIssuePreview,
   renameCarouselIssue,
   updateCarouselIssue,
   archiveCarouselIssue,
