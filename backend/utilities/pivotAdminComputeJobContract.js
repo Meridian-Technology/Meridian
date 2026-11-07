@@ -204,9 +204,11 @@ function schemaTypeLabel(node) {
 
 function discriminatorMatch(candidate, value, root) {
   const resolved = candidate?.$ref ? resolveRef(root, candidate.$ref) : candidate;
+  if (resolved?.oneOf) return resolved.oneOf.some((branch) => discriminatorMatch(branch, value, root));
   const nodes = resolved?.allOf || [resolved];
   for (const node of nodes) {
     const materialized = node?.$ref ? resolveRef(root, node.$ref) : node;
+    if (materialized?.oneOf) return materialized.oneOf.some((branch) => discriminatorMatch(branch, value, root));
     const kind = materialized?.properties?.kind;
     if (kind?.const !== undefined) return kind.const === value?.kind;
     if (kind?.enum) return kind.enum.includes(value?.kind);
@@ -225,9 +227,18 @@ function collectSchemaErrors(value, node, root = node, trail = '$', found = []) 
     const matches = node.oneOf.filter((candidate) => matchesSchema(value, candidate, root));
     if (matches.length === 1) return found;
     const discriminated = value && typeof value === 'object'
-      ? node.oneOf.find((candidate) => discriminatorMatch(candidate, value, root))
-      : null;
-    if (discriminated) return collectSchemaErrors(value, discriminated, root, trail, found);
+      ? node.oneOf.filter((candidate) => discriminatorMatch(candidate, value, root))
+      : [];
+    if (discriminated.length === 1) return collectSchemaErrors(value, discriminated[0], root, trail, found);
+    if (discriminated.length > 1) {
+      let bestErrors = null;
+      for (const candidate of discriminated) {
+        const errors = collectSchemaErrors(value, candidate, root, trail, []);
+        if (!bestErrors || errors.length < bestErrors.length) bestErrors = errors;
+      }
+      found.push(...bestErrors.slice(0, MAX_SCHEMA_ERRORS - found.length));
+      return found;
+    }
     found.push(`${trail}: expected ${schemaTypeLabel(node)}`);
     return found;
   }
@@ -346,25 +357,43 @@ function validateContextSnapshot(value) {
   return validateWithSchema(SCHEMAS.contextSnapshot, value, { importable: value?.kind === 'carousel-compose' });
 }
 
-function validateComposeResult(value) {
-  if (value.decision !== 'compose') return { valid: true };
-  const { selectedEventRefs, eventSlides } = value.composition;
+function validateComposeComposition(composition, path) {
+  const { selectedEventRefs, eventSlides } = composition;
   const key = ref => `${ref.sourceTenantKey}:${ref.eventId}`;
   const selected = new Set(selectedEventRefs.map(key));
   const slides = new Set(eventSlides.map(slide => key(slide.eventRef)));
   const errors = [];
   if (selected.size !== selectedEventRefs.length) {
-    errors.push('$.composition.selectedEventRefs: events must be unique');
+    errors.push(`${path}.selectedEventRefs: events must be unique`);
   }
   if (slides.size !== eventSlides.length || slides.size !== selected.size
     || [...slides].some(ref => !selected.has(ref))) {
-    errors.push('$.composition.eventSlides: require exactly one slide for each selected event');
+    errors.push(`${path}.eventSlides: require exactly one slide for each selected event`);
   }
   eventSlides.forEach((slide, index) => {
     if (key(slide.assetRef.eventRef) !== key(slide.eventRef)) {
-      errors.push(`$.composition.eventSlides[${index}].assetRef: must use the event's own poster`);
+      errors.push(`${path}.eventSlides[${index}].assetRef: must use the event's own poster`);
     }
   });
+  return errors;
+}
+
+function validateComposeResult(value) {
+  if (value.decision !== 'compose') return { valid: true };
+  const hasComposition = value.composition != null;
+  const hasCompositions = value.compositions != null;
+  if (hasComposition === hasCompositions) {
+    return {
+      valid: false,
+      errors: [hasComposition
+        ? '$.compositions: cannot be combined with composition'
+        : '$.composition: required'],
+    };
+  }
+  const entries = hasCompositions
+    ? value.compositions.map((composition, index) => [composition, `$.compositions[${index}]`])
+    : [[value.composition, '$.composition']];
+  const errors = entries.flatMap(([composition, path]) => validateComposeComposition(composition, path));
   return errors.length ? { valid: false, errors } : { valid: true };
 }
 

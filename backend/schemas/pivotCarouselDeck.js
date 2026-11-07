@@ -63,6 +63,14 @@ const feedbackNoteSchema = new mongoose.Schema({
  * cleared whenever that revision stops being current, so it can never describe
  * content nobody read.
  */
+const optionPickSchema = new mongoose.Schema(
+  {
+    pickedAt: { type: Date, required: true },
+    pickedBy: { type: String, default: null, trim: true, maxlength: 256 },
+  },
+  { _id: false },
+);
+
 const approvalSchema = new mongoose.Schema(
   {
     revision: { type: Number, required: true, min: 1 },
@@ -223,6 +231,15 @@ const pivotCarouselDeckSchema = new mongoose.Schema(
     origin: { type: String, enum: ORIGINS, default: 'manual' },
     // Internal provenance; the job also deterministically supplies the issue _id.
     composeJobId: { type: String, maxlength: 128, immutable: true },
+    /*
+     * Several themed drafts from one compose run. optionSetId is that run's job
+     * id. A single stored composition has none of these fields.
+     */
+    optionSetId: { type: String, maxlength: 128, immutable: true },
+    optionIndex: { type: Number, min: 0, max: 2, immutable: true },
+    themeLabel: { type: String, maxlength: 80, trim: true, immutable: true },
+    // Which option in the set was picked. Restoring a sibling does not clear it.
+    optionPick: { type: optionPickSchema },
     /**
      * Online trends a generated draft cites (`trend:<source>:<slug>`), so a
      * reviewer can judge the reference. Absent on manual issues and on drafts
@@ -281,11 +298,17 @@ pivotCarouselDeckSchema.pre('validate', function normalizeFields() {
   if (this.reviewState === 'posted' && (!this.posting || this.posting.revision !== this.revision)) {
     this.invalidate('reviewState', 'a posted issue needs a posting record for its current revision');
   }
+  const optionFields = [this.optionSetId, this.optionIndex, this.themeLabel];
+  const optionCount = optionFields.filter(value => value != null && value !== '').length;
+  if (optionCount !== 0 && optionCount !== optionFields.length) {
+    this.invalidate('optionSetId', 'an option needs a set, an index, and a theme');
+  }
 });
 
 pivotCarouselDeckSchema.index({ tenantKey: 1, updatedAt: -1 });
 pivotCarouselDeckSchema.index({ accountId: 1, status: 1, updatedAt: -1 });
 pivotCarouselDeckSchema.index({ tenantKey: 1, status: 1, updatedAt: -1 });
+pivotCarouselDeckSchema.index({ optionSetId: 1, optionIndex: 1 }, { sparse: true });
 
 module.exports = pivotCarouselDeckSchema;
 module.exports.EDITIONS = EDITIONS;

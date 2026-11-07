@@ -773,6 +773,84 @@
         }
       }
     },
+    "composeOption": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "themeLabel",
+        "rationale",
+        "selectedEventRefs",
+        "evidenceRefs",
+        "cover",
+        "eventSlides",
+        "socialCaption"
+      ],
+      "properties": {
+        "themeLabel": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80,
+          "pattern": "^[^\\r\\n]*\\S[^\\r\\n]*$"
+        },
+        "rationale": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 300,
+          "pattern": "^[^\\r\\n]*\\S[^\\r\\n]*$"
+        },
+        "curatedGroupId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^\\S+$"
+        },
+        "assessmentId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9:_-]+$"
+        },
+        "selectedEventRefs": {
+          "type": "array",
+          "minItems": 3,
+          "maxItems": 5,
+          "items": {
+            "$ref": "#/$defs/composeEventRef"
+          }
+        },
+        "evidenceRefs": {
+          "type": "array",
+          "minItems": 0,
+          "maxItems": 30,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[a-zA-Z0-9:._-]+$"
+          }
+        },
+        "cover": {
+          "$ref": "#/$defs/composeCover"
+        },
+        "eventSlides": {
+          "type": "array",
+          "minItems": 3,
+          "maxItems": 5,
+          "items": {
+            "$ref": "#/$defs/composeEventSlide"
+          }
+        },
+        "socialCaption": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2200,
+          "pattern": "\\S"
+        },
+        "optionalClosingSlide": {
+          "$ref": "#/$defs/composeClosingSlide"
+        }
+      }
+    },
     "composeResult": {
       "oneOf": [
         {
@@ -790,8 +868,7 @@
             "outcome",
             "idempotencyKey",
             "editorialAccountKey",
-            "decision",
-            "composition"
+            "decision"
           ],
           "properties": {
             "contractVersion": {
@@ -854,6 +931,14 @@
             },
             "composition": {
               "$ref": "#/$defs/composeComposition"
+            },
+            "compositions": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 3,
+              "items": {
+                "$ref": "#/$defs/composeOption"
+              }
             }
           }
         },

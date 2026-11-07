@@ -141,6 +141,15 @@ function serializeIssue(doc) {
     // so the editor cannot show "Unapproved draft" over someone's own work.
     reviewState: origin === 'agent-generated' ? (row.reviewState || 'unapproved') : null,
     trendRefs: origin === 'agent-generated' ? [...(row.trendRefs || [])] : [],
+    ...(row.optionSetId ? {
+      optionSetId: row.optionSetId,
+      optionIndex: row.optionIndex,
+      themeLabel: row.themeLabel,
+      optionPick: row.optionPick?.pickedAt ? {
+        pickedAt: row.optionPick.pickedAt,
+        pickedBy: row.optionPick.pickedBy || null,
+      } : null,
+    } : {}),
     socialCaption: row.socialCaption || '',
     editorialVersion: row.editorialVersion || 0,
     feedbackNotes: (row.feedbackNotes || []).map(require('./pivotCarouselEditorialFeedbackService').serializeFeedbackRecord),
@@ -293,6 +302,11 @@ async function createIssue(req, accountId, body, origin, trusted = {}) {
   const { PivotCarouselDeck } = getGlobalModels(req, 'PivotCarouselDeck');
   const doc = await PivotCarouselDeck.create({
     ...(trusted.issueId ? { _id: trusted.issueId, composeJobId: trusted.composeJobId } : {}),
+    ...(trusted.optionSetId ? {
+      optionSetId: trusted.optionSetId,
+      optionIndex: trusted.optionIndex,
+      themeLabel: trusted.themeLabel,
+    } : {}),
     ...(trusted.trendRefs?.length ? { trendRefs: trusted.trendRefs } : {}),
     tenantKey: loaded.account.ownerTenantKey,
     title: name,
@@ -520,12 +534,95 @@ async function loadIssueForDecision(req, accountId, issueId) {
   return { account: loaded.account, doc };
 }
 
+function serializeOption(doc) {
+  return { ...serializeIssue(doc), picked: Boolean(doc.optionPick?.pickedAt) };
+}
+
+/**
+ * Every draft from one compose run, archived or still active.
+ * An issue that is not part of a set has no options.
+ */
+async function listCarouselOptionSet(req, accountId, issueId) {
+  const loaded = await loadIssueForDecision(req, accountId, issueId);
+  if (loaded.error) return loaded;
+  const { doc } = loaded;
+  if (!doc.optionSetId) return { data: { optionSetId: null, pickedIssueId: null, options: [] } };
+  const { PivotCarouselDeck } = getGlobalModels(req, 'PivotCarouselDeck');
+  const docs = await PivotCarouselDeck.find({
+    accountId: loaded.account._id,
+    optionSetId: doc.optionSetId,
+  }).sort({ optionIndex: 1, _id: 1 });
+  const picked = docs.find(item => item.optionPick?.pickedAt);
+  return {
+    data: {
+      optionSetId: doc.optionSetId,
+      pickedIssueId: picked ? String(picked._id) : null,
+      options: docs.map(serializeOption),
+    },
+  };
+}
+
+/**
+ * Keep one option and archive the others.
+ *
+ * Sibling archival goes through the ordinary archive path. The pick itself is
+ * recorded on this issue without moving its revision, so a later restore of a
+ * sibling does not forget which option was chosen.
+ */
+async function pickCarouselOption(req, accountId, issueId, body = {}) {
+  const loaded = await loadIssueForDecision(req, accountId, issueId);
+  if (loaded.error) return loaded;
+  const { doc } = loaded;
+  if ((doc.origin || 'manual') !== 'agent-generated' || !doc.optionSetId) {
+    return fail('Only a generated option can be picked.', 409, 'NOT_AN_OPTION');
+  }
+  const conflict = checkRevision(doc.revision || 1, body.revision);
+  if (conflict) return { ...conflict, issue: serializeIssue(doc) };
+  const { PivotCarouselDeck } = getGlobalModels(req, 'PivotCarouselDeck');
+  const members = await PivotCarouselDeck.find({
+    accountId: loaded.account._id,
+    optionSetId: doc.optionSetId,
+  });
+  for (const sibling of members) {
+    if (String(sibling._id) === String(doc._id) || sibling.status === 'archived') continue;
+    const archived = await archiveCarouselIssue(req, accountId, sibling._id, { revision: sibling.revision || 1 });
+    if (archived.error) return archived;
+  }
+  await PivotCarouselDeck.updateMany(
+    {
+      accountId: loaded.account._id,
+      optionSetId: doc.optionSetId,
+      _id: { $ne: doc._id },
+      'optionPick.pickedAt': { $exists: true },
+    },
+    { $unset: { optionPick: 1 } },
+  );
+  let saved = doc;
+  if (!doc.optionPick?.pickedAt) {
+    saved = await PivotCarouselDeck.findOneAndUpdate(
+      { _id: doc._id, accountId: loaded.account._id, revision: body.revision },
+      { $set: { optionPick: { pickedAt: new Date(), pickedBy: actorId(req) } } },
+      { new: true, runValidators: true },
+    );
+    if (!saved) {
+      const current = await PivotCarouselDeck.findOne({ _id: doc._id, accountId: loaded.account._id });
+      return fail('The issue changed while picking it.', 409, 'REVISION_CONFLICT', {
+        storedRevision: current?.revision,
+        presentedRevision: body.revision,
+        issue: current ? serializeIssue(current) : undefined,
+      });
+    }
+  }
+  return { data: { issue: serializeIssue(saved) } };
+}
+
 /**
  * Approve one exact revision, slides and caption together.
  *
  * The compare-and-swap is on `revision` without changing it: approving is not
  * an edit, but it must fail outright if the issue moved since the approver
  * read it. Two approvals of the same revision are the same approval.
+ * Approving an option picks it, archiving every unarchived sibling.
  */
 async function approveCarouselIssue(req, accountId, issueId, body = {}) {
   const loaded = await loadIssueForDecision(req, accountId, issueId);
@@ -536,8 +633,17 @@ async function approveCarouselIssue(req, accountId, issueId, body = {}) {
   }
   const conflict = checkRevision(doc.revision || 1, body.revision);
   if (conflict) return { ...conflict, issue: serializeIssue(doc) };
+  if (doc.optionSetId) {
+    const picked = await pickCarouselOption(req, accountId, issueId, { revision: body.revision });
+    if (picked.error) return picked;
+  }
   if (doc.approval && doc.approval.revision === (doc.revision || 1)) {
-    return { data: { issue: serializeIssue(doc), alreadyApproved: true } };
+    const current = doc.optionSetId
+      ? await getGlobalModels(req, 'PivotCarouselDeck').PivotCarouselDeck.findOne({
+        _id: issueId, accountId: loaded.account._id,
+      })
+      : doc;
+    return { data: { issue: serializeIssue(current), alreadyApproved: true } };
   }
 
   const approval = {
@@ -831,6 +937,8 @@ module.exports = {
   MAX_SOCIAL_CAPTION_LENGTH,
   normalizeCaption,
   createGeneratedCarouselIssue,
+  listCarouselOptionSet,
+  pickCarouselOption,
   approveCarouselIssue,
   markCarouselIssuePosted,
   createCarouselAccount,

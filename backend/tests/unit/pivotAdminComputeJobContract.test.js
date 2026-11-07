@@ -335,6 +335,55 @@ describe('Pivot admin compute job contracts v1 (Phase 1, Step 1.2)', () => {
       expect(validateExecutionResult(wrongPoster).valid).toBe(false);
     });
 
+    it('accepts one or three themed options and rejects four', () => {
+      const one = loadFixture('result-compose-options-one-valid.json');
+      expect(one.compositions).toHaveLength(1);
+      expect(one.composition).toBeUndefined();
+      expect(one.compositions[0].curatedGroupId).toBeUndefined();
+      expect(validateExecutionResult(one)).toEqual({ valid: true });
+
+      const three = loadFixture('result-compose-options-three-valid.json');
+      expect(three.compositions).toHaveLength(3);
+      expect(three.compositions[1].curatedGroupId).toEqual(expect.any(String));
+      expect(validateExecutionResult(three)).toEqual({ valid: true });
+
+      const four = loadFixture('result-compose-options-four-invalid.json');
+      expect(four.compositions).toHaveLength(4);
+      expect(validateExecutionResult(four)).toEqual({
+        valid: false,
+        errors: ['$.compositions: allows at most 3 items'],
+      });
+    });
+
+    it('still accepts a stored single-composition result', () => {
+      const result = loadFixture('result-compose-valid.json');
+      expect(result.composition).toEqual(expect.any(Object));
+      expect(result.compositions).toBeUndefined();
+      expect(validateExecutionResult(result)).toEqual({ valid: true });
+    });
+
+    it('requires each option to stand alone with its own theme', () => {
+      const missingTheme = loadFixture('result-compose-options-one-valid.json');
+      delete missingTheme.compositions[0].themeLabel;
+      expect(validateExecutionResult(missingTheme).errors).toContain(
+        '$.compositions[0].themeLabel: required',
+      );
+      const multiline = loadFixture('result-compose-options-one-valid.json');
+      multiline.compositions[0].rationale = 'First line.\nSecond line.';
+      expect(validateExecutionResult(multiline).valid).toBe(false);
+      const duplicate = loadFixture('result-compose-options-one-valid.json');
+      duplicate.compositions[0].selectedEventRefs[1] = duplicate.compositions[0].selectedEventRefs[0];
+      expect(validateExecutionResult(duplicate).errors).toContain(
+        '$.compositions[0].selectedEventRefs: events must be unique',
+      );
+      const both = loadFixture('result-compose-options-one-valid.json');
+      both.composition = loadFixture('result-compose-valid.json').composition;
+      expect(validateExecutionResult(both)).toEqual({
+        valid: false,
+        errors: ['$.compositions: cannot be combined with composition'],
+      });
+    });
+
     it('accepts an event-poster cover, fractional crops and an optional preset closing slide', () => {
       const result = loadFixture('result-compose-valid.json');
       result.composition.cover.assetRef = result.composition.eventSlides[0].assetRef;

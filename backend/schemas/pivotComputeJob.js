@@ -337,6 +337,14 @@ const pivotComputeJobSchema = new mongoose.Schema(
       decision: { type: String, enum: ['compose', 'wait', 'needs-editor'] },
       reason: { type: String, maxlength: 1000 },
       issueId: { type: mongoose.Schema.Types.ObjectId, default: null },
+      issueIds: {
+        type: [{ type: mongoose.Schema.Types.ObjectId }],
+        default: undefined,
+        validate: {
+          validator: (ids) => !ids || ids.length <= 3,
+          message: 'A compose run creates at most three drafts.',
+        },
+      },
     },
     exportArtifacts: { type: exportArtifactsSchema, default: null },
     applicationAudit: { type: applicationAuditSchema, default: null },

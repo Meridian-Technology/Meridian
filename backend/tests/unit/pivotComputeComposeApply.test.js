@@ -12,7 +12,7 @@ const { applyStoredComputeJob, previewStoredComputeJob } = require('../../servic
 const { createCarouselAccount, createCarouselIssue, updateCarouselIssue,
   markCarouselIssuePosted, getCarouselIssue } = require('../../services/pivotCarouselIssueService');
 const { loadFixture, validateExecutionResult } = require('../../utilities/pivotAdminComputeJobContract');
-const { composeIssueId } = require('../../services/pivotCarouselCompositionService');
+const { composeIssueId, composeOptionIssueId } = require('../../services/pivotCarouselCompositionService');
 const { walkElements } = require('../../services/pivotCarouselPresets');
 
 const PUBLICATION = '2026-10-12T23:00:00.000Z';
@@ -101,7 +101,10 @@ describe('compose compute result apply with real persistence', () => {
     expect(applied.job.status).toBe('completed');
     expect(applied.job.id).toBe(job.id);
     expect(applied.job.composeOutcome).toMatchObject({ decision: 'compose', issueId: expect.anything() });
+    expect(applied.issueIds).toEqual([composeIssueId(result.jobId)]);
+    expect(String(applied.issueId)).toBe(composeIssueId(result.jobId));
     const issue = (await getCarouselIssue(req, account.id, applied.issueId)).data.issue;
+    expect(issue.optionSetId).toBeUndefined();
     expect(issue).toMatchObject({ origin: 'agent-generated', reviewState: 'unapproved', revision: 1,
       socialCaption: result.composition.socialCaption, approval: null, posting: null });
     expect(issue.postHistory).toEqual([]);
@@ -149,6 +152,47 @@ describe('compose compute result apply with real persistence', () => {
     const { PivotCarouselDeck } = getGlobalModels(req, 'PivotCarouselDeck');
     expect(await PivotCarouselDeck.countDocuments({})).toBe(0);
     expect((await apply()).duplicate).toBe(true);
+  });
+
+  test('three themed options become one unapproved set, and applying again keeps that set', async () => {
+    await prepare();
+    const themes = [
+      { themeLabel: 'Jazz this weekend', rationale: 'Featured jazz shows that belong together.' },
+      { themeLabel: 'Late downtown nights', rationale: 'A separate curated group of late shows.', curatedGroupId: 'ic:507f1f77bcf86cd799439011' },
+      { themeLabel: 'Campus weekdays', rationale: 'Student events from another group, distinct from downtown.', curatedGroupId: 'ic:507f1f77bcf86cd799439012' },
+    ];
+    await changeResult(result => {
+      result.compositions = themes.map((theme, index) => {
+        const composition = JSON.parse(JSON.stringify(result.composition));
+        return {
+          ...theme,
+          ...composition,
+          socialCaption: `Option ${index} caption`,
+          cover: { ...composition.cover, headline: theme.themeLabel },
+        };
+      });
+      delete result.composition;
+    });
+    const issueIds = themes.map((_, index) => composeOptionIssueId('job:compose-ic-001', index));
+    const applied = await apply();
+    expect(applied.issueIds).toEqual(issueIds);
+    expect(applied.job.composeOutcome.issueIds.map(id => String(id))).toEqual(issueIds);
+    const { PivotCarouselDeck } = getGlobalModels(req, 'PivotCarouselDeck');
+    expect(await PivotCarouselDeck.countDocuments({ accountId: account.id })).toBe(3);
+    for (const [index, theme] of themes.entries()) {
+      const issue = (await getCarouselIssue(req, account.id, issueIds[index])).data.issue;
+      expect(issue).toMatchObject({
+        origin: 'agent-generated', reviewState: 'unapproved', revision: 1, approval: null, posting: null,
+        optionSetId: 'job:compose-ic-001', optionIndex: index, themeLabel: theme.themeLabel,
+        name: theme.themeLabel, socialCaption: `Option ${index} caption`,
+      });
+      expect(issue.postHistory).toEqual([]);
+    }
+    const again = await apply();
+    expect(again.duplicate).toBe(true);
+    expect(again.issueIds).toEqual(issueIds);
+    expect(await PivotCarouselDeck.countDocuments({ accountId: account.id })).toBe(3);
+    expect((await getCarouselIssue(req, account.id, issueIds[1])).data.issue.socialCaption).toBe('Option 1 caption');
   });
 
   test('duplicate applies with different caller keys preserve the single issue and subsequent human edits', async () => {
