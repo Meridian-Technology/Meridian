@@ -657,7 +657,11 @@ async function applyCarouselReviseJob(req, externalJobId, { tenantKey, actor = n
     }
     const currentRevision = issue.revision || 1;
     const handEdited = issue.agentRevision != null && currentRevision !== issue.agentRevision;
-    if (currentRevision !== revision || handEdited || issue.reviewState === 'posted') {
+    // Approving after asking for a revision settles the draft as it stands.
+    const requestedAt = issue.revisionRequests?.id(requestId)?.time || null;
+    const approvedAt = issue.approval?.approvedAt || null;
+    const approvedSince = Boolean(requestedAt && approvedAt && new Date(approvedAt) > new Date(requestedAt));
+    if (currentRevision !== revision || handEdited || approvedSince || issue.reviewState === 'posted') {
       return finishReviseApply(req, {
         externalJobId, actor, key, now, decision: 'conflict', issueId, requestId, summary: { conflicts: 1 },
       });
@@ -679,6 +683,8 @@ async function applyCarouselReviseJob(req, externalJobId, { tenantKey, actor = n
       }, null, {
         composition: JSON.parse(JSON.stringify(result.composition)),
         agentRevision: revision + 1,
+        // An approval that lands after this read still wins the write.
+        ...(requestedAt ? { unapprovedSince: requestedAt } : {}),
       });
     if (saved.error) {
       if (saved.code === 'REVISION_CONFLICT') {

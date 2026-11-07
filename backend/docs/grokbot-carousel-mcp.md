@@ -44,7 +44,7 @@ Once a day, call `list_editorial_accounts`, then `start_compose` for each accoun
 
 On `preview-ready`, call `get_compose_run` with `jobId`. For a compose decision, that returns each option's issue id, revision, theme, rationale, caption, and events (one to three). Call `get_issue` for each option. Download `preview.slideImageUrls` in order and show the slides with that option's issue id and revision. If `get_compose_run` reports the job is not a compose run, the notice is for a revision: call `get_issue` with the issue id in the notice and show that revision the same way. URLs last about an hour (`expiresInSeconds`). Call `get_issue` again for fresh ones.
 
-On `wait` or `needs-editor`, call `get_compose_run` and show the decision and reason. There is no draft to approve. On `cannot-revise`, `conflict`, or `failure`, call `get_issue` when the notice includes an issue. Say that revision did not change. A conflict means a hand edit already won.
+On `wait` or `needs-editor`, call `get_compose_run` and show the decision and reason. There is no draft to approve. On `cannot-revise`, `conflict`, or `failure`, call `get_issue` when the notice includes an issue. Say that revision did not change. A conflict means a hand edit, or an approval given after the request, already won.
 
 ## Edits and approvals
 

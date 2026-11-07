@@ -528,7 +528,8 @@ function normalizeCaption(value) {
   return { caption };
 }
 
-async function writeIssue(req, accountId, issueId, body, mutate, snapshotMeta = null) {
+/** `guard` adds conditions the stored issue must still meet when the write lands. */
+async function writeIssue(req, accountId, issueId, body, mutate, snapshotMeta = null, guard = null) {
   const loaded = await getCarouselIssue(req, accountId, issueId);
   if (loaded.error) return loaded;
   const { PivotCarouselDeck } = getGlobalModels(req, 'PivotCarouselDeck');
@@ -631,7 +632,7 @@ async function writeIssue(req, accountId, issueId, body, mutate, snapshotMeta = 
     changes = editorial.appendEditorialRecord(changes, 'editLog', edit.toObject());
   }
   const saved = await PivotCarouselDeck.findOneAndUpdate(
-    { _id: issueId, accountId, revision: body.revision }, changes, { new: true, runValidators: true },
+    { ...(guard || {}), _id: issueId, accountId, revision: body.revision }, changes, { new: true, runValidators: true },
   );
   if (!saved) {
     const current = await PivotCarouselDeck.findOne({ _id: issueId, accountId });
@@ -676,7 +677,10 @@ async function updateCarouselIssue(req, accountId, issueId, body = {}, snapshotM
       doc.markModified('composition');
       doc.agentRevision = trusted.agentRevision;
     }
-  }, snapshotMeta);
+  }, snapshotMeta, trusted?.unapprovedSince ? {
+    // A revise answers a request. An approval given after that request wins.
+    $or: [{ approval: null }, { 'approval.approvedAt': { $lte: trusted.unapprovedSince } }],
+  } : null);
 }
 
 async function archiveCarouselIssue(req, accountId, issueId, body = {}) {

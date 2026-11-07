@@ -383,7 +383,7 @@ describe('compose compute result apply with real persistence', () => {
     expect(assets[0]).toMatchObject(saved);
   });
 
-  async function queueRevision() {
+  async function queueRevision({ approveFirst = true } = {}) {
     const { Event } = getModels({ db: await connectToDatabase('ic') }, 'Event');
     const [event] = await Event.find().sort({ name: 1 });
     const created = await createGeneratedCarouselIssue(req, account.id, {
@@ -392,7 +392,7 @@ describe('compose compute result apply with real persistence', () => {
     }, { composition: { socialCaption: 'Before caption' }, contextWindow: STORED_WINDOW, agentRevision: 1 });
     expect(created.error).toBeUndefined();
     const issue = created.data.issue;
-    expect((await approveCarouselIssue(req, account.id, issue.id, { revision: 1 })).error).toBeUndefined();
+    if (approveFirst) expect((await approveCarouselIssue(req, account.id, issue.id, { revision: 1 })).error).toBeUndefined();
     const requested = await requestCarouselRevision(req, account.id, issue.id, { revision: 1, text: 'Swap the cover line.' });
     expect(requested.error).toBeUndefined();
     const job = requested.data.job;
@@ -472,6 +472,48 @@ describe('compose compute result apply with real persistence', () => {
     expect(saved).toMatchObject({ revision: 2, agentRevision: 2, socialCaption: 'Revised caption' });
     expect(saved.composition.cover.assetRef).toEqual({ kind: 'event-poster', eventRef: unfeatured.ref });
     expect(saved.sources).toEqual(result.composition.selectedEventRefs);
+  });
+
+  // new Date() reads the real clock here; Date.now is pinned for posting.
+  const nextMillisecond = () => new Promise(resolve => setTimeout(resolve, 5));
+
+  test('an approval given after the request keeps the draft and the revise ends in conflict', async () => {
+    const { issue, job, context } = await queueRevision({ approveFirst: false });
+    await nextMillisecond();
+    const approved = await approveCarouselIssue(req, account.id, issue.id, { revision: 1 });
+    expect(approved.error).toBeUndefined();
+    await submitComputeJobResult(req, { externalJobId: job.externalJobId, workerId: 'revise-worker',
+      leaseToken: (await findJobByExternalId(req, job.externalJobId)).lease.token,
+      result: reviseResult(job, context), requiresReview: false, now: new Date() });
+
+    const applied = await applyRevision(job.externalJobId);
+    expect(applied).toMatchObject({ duplicate: false, decision: 'conflict', issueId: issue.id });
+    expect(applied.job.reviseOutcome.decision).toBe('conflict');
+    const after = (await getCarouselIssue(req, account.id, issue.id)).data.issue;
+    expect(after).toMatchObject({
+      revision: 1, agentRevision: 1, reviewState: 'approved', socialCaption: 'Before caption',
+      approval: { revision: 1, approvedAt: approved.data.issue.approval.approvedAt },
+    });
+    expect(await exportJobs()).toEqual([]);
+  });
+
+  test('an approval that lands during the revise apply still wins', async () => {
+    const { issue, job, context } = await queueRevision({ approveFirst: false });
+    await submitComputeJobResult(req, { externalJobId: job.externalJobId, workerId: 'revise-worker',
+      leaseToken: (await findJobByExternalId(req, job.externalJobId)).lease.token,
+      result: reviseResult(job, context), requiresReview: false, now: new Date() });
+    const { collection } = getGlobalModels(req, 'PivotCarouselDeck').PivotCarouselDeck;
+    const write = collection.findOneAndUpdate.bind(collection);
+    jest.spyOn(collection, 'findOneAndUpdate').mockImplementationOnce(async (...args) => {
+      await nextMillisecond();
+      expect((await approveCarouselIssue(req, account.id, issue.id, { revision: 1 })).error).toBeUndefined();
+      return write(...args);
+    });
+
+    const applied = await applyRevision(job.externalJobId);
+    expect(applied).toMatchObject({ decision: 'conflict', issueId: issue.id });
+    const after = (await getCarouselIssue(req, account.id, issue.id)).data.issue;
+    expect(after).toMatchObject({ revision: 1, reviewState: 'approved', approval: { revision: 1 }, socialCaption: 'Before caption' });
   });
 
   test('a draft that moved on or was edited by hand stores a conflict and keeps the hand edit', async () => {
