@@ -580,8 +580,9 @@ async function applyCarouselComposeJob(req, externalJobId, { tenantKey, actor = 
       issueId: issueIds[0] || null, issueIds,
     };
   } catch (error) {
-    await completeComputeJobApply(req, { externalJobId, actor, idempotencyKey: key, outcome: 'rejected',
+    const rejected = await completeComputeJobApply(req, { externalJobId, actor, idempotencyKey: key, outcome: 'rejected',
       errorCode: error.code || 'COMPOSE_APPLY_FAILED', errorMessage: error.message, recordAppliedAt: false, now });
+    await require('./pivotCarouselGrokbotNotifyService').notifyCarouselJobEnded(req, rejected);
     throw error;
   }
 }
@@ -701,10 +702,11 @@ async function applyCarouselReviseJob(req, externalJobId, { tenantKey, actor = n
       externalJobId, actor, key, now, decision: 'revise', issueId, requestId, summary: { updates: 1 },
     });
   } catch (error) {
-    await completeComputeJobApply(req, {
+    const rejected = await completeComputeJobApply(req, {
       externalJobId, actor, idempotencyKey: key, outcome: 'rejected',
       errorCode: error.code || 'REVISE_APPLY_FAILED', errorMessage: error.message, recordAppliedAt: false, now,
     });
+    await require('./pivotCarouselGrokbotNotifyService').notifyCarouselJobEnded(req, rejected);
     throw error;
   }
 }

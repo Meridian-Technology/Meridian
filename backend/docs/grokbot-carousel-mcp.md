@@ -32,9 +32,11 @@ The server is stateless. Each call is one JSON POST and returns JSON. Do not sen
 
 ## Webhook
 
-On the Meridian process set `GROKBOT_CAROUSEL_WEBHOOK_URL` to grokbot's inbound URL. After a job write, Meridian POSTs one notice. The body is only `event`, `accountKey`, `jobId`, and `issues` (`issueId`, `revision`). It never includes captions, reasons, or URLs. The same event is not sent again if apply or export runs twice. A failed POST is retried briefly and logged. The job still completes. Leave the variable unset and nothing is sent.
+On the Meridian process set `GROKBOT_CAROUSEL_WEBHOOK_URL` to grokbot's inbound URL. After a job write, Meridian POSTs one notice. The body is only `event`, `accountKey`, `jobId`, and `issues` (`issueId`, `revision`). It never includes captions, reasons, or URLs. The same event is not sent again if apply or export runs twice. The POST runs in the background, so the job never waits on it. A failed POST is retried with backoff for about 30 seconds and each failure is logged. If every attempt fails, the event is released and the next trigger for that job sends it; until then, use the missed-notice routine below. Leave the variable unset and nothing is sent.
 
-`preview-ready` means an agent-written revision's slides are ready. `jobId` is the compose job for the first revision and the revise job after that. `issues` names the revision that just became ready. `wait`, `needs-editor`, `cannot-revise`, `conflict`, and `failure` mean the job ended with no new draft.
+Set `GROKBOT_CAROUSEL_WEBHOOK_SECRET` to a shared secret to sign notices. Each POST then carries `X-Meridian-Signature: sha256=<hex>`, the HMAC-SHA256 of the raw request body under that secret. Compute it over the bytes received, before parsing, compare in constant time, and drop a notice that does not match. Without the variable, notices are unsigned.
+
+`preview-ready` means an agent-written revision's slides are ready. `jobId` is the compose job for the first revision and the revise job after that. `issues` names the revision that just became ready. `wait`, `needs-editor`, `cannot-revise`, `conflict`, and `failure` mean the job ended with no new draft. `failure` covers both a worker failure and a result Meridian refused to apply.
 
 ## Daily routine
 

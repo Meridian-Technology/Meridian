@@ -1,14 +1,23 @@
 /**
- * Content-free notices for grokbot. A notice is sent after the job write, at
- * most once per event. Delivery is retried briefly and never fails the job.
+ * Content-free notices for grokbot. A notice is reserved on the job after the
+ * job write, at most once per event, then posted in the background with
+ * backoff. A notice that never gets through releases its reservation so a
+ * later trigger can send it. Delivery never fails or delays the job.
  */
+const { createHmac } = require('crypto');
 const getGlobalModels = require('./getGlobalModelService');
 const { editorialAccountFor } = require('../constants/pivotCarouselEditorialAccounts');
 const { logPivot } = require('../utilities/pivotLogger');
 
 const WEBHOOK_ENV = 'GROKBOT_CAROUSEL_WEBHOOK_URL';
-const RETRY_DELAYS_MS = [0, 50, 100];
+const SECRET_ENV = 'GROKBOT_CAROUSEL_WEBHOOK_SECRET';
+const SIGNATURE_HEADER = 'x-meridian-signature';
+// About 30 seconds from the first attempt to the last.
+const RETRY_DELAYS_MS = [0, 2000, 5000, 9000, 14000];
 const REQUEST_TIMEOUT_MS = 1500;
+// Tests shorten the schedule here; production reads RETRY_DELAYS_MS.
+const delivery = { retryDelaysMs: RETRY_DELAYS_MS };
+const inFlight = new Set();
 const EXPORT_JOB_ID = /^job:export:([0-9a-f]{24}):r([1-9]\d*)$/;
 const SLIDE_PNG = /^slide-\d{2}\.png$/;
 const NO_DRAFT_EVENTS = new Set(['wait', 'needs-editor', 'cannot-revise', 'conflict', 'failure']);
@@ -16,6 +25,16 @@ const NO_DRAFT_EVENTS = new Set(['wait', 'needs-editor', 'cannot-revise', 'confl
 function webhookUrl(env = process.env) {
   const value = typeof env[WEBHOOK_ENV] === 'string' ? env[WEBHOOK_ENV].trim() : '';
   return value || null;
+}
+
+function webhookSecret(env = process.env) {
+  const value = typeof env[SECRET_ENV] === 'string' ? env[SECRET_ENV].trim() : '';
+  return value || null;
+}
+
+/** `sha256=<hex>` over the exact bytes posted. */
+function signBody(raw, secret) {
+  return `sha256=${createHmac('sha256', secret).update(raw).digest('hex')}`;
 }
 
 function wait(ms) {
@@ -68,7 +87,20 @@ async function reserveNotice(req, externalJobId, event) {
   );
 }
 
-async function postNotice(url, body, { fetchImpl = global.fetch, delays = RETRY_DELAYS_MS } = {}) {
+/** Give the event back, so the next trigger for it sends again. */
+async function releaseNotice(req, externalJobId, event) {
+  const { PivotComputeJob } = getGlobalModels(req, 'PivotComputeJob');
+  await PivotComputeJob.updateOne(
+    { externalJobId },
+    { $pull: { 'notifications.grokbot': { event } } },
+  );
+}
+
+async function postNotice(url, body, { fetchImpl = global.fetch, delays = delivery.retryDelaysMs } = {}) {
+  const raw = JSON.stringify(body);
+  const headers = { 'content-type': 'application/json' };
+  const secret = webhookSecret();
+  if (secret) headers[SIGNATURE_HEADER] = signBody(raw, secret);
   let lastError = null;
   for (let attempt = 0; attempt < delays.length; attempt += 1) {
     if (attempt > 0) await wait(delays[attempt]);
@@ -78,8 +110,8 @@ async function postNotice(url, body, { fetchImpl = global.fetch, delays = RETRY_
     try {
       const response = await fetchImpl(url, {
         method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify(body),
+        headers,
+        body: raw,
         signal: controller.signal,
       });
       if (response?.ok) return { ok: true };
@@ -93,9 +125,43 @@ async function postNotice(url, body, { fetchImpl = global.fetch, delays = RETRY_
   return { ok: false, error: lastError };
 }
 
+function logFailure(event, jobId, error) {
+  logPivot('warn', 'grokbot carousel webhook failed', {
+    event,
+    jobId: jobId || null,
+    message: error?.message || 'webhook failed',
+  });
+}
+
+async function sendReserved(req, { url, body, externalJobId }) {
+  try {
+    const result = await postNotice(url, body);
+    if (result.ok) return;
+    logFailure(body.event, body.jobId, result.error);
+  } catch (error) {
+    logFailure(body.event, body.jobId, error);
+  }
+  try {
+    await releaseNotice(req, externalJobId, body.event);
+  } catch (error) {
+    logFailure(body.event, body.jobId, error);
+  }
+}
+
+function inBackground(promise) {
+  const tracked = promise.catch(() => {}).finally(() => inFlight.delete(tracked));
+  inFlight.add(tracked);
+}
+
+/** Resolves once every notice already queued has been sent or released. */
+async function whenNoticesSettled() {
+  while (inFlight.size) await Promise.allSettled([...inFlight]);
+}
+
 /**
- * Reserve this event on the job, then POST. A second call for the same event
- * does not send again. Errors are logged and swallowed.
+ * Reserve this event on the job, then POST in the background. A second call
+ * for the same event does not send again while the first holds it. Errors are
+ * logged and swallowed.
  */
 async function deliverNotice(req, { event, accountKey, jobId, issues, reserveJobId }) {
   const url = webhookUrl();
@@ -105,30 +171,20 @@ async function deliverNotice(req, { event, accountKey, jobId, issues, reserveJob
   try {
     const reserved = await reserveNotice(req, externalJobId, event);
     if (!reserved) return { skipped: true, reason: 'already_notified' };
-    const body = noticeBody({ event, accountKey, jobId, issues });
-    const result = await postNotice(url, body);
-    if (!result.ok) {
-      logPivot('warn', 'grokbot carousel webhook failed', {
-        event,
-        jobId: jobId || null,
-        message: result.error?.message || 'webhook failed',
-      });
-      return { skipped: true, reason: 'send_failed' };
-    }
-    return { skipped: false, sent: true };
   } catch (error) {
-    logPivot('warn', 'grokbot carousel webhook failed', {
-      event,
-      jobId: jobId || null,
-      message: error?.message || 'webhook failed',
-    });
+    logFailure(event, jobId, error);
     return { skipped: true, reason: 'notify_error' };
   }
+  const body = noticeBody({ event, accountKey, jobId, issues });
+  inBackground(sendReserved(req, { url, body, externalJobId }));
+  return { skipped: false, queued: true };
 }
 
 function noDraftNotice(job) {
   if (!job || (job.kind !== 'carousel-compose' && job.kind !== 'carousel-revise')) return null;
-  if (job.status === 'failed') {
+  // A worker failure, or a result Meridian refused to apply.
+  const rejected = job.status === 'review-required' && job.applicationAudit?.outcome === 'rejected';
+  if (job.status === 'failed' || rejected) {
     const issueId = job.kind === 'carousel-revise' ? job.options?.issueId : null;
     const revision = Number(job.options?.revision);
     return {
@@ -242,7 +298,10 @@ async function deliverPreviewReady(req, job) {
 module.exports = {
   webhookUrl,
   noticeBody,
+  signBody,
   notifyCarouselJobEnded,
   notifyPreviewReady,
+  whenNoticesSettled,
+  delivery,
   RETRY_DELAYS_MS,
 };

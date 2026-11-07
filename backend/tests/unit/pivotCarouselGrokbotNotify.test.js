@@ -23,7 +23,13 @@ const {
 } = require('../../services/pivotComputeJobStore');
 const { fetchJobContext } = require('../../services/pivotComputeWorkerService');
 const { applyStoredComputeJob } = require('../../services/pivotComputeResultApplyService');
-const { notifyCarouselJobEnded } = require('../../services/pivotCarouselGrokbotNotifyService');
+const crypto = require('crypto');
+const {
+  notifyCarouselJobEnded,
+  whenNoticesSettled,
+  delivery,
+  RETRY_DELAYS_MS,
+} = require('../../services/pivotCarouselGrokbotNotifyService');
 const {
   createCarouselAccount,
   createGeneratedCarouselIssue,
@@ -100,6 +106,9 @@ describe('grokbot carousel webhook notices', () => {
     webhookFailuresLeft = 0;
     webhookThrows = false;
     process.env.GROKBOT_CAROUSEL_WEBHOOK_URL = WEBHOOK;
+    delete process.env.GROKBOT_CAROUSEL_WEBHOOK_SECRET;
+    // Same number of attempts as production, without the 30 second wait.
+    delivery.retryDelaysMs = RETRY_DELAYS_MS.map((delay) => (delay ? 1 : 0));
     global.fetch = jest.fn(async (url, init) => {
       if (String(url) !== WEBHOOK) return { ok: false, status: 404 };
       if (webhookThrows) throw new Error('webhook down');
@@ -108,7 +117,13 @@ describe('grokbot carousel webhook notices', () => {
         webhookFailuresLeft -= 1;
         return { ok: false, status: 503 };
       }
-      posts.push({ body, method: init.method, contentType: init.headers['content-type'] });
+      posts.push({
+        body,
+        raw: init.body,
+        method: init.method,
+        contentType: init.headers['content-type'],
+        signature: init.headers['x-meridian-signature'],
+      });
       return { ok: true, status: 204 };
     });
     dbs = new Map();
@@ -141,6 +156,9 @@ describe('grokbot carousel webhook notices', () => {
   });
 
   afterEach(async () => {
+    await whenNoticesSettled();
+    delivery.retryDelaysMs = RETRY_DELAYS_MS;
+    delete process.env.GROKBOT_CAROUSEL_WEBHOOK_SECRET;
     if (dbs) {
       for (const db of dbs.values()) await db.dropDatabase();
     }
@@ -154,7 +172,9 @@ describe('grokbot carousel webhook notices', () => {
     if (mongo) await mongo.cleanup();
   });
 
-  function notices(event) {
+  // Notices are posted in the background; read them once those posts are done.
+  async function notices(event) {
+    await whenNoticesSettled();
     return posts.filter((post) => post.body.event === event).map((post) => post.body);
   }
 
@@ -312,16 +332,16 @@ describe('grokbot carousel webhook notices', () => {
       await prepare(externalJobId, decision);
       const applied = await applyStoredComputeJob(req, externalJobId, { tenantKey: 'ic', actor: 'editor' });
       expect(applied.job.status).toBe('completed');
-      expect(notices(decision)).toHaveLength(1);
-      expectContentFree(notices(decision)[0], decision);
-      expect(notices(decision)[0]).toMatchObject({ jobId: externalJobId, issues: [] });
+      expect(await notices(decision)).toHaveLength(1);
+      expectContentFree((await notices(decision))[0], decision);
+      expect((await notices(decision))[0]).toMatchObject({ jobId: externalJobId, issues: [] });
       expect(posts.at(-1).method).toBe('POST');
       expect(posts.at(-1).contentType).toBe('application/json');
 
       await applyStoredComputeJob(req, externalJobId, { tenantKey: 'ic', actor: 'editor' });
       const stored = await findJobByExternalId(req, externalJobId);
       await notifyCarouselJobEnded(req, stored);
-      expect(notices(decision)).toHaveLength(1);
+      expect(await notices(decision)).toHaveLength(1);
     }
 
     const cannot = await queueRevision();
@@ -334,15 +354,15 @@ describe('grokbot carousel webhook notices', () => {
       now: cannot.now,
     });
     await applyStoredComputeJob(req, cannot.job.externalJobId, { tenantKey: 'ic', actor: 'editor' });
-    expect(notices('cannot-revise')).toEqual([{
+    expect(await notices('cannot-revise')).toEqual([{
       event: 'cannot-revise',
       accountKey: 'just.go.ic',
       jobId: cannot.job.externalJobId,
       issues: [{ issueId: cannot.issue.id, revision: 1 }],
     }]);
-    expect(JSON.stringify(notices('cannot-revise'))).not.toMatch(/cover line|Before caption/);
+    expect(JSON.stringify(await notices('cannot-revise'))).not.toMatch(/cover line|Before caption/);
     await applyStoredComputeJob(req, cannot.job.externalJobId, { tenantKey: 'ic', actor: 'editor' });
-    expect(notices('cannot-revise')).toHaveLength(1);
+    expect(await notices('cannot-revise')).toHaveLength(1);
 
     const conflict = await queueRevision();
     await submitComputeJobResult(req, {
@@ -358,15 +378,15 @@ describe('grokbot carousel webhook notices', () => {
       socialCaption: 'Hand edited caption',
     });
     await applyStoredComputeJob(req, conflict.job.externalJobId, { tenantKey: 'ic', actor: 'editor' });
-    expect(notices('conflict')).toEqual([{
+    expect(await notices('conflict')).toEqual([{
       event: 'conflict',
       accountKey: 'just.go.ic',
       jobId: conflict.job.externalJobId,
       issues: [{ issueId: conflict.issue.id, revision: 1 }],
     }]);
-    expect(JSON.stringify(notices('conflict'))).not.toMatch(/Hand edited|Revised caption/);
+    expect(JSON.stringify(await notices('conflict'))).not.toMatch(/Hand edited|Revised caption/);
     await applyStoredComputeJob(req, conflict.job.externalJobId, { tenantKey: 'ic', actor: 'editor' });
-    expect(notices('conflict')).toHaveLength(1);
+    expect(await notices('conflict')).toHaveLength(1);
   });
 
   it('notifies when an agent-written preview becomes ready, and not twice', async () => {
@@ -461,13 +481,13 @@ describe('grokbot carousel webhook notices', () => {
       now,
     });
     expect(submitted.status).toBe('completed');
-    expect(notices('preview-ready')).toEqual([{
+    expect(await notices('preview-ready')).toEqual([{
       event: 'preview-ready',
       accountKey: 'just.go.ic',
       jobId: 'job:compose-preview-001',
       issues: [{ issueId: id, revision: 1 }],
     }]);
-    expect(JSON.stringify(notices('preview-ready'))).not.toMatch(/caption|slide-01|s3/);
+    expect(JSON.stringify(await notices('preview-ready'))).not.toMatch(/caption|slide-01|s3/);
 
     await submitComputeJobResult(req, {
       externalJobId,
@@ -477,7 +497,7 @@ describe('grokbot carousel webhook notices', () => {
       requiresReview: false,
       now,
     });
-    expect(notices('preview-ready')).toHaveLength(1);
+    expect(await notices('preview-ready')).toHaveLength(1);
   });
 
   it('notifies a failed compose or revise job and retries the post without failing the job', async () => {
@@ -522,13 +542,13 @@ describe('grokbot carousel webhook notices', () => {
       now,
     });
     expect(submitted.status).toBe('failed');
-    expect(notices('failure')).toEqual([{
+    expect(await notices('failure')).toEqual([{
       event: 'failure',
       accountKey: 'just.go.ic',
       jobId: externalJobId,
       issues: [],
     }]);
-    expect(JSON.stringify(notices('failure'))).not.toMatch(/scraping|SITE_SCRAPE/);
+    expect(JSON.stringify(await notices('failure'))).not.toMatch(/scraping|SITE_SCRAPE/);
     expect(global.fetch.mock.calls.filter((call) => call[0] === WEBHOOK)).toHaveLength(3);
 
     const issue = (await createGeneratedCarouselIssue(req, account.id, {
@@ -572,12 +592,163 @@ describe('grokbot carousel webhook notices', () => {
       requiresReview: false,
       now,
     })).resolves.toMatchObject({ status: 'failed' });
-    expect(notices('failure').some((body) => body.jobId === reviseId)).toBe(false);
+    expect((await notices('failure')).some((body) => body.jobId === reviseId)).toBe(false);
     expect(logPivot).toHaveBeenCalledWith('warn', 'grokbot carousel webhook failed', expect.objectContaining({
       event: 'failure',
       jobId: reviseId,
     }));
     expect((await findJobByExternalId(req, reviseId)).status).toBe('failed');
+  });
+
+  async function failCompose(externalJobId) {
+    const now = new Date();
+    await createComputeJob(req, {
+      externalJobId,
+      kind: 'carousel-compose',
+      cityKey: 'ic',
+      contextVersion: 'ctx:compose.pending',
+      createIdempotencyKey: `idem:${externalJobId}`,
+      origin: { type: 'admin' },
+      options: { editorialAccountKey: 'just.go.ic', proposedPublicationAt: PUBLICATION },
+    });
+    const claim = await claimNextPendingJob(req, {
+      externalJobId,
+      workerId: 'compose-worker',
+      capability: composeCapability,
+      now,
+    });
+    await startComputeJob(req, {
+      externalJobId,
+      workerId: 'compose-worker',
+      leaseToken: claim.job.lease.token,
+      now,
+    });
+    const failed = loadFixture('result-discovery-failed.json');
+    Object.assign(failed, {
+      jobId: externalJobId,
+      cityKey: 'ic',
+      basedOnContextVersion: 'ctx:compose.pending',
+      idempotencyKey: `idem:result:${externalJobId}`,
+    });
+    return submitComputeJobResult(req, {
+      externalJobId,
+      workerId: 'compose-worker',
+      leaseToken: claim.job.lease.token,
+      result: failed,
+      retryable: false,
+      requiresReview: false,
+      now,
+    });
+  }
+
+  async function makeCatalogIneligible() {
+    const { Event } = getModels({ db: await connectToDatabase('ic') }, 'Event');
+    await Event.updateMany({}, { $set: { 'customFields.pivot.ingestStatus': 'draft' } });
+  }
+
+  it('spreads delivery attempts over about thirty seconds', () => {
+    const total = RETRY_DELAYS_MS.reduce((sum, delay) => sum + delay, 0);
+    expect(RETRY_DELAYS_MS[0]).toBe(0);
+    expect(RETRY_DELAYS_MS).toEqual([...RETRY_DELAYS_MS].sort((a, b) => a - b));
+    expect(total).toBeGreaterThanOrEqual(25000);
+    expect(total).toBeLessThanOrEqual(35000);
+  });
+
+  it('posts in the background, so neither apply nor a failed submission waits on the webhook', async () => {
+    let open;
+    const gate = new Promise((resolve) => { open = resolve; });
+    const answer = global.fetch.getMockImplementation();
+    global.fetch.mockImplementation(async (url, init) => {
+      if (String(url) === WEBHOOK) await gate;
+      return answer(url, init);
+    });
+    const blocked = Symbol('blocked');
+    const within = (promise) => Promise.race([
+      promise,
+      new Promise((resolve) => { setTimeout(() => resolve(blocked), 1000); }),
+    ]);
+
+    await prepare('job:compose-slow-webhook', 'wait');
+    const applied = await within(applyStoredComputeJob(req, 'job:compose-slow-webhook', { tenantKey: 'ic', actor: 'editor' }));
+    expect(applied).not.toBe(blocked);
+    expect(applied.job.status).toBe('completed');
+
+    const submitted = await within(failCompose('job:compose-slow-failure'));
+    expect(submitted).not.toBe(blocked);
+    expect(submitted.status).toBe('failed');
+
+    expect(posts).toEqual([]);
+    open();
+    expect((await notices('wait')).map((body) => body.jobId)).toEqual(['job:compose-slow-webhook']);
+    expect((await notices('failure')).map((body) => body.jobId)).toEqual(['job:compose-slow-failure']);
+  });
+
+  it('releases a notice no attempt delivered, so a later trigger sends it', async () => {
+    const externalJobId = 'job:compose-unreached';
+    webhookThrows = true;
+    expect((await failCompose(externalJobId)).status).toBe('failed');
+    await whenNoticesSettled();
+    expect(global.fetch.mock.calls.filter((call) => call[0] === WEBHOOK)).toHaveLength(RETRY_DELAYS_MS.length);
+    const { PivotComputeJob } = getGlobalModels(req, 'PivotComputeJob');
+    expect((await PivotComputeJob.findOne({ externalJobId }).lean()).notifications.grokbot).toEqual([]);
+
+    webhookThrows = false;
+    await notifyCarouselJobEnded(req, await findJobByExternalId(req, externalJobId));
+    expect(await notices('failure')).toEqual([{
+      event: 'failure',
+      accountKey: 'just.go.ic',
+      jobId: externalJobId,
+      issues: [],
+    }]);
+    await notifyCarouselJobEnded(req, await findJobByExternalId(req, externalJobId));
+    expect(await notices('failure')).toHaveLength(1);
+  });
+
+  it('sends a failure notice when a compose or revise result is rejected at apply', async () => {
+    await prepare('job:compose-rejected', 'compose');
+    const revise = await queueRevision();
+    await submitComputeJobResult(req, {
+      externalJobId: revise.job.externalJobId,
+      workerId: 'revise-worker',
+      leaseToken: (await findJobByExternalId(req, revise.job.externalJobId)).lease.token,
+      result: reviseResult(revise.job, revise.context, 'revise'),
+      requiresReview: false,
+      now: revise.now,
+    });
+    await makeCatalogIneligible();
+
+    await expect(applyStoredComputeJob(req, 'job:compose-rejected', { tenantKey: 'ic', actor: 'editor' }))
+      .rejects.toMatchObject({ code: expect.stringMatching(/^COMPOSE_/) });
+    await expect(applyStoredComputeJob(req, revise.job.externalJobId, { tenantKey: 'ic', actor: 'editor' }))
+      .rejects.toMatchObject({ code: expect.stringMatching(/^COMPOSE_/) });
+    expect((await findJobByExternalId(req, 'job:compose-rejected')).status).toBe('review-required');
+
+    const failures = await notices('failure');
+    expect(failures).toEqual([
+      { event: 'failure', accountKey: 'just.go.ic', jobId: 'job:compose-rejected', issues: [] },
+      {
+        event: 'failure',
+        accountKey: 'just.go.ic',
+        jobId: revise.job.externalJobId,
+        issues: [{ issueId: revise.issue.id, revision: 1 }],
+      },
+    ]);
+    for (const body of failures) expectContentFree(body, 'failure');
+  });
+
+  it('signs a notice with the shared secret when one is set', async () => {
+    await prepare('job:compose-unsigned', 'wait');
+    await applyStoredComputeJob(req, 'job:compose-unsigned', { tenantKey: 'ic', actor: 'editor' });
+    await whenNoticesSettled();
+    expect(posts.find((post) => post.body.jobId === 'job:compose-unsigned').signature).toBeUndefined();
+
+    process.env.GROKBOT_CAROUSEL_WEBHOOK_SECRET = 'grokbot-shared-secret';
+    await prepare('job:compose-signed', 'needs-editor');
+    await applyStoredComputeJob(req, 'job:compose-signed', { tenantKey: 'ic', actor: 'editor' });
+    await whenNoticesSettled();
+    const signed = posts.find((post) => post.body.jobId === 'job:compose-signed');
+    const expected = crypto.createHmac('sha256', 'grokbot-shared-secret').update(signed.raw).digest('hex');
+    expect(signed.signature).toBe(`sha256=${expected}`);
   });
 
   it('does not post when the webhook url is unset', async () => {
