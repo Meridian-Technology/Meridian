@@ -13,10 +13,15 @@ function buildJustGoSemanticText(event) {
   })?.text || '';
 }
 
+// Staged events are about to release; carousel compose groups them before they go live.
+// Drafts stay out of the index.
+const SEMANTIC_TEXT_STATUSES = Object.freeze(['published', 'staged']);
+const carriesSemanticText = (pivot) => SEMANTIC_TEXT_STATUSES.includes(pivot?.ingestStatus);
+
 function setJustGoSemanticText(event) {
   const pivot = event.customFields?.pivot;
   if (!pivot) return event;
-  if (pivot.ingestStatus !== 'published') {
+  if (!carriesSemanticText(pivot)) {
     delete pivot.semanticText;
     delete pivot.semanticTextVersion;
     return event;
@@ -37,7 +42,7 @@ async function refreshJustGoSemanticText(Event, eventIds) {
   const events = await Event.find({ _id: { $in: eventIds } }, SEMANTIC_TEXT_PROJECTION).lean();
   const ops = events.map((event) => {
     const pivot = event.customFields?.pivot;
-    const text = pivot?.ingestStatus === 'published' ? buildJustGoSemanticText(event) : '';
+    const text = carriesSemanticText(pivot) ? buildJustGoSemanticText(event) : '';
     const update = text
       ? { $set: {
         'customFields.pivot.semanticText': text,
@@ -50,4 +55,7 @@ async function refreshJustGoSemanticText(Event, eventIds) {
   return ops.length;
 }
 
-module.exports = { buildJustGoSemanticText, setJustGoSemanticText, refreshJustGoSemanticText };
+module.exports = {
+  SEMANTIC_TEXT_STATUSES, SEMANTIC_TEXT_PROJECTION,
+  buildJustGoSemanticText, setJustGoSemanticText, refreshJustGoSemanticText,
+};

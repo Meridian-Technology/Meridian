@@ -242,7 +242,7 @@ async function releaseBatch(req, options = {}) {
     );
     releasedCount = updateResult.modifiedCount ?? updateResult.nModified ?? 0;
     try {
-      // Staged events carry no semanticText, so related-event search can't see them until now.
+      // Events staged before staged rows kept semanticText have none until now.
       await refreshJustGoSemanticText(Event, plan.eligibleIds);
     } catch (error) {
       logPivot('warn', 'semantic text refresh failed after release', {
@@ -403,8 +403,8 @@ async function unreleaseBatch(req, options = {}) {
   }
 
   const updateResult = await Event.updateMany(match, {
+    // Staged events keep their semanticText, so compose can still group them.
     $set: { 'customFields.pivot.ingestStatus': STAGED_STATUS },
-    $unset: { 'customFields.pivot.semanticText': '', 'customFields.pivot.semanticTextVersion': '' },
   });
   const unreleasedCount = updateResult.modifiedCount ?? updateResult.nModified ?? 0;
 

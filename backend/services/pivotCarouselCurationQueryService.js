@@ -225,11 +225,13 @@ async function queryOneSource(req, tenantKey, spec, usedEventIds, { now, capture
 
 /** Internal read for a trusted compose context: one catalog tenant, stable date paging,
  * no account-search source cap and no first-page pinning. Not exposed as an HTTP route.
+ * `options.ingestStatuses` widens the published-only default (compose also reads staged).
  */
 async function searchEditorialCatalogPage(req, tenantKey, raw = {}, options = {}) {
   const parsed = parseCurationQuery({ ...raw, provider: 'catalog', sourceTenantKeys: [tenantKey],
     publication: 'published', previouslyUsedInAccount: options.usedEventIds?.length ? 'exclude' : 'any' });
   if (parsed.error) return parsed;
+  if (options.ingestStatuses) parsed.spec.ingestStatuses = [...options.ingestStatuses];
   const now = options.now instanceof Date ? options.now : new Date();
   const row = await queryOneSource(req, tenantKey, parsed.spec, options.usedEventIds || [], {
     now, capturedAt: now, pin: false, editorialSignals: true, onlyEventIds: options.onlyEventIds,

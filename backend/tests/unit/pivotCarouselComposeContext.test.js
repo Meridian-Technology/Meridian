@@ -335,6 +335,59 @@ describe('carousel compose catalog context with real persistence', () => {
     expect(edited.candidates[0].recordVersion).not.toBe(first.candidates[0].recordVersion);
   });
 
+  test('staged events are candidates beside published ones and are flagged; drafts stay out', async () => {
+    await events('ic', ['Published'], '2026-10-12T20:00:00.000Z');
+    await events('ic', ['Staged'], '2026-10-13T20:00:00.000Z', { ingestStatus: 'staged' });
+    await events('ic', ['Draft'], '2026-10-13T20:00:00.000Z', { ingestStatus: 'draft' });
+    const snapshot = await context('just.go.ic', '2026-10-10T23:00:00.000Z');
+    expect(snapshot.candidates.map(row => [row.snapshot.name, row.snapshot.publication, row.inspectUnreleased])).toEqual([
+      ['Published', 'published', false], ['Staged', 'staged', false],
+    ]);
+    expect(snapshot.policy.catalogIngestStatuses).toEqual(['published', 'staged']);
+    expect(snapshot.missingSignals.join(' ')).toMatch(/"staged" are queued for the next batch release/);
+  });
+
+  describe('curated groups', () => {
+    const flag = process.env.PIVOT_CURATION_RELATED_ENABLED;
+    afterEach(() => {
+      if (flag === undefined) delete process.env.PIVOT_CURATION_RELATED_ENABLED;
+      else process.env.PIVOT_CURATION_RELATED_ENABLED = flag;
+    });
+
+    test('stay off with the related-event flag, and a missing Atlas index does not fail the context', async () => {
+      delete process.env.PIVOT_CURATION_RELATED_ENABLED;
+      await events('sf', ['One']);
+      const off = await context();
+      expect(off.curatedGroups).toMatchObject({ status: 'disabled', groups: [] });
+      expect(off.missingSignals).toContain('Curated groups are disabled; judge themes from candidates alone.');
+      process.env.PIVOT_CURATION_RELATED_ENABLED = 'true';
+      // The in-memory server has no $vectorSearch stage, like a city without the index.
+      expect((await context()).curatedGroups).toMatchObject({ status: 'unavailable', groups: [] });
+    });
+
+    test('group a featured seed with staged and published neighbors that are all candidates', async () => {
+      process.env.PIVOT_CURATION_RELATED_ENABLED = 'true';
+      const [seed] = await events('sf', ['Featured jazz'], undefined, { featured: true, tags: ['jazz'] });
+      const [staged] = await events('sf', ['Staged jazz'], undefined, { ingestStatus: 'staged', tags: ['jazz'] });
+      const [published] = await events('sf', ['Published jazz'], '2026-10-31T20:00:00.000Z', { tags: ['jazz'] });
+      const [outside] = await events('sf', ['Last month jazz'], '2026-09-30T20:00:00.000Z', { tags: ['jazz'] });
+      const { Event } = getModels({ db: await connectToDatabase('sf') }, 'Event');
+      const search = jest.spyOn(Event, 'aggregate').mockImplementation(async () => [seed, outside, staged, published]
+        .map((row, index) => ({ _id: row._id, score: 1 - index / 10 })));
+      try {
+        const snapshot = await context();
+        expect(search.mock.calls[0][0][0].$vectorSearch.filter).toEqual({ 'customFields.pivot.ingestStatus': { $in: ['published', 'staged'] } });
+        const ref = row => ({ sourceTenantKey: 'sf', eventId: String(row._id) });
+        expect(snapshot.curatedGroups.status).toBe('ok');
+        expect(snapshot.curatedGroups.groups).toEqual([{ id: `sf:${seed._id}`, label: 'jazz',
+          signal: { kind: 'featured', label: 'Featured' }, seed: ref(seed), members: [seed, staged, published].map(ref) }]);
+        expect(snapshot.missingSignals.join(' ')).not.toMatch(/Curated groups are/);
+      } finally {
+        search.mockRestore();
+      }
+    });
+  });
+
   test('rejects unknown, missing, ambiguous and wrongly owned accounts or invalid publication times', async () => {
     const job = { externalJobId: 'job:compose-test-001', cityKey: 'ic', options: { editorialAccountKey: 'unknown', proposedPublicationAt: PUBLICATION } };
     expect((await buildCarouselComposeContextSnapshot(req, { job })).code).toBe('EDITORIAL_ACCOUNT_UNKNOWN');

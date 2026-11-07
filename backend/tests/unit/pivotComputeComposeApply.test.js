@@ -110,6 +110,28 @@ describe('compose compute result apply with real persistence', () => {
     expect(issue.sources).toEqual(result.composition.selectedEventRefs);
   });
 
+  async function stage(name, ingestStatus) {
+    const { Event } = getModels({ db: await connectToDatabase('ic') }, 'Event');
+    await Event.updateOne({ name }, { $set: { 'customFields.pivot.ingestStatus': ingestStatus } });
+  }
+
+  test('a staged event the agent picks is rechecked and kept in the draft', async () => {
+    await stage('Two', 'staged');
+    const { context, result } = await prepare();
+    expect(context.candidates.find(row => row.snapshot.name === 'Two').snapshot.publication).toBe('staged');
+    const applied = await apply();
+    const issue = (await getCarouselIssue(req, account.id, applied.issueId)).data.issue;
+    expect(issue.sources).toEqual(result.composition.selectedEventRefs);
+  });
+
+  test('rejects a staged event moved back to draft after capture', async () => {
+    await stage('Two', 'staged');
+    const { result } = await prepare();
+    await stage('Two', 'draft');
+    await expect(apply()).rejects.toMatchObject({ code: 'COMPOSE_EVENT_INELIGIBLE' });
+    expect((await findJobByExternalId(req, result.jobId)).applicationAudit.outcome).toBe('rejected');
+  });
+
   test('keeps the online trends a draft cites on the issue, and only well-formed ones', async () => {
     await prepare();
     await changeResult(result => { result.composition.evidenceRefs.push('trend:kym:chinamaxxing', 'trend:Later:Odd.Ref', 'trend:kym:chinamaxxing'); });

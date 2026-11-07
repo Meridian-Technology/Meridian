@@ -438,7 +438,8 @@ async function applyCarouselComposeJob(req, externalJobId, { tenantKey, actor = 
           const read = await searchEditorialCatalogPage(req, sourceTenantKey, {
             dateFrom: context.window.from, dateTo: context.window.to, dateToExclusive: context.window.toExclusive,
             timezone: context.window.timezone, sort: 'date-asc', limit: 24,
-          }, { now, onlyEventIds: requested.filter(ref => ref.sourceTenantKey === sourceTenantKey).map(ref => ref.eventId) });
+          }, { now, ingestStatuses: context.policy?.catalogIngestStatuses || ['published'],
+            onlyEventIds: requested.filter(ref => ref.sourceTenantKey === sourceTenantKey).map(ref => ref.eventId) });
           if (read.error || read.data.sources.some(source => source.status !== 'ok')) throw serviceError('Could not recheck selected catalog events.', 'COMPOSE_CATALOG_UNAVAILABLE', 409);
           candidates.push(...read.data.candidates);
         }
