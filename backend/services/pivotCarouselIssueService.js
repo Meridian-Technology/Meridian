@@ -130,6 +130,14 @@ function serializeRevisionRequest(request) {
   };
 }
 
+/** True when the agent's last write is stored, which a revise starts from. */
+function hasStoredComposition(doc) {
+  const composition = doc?.composition;
+  return doc?.agentRevision != null && doc.contextWindow != null
+    && Boolean(composition) && typeof composition === 'object' && !Array.isArray(composition)
+    && Object.keys(composition).length > 0;
+}
+
 /** True once a studio save has moved the issue past the revision the agent wrote. */
 function editsSinceAgent(doc) {
   return doc?.agentRevision != null && (doc.revision || 1) !== doc.agentRevision;
@@ -875,6 +883,11 @@ async function requestCarouselRevision(req, accountId, issueId, { revision, text
   if (doc.reviewState === 'posted') {
     return fail('A posted draft cannot be revised.', 409, 'POSTED_ISSUE');
   }
+  // A draft generated before compositions were stored has nothing for the
+  // agent to revise from; the worker would refuse the job.
+  if (!hasStoredComposition(doc)) {
+    return fail('This draft has no stored composition.', 409, 'REVISE_COMPOSITION_MISSING');
+  }
   if (editsSinceAgent(doc)) {
     return fail(
       'This draft was edited in the studio after the agent last wrote it.',
@@ -935,11 +948,7 @@ async function requestCarouselRevision(req, accountId, issueId, { revision, text
       origin: 'agent-generated',
       reviewState: { $ne: 'posted' },
       $expr: { $lt: [{ $size: { $ifNull: ['$revisionRequests', []] } }, REVISION_REQUEST_LIMIT] },
-      $or: [
-        { agentRevision: { $exists: false } },
-        { agentRevision: null },
-        { agentRevision: revision },
-      ],
+      agentRevision: revision,
     },
     { $push: { revisionRequests: entry.toObject() } },
     { new: true, runValidators: true },
@@ -956,6 +965,9 @@ async function requestCarouselRevision(req, accountId, issueId, { revision, text
     }
     if (current.reviewState === 'posted') {
       return fail('A posted draft cannot be revised.', 409, 'POSTED_ISSUE', { issue: serializeIssue(current) });
+    }
+    if (!hasStoredComposition(current)) {
+      return fail('This draft has no stored composition.', 409, 'REVISE_COMPOSITION_MISSING', { issue: serializeIssue(current) });
     }
     if (editsSinceAgent(current)) {
       return fail(

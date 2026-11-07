@@ -325,4 +325,16 @@ describe('carousel editorial edits and feedback', () => {
     expect(feedback.data.items.some(item => item.kind === 'note')).toBe(false);
     expect(await jobs()).toBe(0);
   });
+
+  test('a revision request refuses a generated draft with no stored composition and writes nothing', async () => {
+    const legacy = await generated();
+    expect(legacy.agentRevision).toBeUndefined();
+    expect(await requestCarouselRevision(req, accountId, legacy.id, { revision: 1, text: 'Swap the cover line.' }))
+      .toMatchObject({ code: 'REVISE_COMPOSITION_MISSING', status: 409 });
+
+    const stored = await model().findById(legacy.id).lean();
+    expect(stored.revisionRequests).toEqual([]);
+    expect(stored.feedbackNotes).toEqual([]);
+    expect(await jobs()).toBe(0);
+  });
 });
