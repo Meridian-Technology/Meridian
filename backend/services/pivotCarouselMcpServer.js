@@ -112,13 +112,13 @@ function createCarouselMcpServer(req) {
   }, async (args) => toolResult(await requestRevision(req, args)));
 
   server.registerTool('pick_option', {
-    description: 'Pick one option from a compose run. Required: issueId and revision. Side effects: archives every other unarchived draft in the same option set and records this issue as the picked option, as the token owner. The picked draft\'s revision does not change, and restoring a sibling does not un-pick it. Valid for an agent-generated option that belongs to an option set and whose current revision matches. Errors: issue not found (ISSUE_NOT_FOUND), not an option (NOT_AN_OPTION), or a stale revision (REVISION_CONFLICT). Picking the same option again keeps the existing pick.',
+    description: 'Pick one option from a compose run. Required: issueId and revision. Side effects: records this issue as the picked option, as the token owner, then archives every other unarchived draft in the same option set except a posted one. The picked draft\'s revision does not change, a refused pick archives nothing, and restoring a sibling does not un-pick it. Valid for an agent-generated option that belongs to an option set and whose current revision matches. Errors: issue not found (ISSUE_NOT_FOUND), not an option (NOT_AN_OPTION), or a stale revision (REVISION_CONFLICT). Picking the same option again keeps the existing pick.',
     inputSchema: z.object({ issueId, revision }),
     annotations: DESTRUCTIVE,
   }, async (args) => toolResult(await pickOption(req, args)));
 
   server.registerTool('approve', {
-    description: 'Approve one exact revision of a generated draft. Required: issueId and revision. Side effects: sets review state to approved for that revision, records the token owner as approver, and, when the draft is one of several options, picks it and archives the other unarchived options. It does not post to Instagram. Valid for an agent-generated draft whose current revision matches and is still unapproved. Errors: issue not found (ISSUE_NOT_FOUND), not a generated draft (NOT_GENERATED_ISSUE), a stale revision (REVISION_CONFLICT), or the pick errors above. Approving the same revision again returns the existing approval.',
+    description: 'Approve one exact revision of a generated draft. Required: issueId and revision. Side effects: sets review state to approved for that revision, records the token owner as approver, and, when the draft is one of several options, picks it and archives the other unarchived, unposted options. A refused approval archives nothing. It does not post to Instagram. Valid for an agent-generated draft whose current revision matches and is still unapproved. Errors: issue not found (ISSUE_NOT_FOUND), not a generated draft (NOT_GENERATED_ISSUE), a stale revision (REVISION_CONFLICT), or the pick errors above. Approving the same revision again returns the existing approval.',
     inputSchema: z.object({ issueId, revision }),
     annotations: DESTRUCTIVE,
   }, async (args) => toolResult(await approve(req, args)));

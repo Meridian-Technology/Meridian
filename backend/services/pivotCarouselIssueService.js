@@ -584,6 +584,12 @@ async function writeIssue(req, accountId, issueId, body, mutate, snapshotMeta = 
   }
   await mutate(doc, loaded);
   if (body.curation !== undefined) { doc.curation = body.curation; doc.markModified('curation'); }
+  // Archiving or restoring moves the revision but not the content. If the
+  // agent wrote the content, it still did, so agentRevision moves with it.
+  const statusOnly = doc.isModified('status') && doc.modifiedPaths().every(path => path === 'status');
+  if (statusOnly && doc.agentRevision != null && doc.agentRevision === body.revision) {
+    doc.agentRevision = nextRevision;
+  }
   doc.revision = nextRevision;
   doc.updatedBy = actorId(req);
   // A generated issue that moves to a new revision is no longer the thing
@@ -725,12 +731,17 @@ async function listCarouselOptionSet(req, accountId, issueId) {
   };
 }
 
+function isPosted(doc) {
+  return doc.reviewState === 'posted' || (doc.postHistory || []).length > 0;
+}
+
 /**
  * Keep one option and archive the others.
  *
- * Sibling archival goes through the ordinary archive path. The pick itself is
- * recorded on this issue without moving its revision, so a later restore of a
- * sibling does not forget which option was chosen.
+ * The pick is recorded first, on this issue's revision and without moving it,
+ * so a refused pick archives nothing and a later restore of a sibling does not
+ * forget which option was chosen. Sibling archival then goes through the
+ * ordinary archive path. A posted sibling is left as it is.
  */
 async function pickCarouselOption(req, accountId, issueId, body = {}) {
   const loaded = await loadIssueForDecision(req, accountId, issueId);
@@ -742,24 +753,6 @@ async function pickCarouselOption(req, accountId, issueId, body = {}) {
   const conflict = checkRevision(doc.revision || 1, body.revision);
   if (conflict) return { ...conflict, issue: serializeIssue(doc) };
   const { PivotCarouselDeck } = getGlobalModels(req, 'PivotCarouselDeck');
-  const members = await PivotCarouselDeck.find({
-    accountId: loaded.account._id,
-    optionSetId: doc.optionSetId,
-  });
-  for (const sibling of members) {
-    if (String(sibling._id) === String(doc._id) || sibling.status === 'archived') continue;
-    const archived = await archiveCarouselIssue(req, accountId, sibling._id, { revision: sibling.revision || 1 });
-    if (archived.error) return archived;
-  }
-  await PivotCarouselDeck.updateMany(
-    {
-      accountId: loaded.account._id,
-      optionSetId: doc.optionSetId,
-      _id: { $ne: doc._id },
-      'optionPick.pickedAt': { $exists: true },
-    },
-    { $unset: { optionPick: 1 } },
-  );
   let saved = doc;
   if (!doc.optionPick?.pickedAt) {
     saved = await PivotCarouselDeck.findOneAndUpdate(
@@ -776,6 +769,25 @@ async function pickCarouselOption(req, accountId, issueId, body = {}) {
       });
     }
   }
+  await PivotCarouselDeck.updateMany(
+    {
+      accountId: loaded.account._id,
+      optionSetId: doc.optionSetId,
+      _id: { $ne: doc._id },
+      'optionPick.pickedAt': { $exists: true },
+    },
+    { $unset: { optionPick: 1 } },
+  );
+  const members = await PivotCarouselDeck.find({
+    accountId: loaded.account._id,
+    optionSetId: doc.optionSetId,
+    _id: { $ne: doc._id },
+  });
+  for (const sibling of members) {
+    if (sibling.status === 'archived' || isPosted(sibling)) continue;
+    const archived = await archiveCarouselIssue(req, accountId, sibling._id, { revision: sibling.revision || 1 });
+    if (archived.error) return archived;
+  }
   return { data: { issue: serializeIssue(saved) } };
 }
 
@@ -785,7 +797,8 @@ async function pickCarouselOption(req, accountId, issueId, body = {}) {
  * The compare-and-swap is on `revision` without changing it: approving is not
  * an edit, but it must fail outright if the issue moved since the approver
  * read it. Two approvals of the same revision are the same approval.
- * Approving an option picks it, archiving every unarchived sibling.
+ * Approving an option picks it, archiving every unarchived sibling. The
+ * approval lands first, so a refused approval archives nothing.
  */
 async function approveCarouselIssue(req, accountId, issueId, body = {}) {
   const loaded = await loadIssueForDecision(req, accountId, issueId);
@@ -796,51 +809,51 @@ async function approveCarouselIssue(req, accountId, issueId, body = {}) {
   }
   const conflict = checkRevision(doc.revision || 1, body.revision);
   if (conflict) return { ...conflict, issue: serializeIssue(doc) };
+
+  const { PivotCarouselDeck } = getGlobalModels(req, 'PivotCarouselDeck');
+  let saved = doc;
+  let alreadyApproved = Boolean(doc.approval && doc.approval.revision === (doc.revision || 1));
+  if (!alreadyApproved) {
+    const approval = {
+      revision: doc.revision || 1,
+      approvedAt: new Date(),
+      approvedBy: actorId(req),
+    };
+    saved = await PivotCarouselDeck.findOneAndUpdate(
+      {
+        _id: issueId,
+        accountId: loaded.account._id,
+        revision: body.revision,
+        origin: 'agent-generated',
+        reviewState: 'unapproved',
+        approval: null,
+      },
+      { $set: { reviewState: 'approved', approval, updatedBy: actorId(req) } },
+      { new: true, runValidators: true },
+    );
+    if (!saved) {
+      const current = await PivotCarouselDeck.findOne({ _id: issueId, accountId: loaded.account._id });
+      // Another approver may have won on the same revision. Preserve that actor
+      // and time rather than overwriting the record on a concurrent request.
+      if (!(current?.revision === body.revision && current.approval?.revision === body.revision)) {
+        return fail('The issue changed while approving it.', 409, 'REVISION_CONFLICT', {
+          storedRevision: current?.revision,
+          presentedRevision: body.revision,
+          issue: current ? serializeIssue(current) : undefined,
+        });
+      }
+      saved = current;
+      alreadyApproved = true;
+    }
+  }
+
+  let issue = serializeIssue(saved);
   if (doc.optionSetId) {
     const picked = await pickCarouselOption(req, accountId, issueId, { revision: body.revision });
     if (picked.error) return picked;
+    issue = picked.data.issue;
   }
-  if (doc.approval && doc.approval.revision === (doc.revision || 1)) {
-    const current = doc.optionSetId
-      ? await getGlobalModels(req, 'PivotCarouselDeck').PivotCarouselDeck.findOne({
-        _id: issueId, accountId: loaded.account._id,
-      })
-      : doc;
-    return { data: { issue: serializeIssue(current), alreadyApproved: true } };
-  }
-
-  const approval = {
-    revision: doc.revision || 1,
-    approvedAt: new Date(),
-    approvedBy: actorId(req),
-  };
-  const { PivotCarouselDeck } = getGlobalModels(req, 'PivotCarouselDeck');
-  const saved = await PivotCarouselDeck.findOneAndUpdate(
-    {
-      _id: issueId,
-      accountId: loaded.account._id,
-      revision: body.revision,
-      origin: 'agent-generated',
-      reviewState: 'unapproved',
-      approval: null,
-    },
-    { $set: { reviewState: 'approved', approval, updatedBy: actorId(req) } },
-    { new: true, runValidators: true },
-  );
-  if (!saved) {
-    const current = await PivotCarouselDeck.findOne({ _id: issueId, accountId: loaded.account._id });
-    // Another approver may have won on the same revision. Preserve that actor
-    // and time rather than overwriting the record on a concurrent request.
-    if (current?.revision === body.revision && current.approval?.revision === body.revision) {
-      return { data: { issue: serializeIssue(current), alreadyApproved: true } };
-    }
-    return fail('The issue changed while approving it.', 409, 'REVISION_CONFLICT', {
-      storedRevision: current?.revision,
-      presentedRevision: body.revision,
-      issue: current ? serializeIssue(current) : undefined,
-    });
-  }
-  return { data: { issue: serializeIssue(saved) } };
+  return { data: { issue, ...(alreadyApproved ? { alreadyApproved: true } : {}) } };
 }
 
 /**

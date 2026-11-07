@@ -50,7 +50,7 @@ On `wait` or `needs-editor`, call `get_compose_run` and show the decision and re
 
 Relay a person's change with `request_revision`: the issue id, the revision they were shown, the text (2,000 characters at most), and a new idempotency key. That appends the request, saves it as editorial feedback, and queues a revise job. The draft text stays until the agent writes the next revision, which returns to unapproved. Show the new slides only after the next `preview-ready`. A posted draft cannot be revised. A draft edited by hand in the studio since the agent last wrote it returns `EDITS_SINCE_AGENT`.
 
-`pick_option` archives the other options in the set. Restoring a sibling leaves the pick in place. `approve` approves that exact revision and, for an option, picks it and archives the others. It does not post. After a person has posted that revision by hand, `mark_posted` records it. Pass the revision that was shown. A newer revision returns `REVISION_CONFLICT`; read the issue again and ask with the current revision.
+`pick_option` archives the other options in the set, except one already posted. A refused pick archives nothing. Restoring a sibling leaves the pick in place, and the restored option can still be revised. `approve` approves that exact revision and, for an option, then picks it and archives the others the same way. It does not post. After a person has posted that revision by hand, `mark_posted` records it. Pass the revision that was shown. A newer revision returns `REVISION_CONFLICT`; read the issue again and ask with the current revision.
 
 ## If a notice is missed
 
