@@ -204,6 +204,8 @@ function createApp() {
     '/admin/platform',
     '/admin/pivot',
     '/admin/meridian',
+    // Grokbot's connector. A platform access token, not a tenant session.
+    '/mcp/carousel',
     // Renders one carousel slide for the export script. Its credential is a
     // signed, deck-scoped token, not a session on a tenant subdomain, so the
     // www path lock has nothing to lock — and a redirect here is screenshotted
