@@ -155,6 +155,9 @@ function validateManualSubmitResult(resultInput) {
   if (resultInput.kind === 'carousel-compose') {
     throw serviceError('Compose results require their worker-served context.', 'COMPOSE_MANUAL_SUBMIT_UNSUPPORTED', 409);
   }
+  if (resultInput.kind === 'carousel-revise') {
+    throw serviceError('Revise results require their worker-served context.', 'REVISE_MANUAL_SUBMIT_UNSUPPORTED', 409);
+  }
   if (resultInput.outcome !== 'completed') {
     throw serviceError('Manual submit requires a completed compute result', 'MANUAL_SUBMIT_NOT_COMPLETED');
   }
@@ -462,6 +465,13 @@ async function createMissingComposeIssues(req, { externalJobId, context, payload
     }, {
       issueId: payload.issueId, composeJobId: externalJobId, sourceTenantKeys: context.account.sourceTenantKeys,
       trendRefs: [...new Set((payload.composition.evidenceRefs || []).filter(ref => /^trend:[a-z]+:[a-z0-9-]+$/.test(ref)))].slice(0, 10),
+      // The issue is born at revision 1, which is the revision the agent just wrote.
+      composition: JSON.parse(JSON.stringify(payload.composition)),
+      contextWindow: {
+        from: context.window.from, to: context.window.to, toExclusive: context.window.toExclusive,
+        timezone: context.window.timezone, mode: context.window.mode, days: context.window.days,
+      },
+      agentRevision: 1,
       ...(payload.optionSetId ? {
         optionSetId: payload.optionSetId, optionIndex: payload.optionIndex, themeLabel: payload.themeLabel,
       } : {}),
@@ -529,6 +539,140 @@ async function applyCarouselComposeJob(req, externalJobId, { tenantKey, actor = 
   } catch (error) {
     await completeComputeJobApply(req, { externalJobId, actor, idempotencyKey: key, outcome: 'rejected',
       errorCode: error.code || 'COMPOSE_APPLY_FAILED', errorMessage: error.message, recordAppliedAt: false, now });
+    throw error;
+  }
+}
+
+async function finishReviseApply(req, { externalJobId, actor, key, now, decision, reason = null, issueId, requestId, summary }) {
+  const getGlobalModels = require('./getGlobalModelService');
+  const { PivotComputeJob } = getGlobalModels(req, 'PivotComputeJob');
+  await PivotComputeJob.updateOne({ externalJobId, status: 'applying' }, { $set: {
+    reviseOutcome: { decision, reason, issueId, requestId },
+  } });
+  const job = await completeComputeJobApply(req, { externalJobId, actor, idempotencyKey: key, summary, now });
+  return {
+    job: serializeAdminJob(job), duplicate: false, decision,
+    issueId: String(issueId), requestId: String(requestId),
+  };
+}
+
+/**
+ * Apply one revise result to the draft it was bound to.
+ * A second apply finds the stored outcome and does not write the draft again.
+ * The draft is left untouched when it moved on or was edited by hand.
+ */
+async function applyCarouselReviseJob(req, externalJobId, { tenantKey, actor = null, now = new Date() } = {}) {
+  const getGlobalModels = require('./getGlobalModelService');
+  const { PivotComputeJob, PivotCarouselDeck } = getGlobalModels(req, 'PivotComputeJob', 'PivotCarouselDeck');
+  const stored = await PivotComputeJob.findOne({ externalJobId }).lean();
+  if (!stored) throw serviceError('Compute job not found.', 'COMPUTE_JOB_NOT_FOUND', 404);
+  if (stored.kind !== 'carousel-revise') throw serviceError('Expected a revise job.', 'UNSUPPORTED_COMPUTE_JOB_KIND');
+  if (!trimString(tenantKey)) throw serviceError('A tenantKey is required to apply a compute job.', 'APPLY_TENANT_REQUIRED');
+  if (trimString(tenantKey).toLowerCase() !== stored.tenantKey) throw serviceError('Compute job belongs to another tenant.', 'COMPUTE_JOB_TENANT_MISMATCH', 409);
+  if (stored.status === 'completed' && stored.reviseOutcome?.decision) {
+    return {
+      job: serializeAdminJob(stored), duplicate: true, decision: stored.reviseOutcome.decision,
+      issueId: stored.reviseOutcome.issueId ? String(stored.reviseOutcome.issueId) : null,
+      requestId: stored.reviseOutcome.requestId ? String(stored.reviseOutcome.requestId) : null,
+    };
+  }
+  const result = stored.result?.embedded;
+  const validation = validateExecutionResult(result);
+  if (!validation.valid) throw serviceError('The stored revise result is invalid.', 'INVALID_COMPUTE_EXECUTION_RESULT', 422);
+  const issueId = String(stored.options?.issueId || '');
+  const requestId = String(stored.options?.requestId || '');
+  const revision = stored.options?.revision;
+  if (result.kind !== stored.kind || result.jobId !== stored.externalJobId || result.cityKey !== stored.cityKey
+    || result.basedOnContextVersion !== stored.contextVersion
+    || result.scheduleOccurrenceId !== (stored.scheduleOccurrenceId || null)
+    || result.issueId !== issueId || result.requestId !== requestId
+    || !/^[0-9a-f]{24}$/.test(issueId) || !/^[0-9a-f]{24}$/.test(requestId)
+    || !Number.isInteger(revision) || revision < 1) {
+    throw serviceError('Revise result does not match the job.', 'REVISE_RESULT_BINDING_MISMATCH', 409);
+  }
+  const context = stored.reviseContext;
+  if (!validateContextSnapshot(context).valid || context.kind !== stored.kind || context.jobId !== stored.externalJobId
+    || context.contextVersion !== stored.contextVersion || context.issueId !== issueId || context.revision !== revision) {
+    throw serviceError('The worker-served revise context is unavailable.', 'REVISE_CONTEXT_MISSING', 409);
+  }
+  const key = `revise:apply:${issueId}:${requestId}`;
+  await beginComputeJobApply(req, { externalJobId, idempotencyKey: key, actor, now });
+  try {
+    const issue = await PivotCarouselDeck.findOne({ _id: issueId, accountId: context.account.id });
+    if (!issue) throw serviceError('Issue not found.', 'ISSUE_NOT_FOUND', 404);
+    if (result.decision === 'cannot-revise') {
+      const updated = await PivotCarouselDeck.updateOne(
+        { _id: issueId, 'revisionRequests._id': requestId },
+        { $set: { 'revisionRequests.$.reason': result.reason } },
+      );
+      if (!updated.matchedCount) throw serviceError('The revision request is not on this draft.', 'REVISE_REQUEST_MISSING', 409);
+      return finishReviseApply(req, {
+        externalJobId, actor, key, now, decision: 'cannot-revise', reason: result.reason, issueId, requestId,
+        summary: { unchanged: 1 },
+      });
+    }
+    const currentRevision = issue.revision || 1;
+    const handEdited = issue.agentRevision != null && currentRevision !== issue.agentRevision;
+    if (currentRevision !== revision || handEdited || issue.reviewState === 'posted') {
+      return finishReviseApply(req, {
+        externalJobId, actor, key, now, decision: 'conflict', issueId, requestId, summary: { conflicts: 1 },
+      });
+    }
+    const { refKey, buildCompositionDocument } = require('./pivotCarouselCompositionService');
+    const { postedHistory } = require('./pivotCarouselComposeContextService');
+    const { searchEditorialCatalogPage } = require('./pivotCarouselCurationQueryService');
+    const { updateCarouselIssue } = require('./pivotCarouselIssueService');
+    const selected = result.composition.selectedEventRefs;
+    const history = await postedHistory(req, issue.accountId);
+    if (history.error) throw serviceError(history.error, history.code, history.status);
+    if (selected.some(ref => history.used.has(refKey(ref)))) {
+      throw serviceError('A selected event has already been posted on this account.', 'COMPOSE_EVENT_ALREADY_POSTED', 422);
+    }
+    if (selected.some(ref => !context.candidates.some(candidate => refKey(candidate.ref) === refKey(ref)))) {
+      throw serviceError('A selected event was not in the worker context.', 'COMPOSE_EVENT_INELIGIBLE', 422);
+    }
+    const candidates = [];
+    for (const sourceTenantKey of new Set(selected.map(ref => ref.sourceTenantKey))) {
+      const read = await searchEditorialCatalogPage(req, sourceTenantKey, {
+        dateFrom: context.window.from, dateTo: context.window.to, dateToExclusive: context.window.toExclusive,
+        timezone: context.window.timezone, sort: 'date-asc', limit: 24,
+      }, {
+        now, ingestStatuses: context.policy?.catalogIngestStatuses || ['published'],
+        onlyEventIds: [...new Set(selected.filter(ref => ref.sourceTenantKey === sourceTenantKey).map(ref => ref.eventId))],
+      });
+      if (read.error || read.data.sources.some(source => source.status !== 'ok')) {
+        throw serviceError('Could not recheck selected catalog events.', 'COMPOSE_CATALOG_UNAVAILABLE', 409);
+      }
+      candidates.push(...read.data.candidates);
+    }
+    const document = buildCompositionDocument(result.composition, { ...context, lastPostedIssues: history.recent }, candidates);
+    const saved = await updateCarouselIssue({ ...req, user: { ...req.user, globalUserId: req.user?.globalUserId || actor } },
+      context.account.id, issueId, {
+        revision, document, socialCaption: result.composition.socialCaption, sources: selected,
+        curation: {
+          refs: selected,
+          snapshots: candidates.filter(candidate => selected.some(ref => refKey(ref) === refKey(candidate.ref))),
+        },
+      }, null, {
+        composition: JSON.parse(JSON.stringify(result.composition)),
+        agentRevision: revision + 1,
+      });
+    if (saved.error) {
+      if (saved.code === 'REVISION_CONFLICT') {
+        return finishReviseApply(req, {
+          externalJobId, actor, key, now, decision: 'conflict', issueId, requestId, summary: { conflicts: 1 },
+        });
+      }
+      throw serviceError(saved.error, saved.code, saved.status);
+    }
+    return finishReviseApply(req, {
+      externalJobId, actor, key, now, decision: 'revise', issueId, requestId, summary: { updates: 1 },
+    });
+  } catch (error) {
+    await completeComputeJobApply(req, {
+      externalJobId, actor, idempotencyKey: key, outcome: 'rejected',
+      errorCode: error.code || 'REVISE_APPLY_FAILED', errorMessage: error.message, recordAppliedAt: false, now,
+    });
     throw error;
   }
 }
@@ -617,6 +761,8 @@ const STATUS_BY_CODE = Object.freeze({
   COMPUTE_RESULT_TOO_LARGE: 413,
   CAROUSEL_MANUAL_SUBMIT_UNSUPPORTED: 409,
   COMPOSE_MANUAL_SUBMIT_UNSUPPORTED: 409,
+  REVISE_MANUAL_SUBMIT_UNSUPPORTED: 409,
+  REVISE_PREVIEW_UNSUPPORTED: 409,
   CAROUSEL_PREVIEW_UNSUPPORTED: 409,
   CAROUSEL_APPLY_UNSUPPORTED: 409,
   CAROUSEL_DOWNLOAD_UNSUPPORTED: 409,
@@ -648,6 +794,7 @@ module.exports = {
   cancelAdminComputeJob,
   retryAdminComputeJob,
   applyCarouselComposeJob,
+  applyCarouselReviseJob,
   createAdminCarouselArtifactDownload,
   handleAdminServiceError,
 };

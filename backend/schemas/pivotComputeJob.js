@@ -331,8 +331,9 @@ const pivotComputeJobSchema = new mongoose.Schema(
     lease: { type: leaseSchema, default: null },
     progress: { type: progressSchema, default: null },
     result: { type: storedResultSchema, default: null },
-    // Trusted context served to a compose worker; never supplied by its result.
+    // Trusted context served to a compose or revise worker; never supplied by its result.
     composeContext: { type: mongoose.Schema.Types.Mixed, default: null },
+    reviseContext: { type: mongoose.Schema.Types.Mixed, default: null },
     composeOutcome: {
       decision: { type: String, enum: ['compose', 'wait', 'needs-editor'] },
       reason: { type: String, maxlength: 1000 },
@@ -345,6 +346,12 @@ const pivotComputeJobSchema = new mongoose.Schema(
           message: 'A compose run creates at most three drafts.',
         },
       },
+    },
+    reviseOutcome: {
+      decision: { type: String, enum: ['revise', 'cannot-revise', 'conflict'] },
+      reason: { type: String, maxlength: 1000, default: null },
+      issueId: { type: mongoose.Schema.Types.ObjectId, default: null },
+      requestId: { type: mongoose.Schema.Types.ObjectId, default: null },
     },
     exportArtifacts: { type: exportArtifactsSchema, default: null },
     applicationAudit: { type: applicationAuditSchema, default: null },
@@ -374,6 +381,9 @@ pivotComputeJobSchema.pre('validate', function normalizeComputeJobFields() {
   }
   if (boundedByteLength(this.composeContext) > 2 * 1024 * 1024) {
     this.invalidate('composeContext', 'compose context exceeds 2 MiB');
+  }
+  if (boundedByteLength(this.reviseContext) > 2 * 1024 * 1024) {
+    this.invalidate('reviseContext', 'revise context exceeds 2 MiB');
   }
   if (this.result?.mode === 'embedded' && this.result.embedded != null) {
     if (boundedByteLength(this.result.embedded, MAX_EMBEDDED_RESULT_BYTES) > MAX_EMBEDDED_RESULT_BYTES) {

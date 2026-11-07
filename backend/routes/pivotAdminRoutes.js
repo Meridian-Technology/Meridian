@@ -36,6 +36,7 @@ const {
   listCarouselOptionSet,
   pickCarouselOption,
   approveCarouselIssue,
+  requestCarouselRevision,
   markCarouselIssuePosted,
   createEditableCopy,
 } = require('../services/pivotCarouselIssueService');
@@ -963,6 +964,20 @@ router.post(
     } catch (err) {
       logPivotRouteError('POST carousel issue approve', err, req);
       return res.status(500).json({ success: false, message: 'Unable to approve the issue.' });
+    }
+  },
+);
+
+router.post(
+  '/carousel-accounts/:accountId/issues/:issueId/request-revision',
+  verifyToken,
+  requirePlatformAdmin,
+  async (req, res) => {
+    try {
+      return sendDeckResult(res, await requestCarouselRevision(req, req.params.accountId, req.params.issueId, req.body));
+    } catch (err) {
+      logPivotRouteError('POST carousel issue request revision', err, req);
+      return res.status(500).json({ success: false, message: 'Unable to request a revision.' });
     }
   },
 );

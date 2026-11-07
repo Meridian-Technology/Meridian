@@ -14,6 +14,9 @@
     },
     {
       "$ref": "#/$defs/composeContext"
+    },
+    {
+      "$ref": "#/$defs/reviseContext"
     }
   ],
   "$defs": {
@@ -991,6 +994,265 @@
               }
             }
           }
+        }
+      }
+    },
+    "reviseContext": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "contractVersion",
+        "jobId",
+        "scheduleOccurrenceId",
+        "kind",
+        "cityKey",
+        "implementationRevision",
+        "contextVersion",
+        "snapshotAt",
+        "editorialAccountKey",
+        "issueId",
+        "revision",
+        "composition",
+        "socialCaption",
+        "revisionRequests",
+        "account",
+        "policy",
+        "window",
+        "candidates",
+        "curatedGroups",
+        "lastPostedIssues",
+        "editorialFeedback",
+        "coverage",
+        "templates",
+        "missingSignals",
+        "coverAssets"
+      ],
+      "properties": {
+        "contractVersion": {
+          "const": "1"
+        },
+        "jobId": {
+          "type": "string",
+          "minLength": 8,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9:_-]+$"
+        },
+        "scheduleOccurrenceId": {
+          "oneOf": [
+            {
+              "type": "string",
+              "pattern": "^sched:[a-z0-9-]+@[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:.-]+Z$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "kind": {
+          "const": "carousel-revise"
+        },
+        "cityKey": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9-]{0,62}$"
+        },
+        "implementationRevision": {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9@._+-]+$",
+          "maxLength": 128
+        },
+        "contextVersion": {
+          "type": "string",
+          "pattern": "^ctx:[a-zA-Z0-9._-]+$"
+        },
+        "snapshotAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "editorialAccountKey": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[a-z0-9][a-z0-9._-]{0,63}$"
+        },
+        "issueId": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{24}$"
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "composition": {
+          "type": "object"
+        },
+        "socialCaption": {
+          "type": "string",
+          "maxLength": 2200
+        },
+        "revisionRequests": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 20,
+          "items": {
+            "$ref": "#/$defs/reviseRequest"
+          }
+        },
+        "account": {
+          "$ref": "#/$defs/composeAccount"
+        },
+        "policy": {
+          "type": "object"
+        },
+        "window": {
+          "$ref": "#/$defs/composeWindow"
+        },
+        "candidates": {
+          "type": "array",
+          "maxItems": 60,
+          "items": {
+            "$ref": "#/$defs/composeCandidate"
+          }
+        },
+        "curatedGroups": {
+          "$ref": "#/$defs/composeCuratedGroups"
+        },
+        "lastPostedIssues": {
+          "type": "array",
+          "maxItems": 10,
+          "items": {
+            "$ref": "#/$defs/composePostedIssue"
+          }
+        },
+        "editorialFeedback": {
+          "$ref": "#/$defs/composeFeedback"
+        },
+        "coverage": {
+          "$ref": "#/$defs/composeCoverage"
+        },
+        "templates": {
+          "$ref": "#/$defs/composeTemplates"
+        },
+        "missingSignals": {
+          "type": "array",
+          "maxItems": 30,
+          "items": {
+            "type": "string",
+            "minLength": 0,
+            "maxLength": 500
+          }
+        },
+        "coverAssets": {
+          "type": "array",
+          "maxItems": 24,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "provider",
+              "photoId",
+              "src",
+              "alt",
+              "credit",
+              "photographer",
+              "photographerUrl",
+              "sourceUrl"
+            ],
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^unsplash:[a-zA-Z0-9_-]{1,100}$"
+              },
+              "provider": {
+                "const": "unsplash"
+              },
+              "photoId": {
+                "type": "string",
+                "pattern": "^[a-zA-Z0-9_-]{1,100}$"
+              },
+              "src": {
+                "type": "string",
+                "maxLength": 2048
+              },
+              "alt": {
+                "type": "string",
+                "maxLength": 255
+              },
+              "credit": {
+                "type": "string",
+                "maxLength": 1000
+              },
+              "photographer": {
+                "type": "string",
+                "maxLength": 255
+              },
+              "photographerUrl": {
+                "type": "string",
+                "maxLength": 2048
+              },
+              "sourceUrl": {
+                "type": "string",
+                "maxLength": 2048
+              }
+            }
+          }
+        }
+      }
+    },
+    "reviseRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "requester",
+        "time",
+        "revision",
+        "text",
+        "reason",
+        "current"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{24}$"
+        },
+        "requester": {
+          "oneOf": [
+            {
+              "type": "string",
+              "maxLength": 256
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "time": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "text": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2000
+        },
+        "reason": {
+          "oneOf": [
+            {
+              "type": "string",
+              "maxLength": 1000
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "current": {
+          "type": "boolean"
         }
       }
     },

@@ -9,13 +9,26 @@ const { createComputeJob, claimNextPendingJob, startComputeJob, submitComputeJob
 const { fetchJobContext, submitTerminalJobResult } = require('../../services/pivotComputeWorkerService');
 const { applyCarouselComposeJob, submitManualComputeResult } = require('../../services/pivotComputeAdminService');
 const { applyStoredComputeJob, previewStoredComputeJob } = require('../../services/pivotComputeResultApplyService');
-const { createCarouselAccount, createCarouselIssue, updateCarouselIssue,
-  markCarouselIssuePosted, getCarouselIssue } = require('../../services/pivotCarouselIssueService');
+const { createCarouselAccount, createCarouselIssue, createGeneratedCarouselIssue, updateCarouselIssue,
+  approveCarouselIssue, requestCarouselRevision, markCarouselIssuePosted, getCarouselIssue } = require('../../services/pivotCarouselIssueService');
 const { loadFixture, validateExecutionResult } = require('../../utilities/pivotAdminComputeJobContract');
 const { composeIssueId, composeOptionIssueId } = require('../../services/pivotCarouselCompositionService');
 const { walkElements } = require('../../services/pivotCarouselPresets');
 
 const PUBLICATION = '2026-10-12T23:00:00.000Z';
+const STORED_WINDOW = {
+  from: PUBLICATION, to: '2026-10-26T23:00:00.000Z', toExclusive: false,
+  timezone: 'America/Chicago', mode: 'upcoming', days: 14,
+};
+function studioDocument(ref) {
+  return { schemaVersion: 2, width: 1080, height: 1350, slides: [
+    { id: 'cover', role: 'cover', preset: { family: 'open-invitation', variation: 2 },
+      elements: [{ id: 'title', kind: 'text', role: 'cover-title', text: 'Draft headline',
+        frame: { x: 0, y: 0, width: 400, height: 80 } }] },
+    { id: 'event', role: 'event', source: ref, preset: { id: 'photo-note' },
+      elements: [{ id: 'copy', kind: 'text', text: 'Event copy', frame: { x: 0, y: 0, width: 400, height: 80 } }] },
+  ] };
+}
 const capability = { contractVersion: '1', implementationRevision: 'relay-worker@test', supportedContractVersions: ['1'], supportedKinds: ['carousel-compose'] };
 const workerCapability = { ...loadFixture('worker-capability-valid.json'), ...capability, workerId: 'compose-worker',
   capabilities: { firecrawl: false, nativeProviders: [], executionModes: ['artifact-only'] } };
@@ -95,7 +108,7 @@ describe('compose compute result apply with real persistence', () => {
   }
 
   test('compose creates one unapproved generated studio issue with its caption and never posts or approves it', async () => {
-    const { result, job } = await prepare();
+    const { result, job, context } = await prepare();
     expect((await findJobByExternalId(req, result.jobId)).status).toBe('review-required');
     const applied = await apply();
     expect(applied.job.status).toBe('completed');
@@ -106,7 +119,9 @@ describe('compose compute result apply with real persistence', () => {
     const issue = (await getCarouselIssue(req, account.id, applied.issueId)).data.issue;
     expect(issue.optionSetId).toBeUndefined();
     expect(issue).toMatchObject({ origin: 'agent-generated', reviewState: 'unapproved', revision: 1,
-      socialCaption: result.composition.socialCaption, approval: null, posting: null });
+      socialCaption: result.composition.socialCaption, approval: null, posting: null,
+      agentRevision: 1, hasEditsSinceAgent: false, contextWindow: context.window });
+    expect(issue.composition).toEqual(result.composition);
     expect(issue.postHistory).toEqual([]);
     expect(issue.document.slides.map(slide => slide.role)).toEqual(['cover', 'event', 'event', 'event']);
     expect(issue.document.slides.slice(1).map(slide => slide.preset.id)).toEqual(['photo-note', 'on-the-bill', 'in-the-room']);
@@ -155,7 +170,7 @@ describe('compose compute result apply with real persistence', () => {
   });
 
   test('three themed options become one unapproved set, and applying again keeps that set', async () => {
-    await prepare();
+    const { context } = await prepare();
     const themes = [
       { themeLabel: 'Jazz this weekend', rationale: 'Featured jazz shows that belong together.' },
       { themeLabel: 'Late downtown nights', rationale: 'A separate curated group of late shows.', curatedGroupId: 'ic:507f1f77bcf86cd799439011' },
@@ -185,7 +200,15 @@ describe('compose compute result apply with real persistence', () => {
         origin: 'agent-generated', reviewState: 'unapproved', revision: 1, approval: null, posting: null,
         optionSetId: 'job:compose-ic-001', optionIndex: index, themeLabel: theme.themeLabel,
         name: theme.themeLabel, socialCaption: `Option ${index} caption`,
+        agentRevision: 1, hasEditsSinceAgent: false, contextWindow: context.window,
       });
+      expect(issue.composition).toMatchObject({
+        themeLabel: theme.themeLabel,
+        rationale: theme.rationale,
+        socialCaption: `Option ${index} caption`,
+        ...(theme.curatedGroupId ? { curatedGroupId: theme.curatedGroupId } : {}),
+      });
+      expect(issue.composition.curatedGroupId).toBe(theme.curatedGroupId);
       expect(issue.postHistory).toEqual([]);
     }
     const again = await apply();
@@ -196,13 +219,25 @@ describe('compose compute result apply with real persistence', () => {
   });
 
   test('duplicate applies with different caller keys preserve the single issue and subsequent human edits', async () => {
-    await prepare(); const first = await apply();
-    expect((await updateCarouselIssue(req, account.id, first.issueId, { revision: 1, socialCaption: 'Human caption' })).error).toBeUndefined();
+    const { result, context } = await prepare(); const first = await apply();
+    const edited = await updateCarouselIssue(req, account.id, first.issueId, { revision: 1, socialCaption: 'Human caption' });
+    expect(edited.error).toBeUndefined();
+    expect(edited.data.issue).toMatchObject({
+      revision: 2, agentRevision: 1, hasEditsSinceAgent: true, socialCaption: 'Human caption',
+      contextWindow: context.window,
+    });
+    expect(edited.data.issue.composition).toEqual(result.composition);
     const again = await applyStoredComputeJob(req, 'job:compose-ic-001', { tenantKey: 'ic', idempotencyKey: 'different-caller-key' });
     expect(again.duplicate).toBe(true);
     const { PivotCarouselDeck } = getGlobalModels(req, 'PivotCarouselDeck');
     expect(await PivotCarouselDeck.countDocuments({ accountId: account.id })).toBe(1);
-    expect((await getCarouselIssue(req, account.id, first.issueId)).data.issue).toMatchObject({ revision: 2, socialCaption: 'Human caption' });
+    const kept = (await getCarouselIssue(req, account.id, first.issueId)).data.issue;
+    expect(kept).toMatchObject({ revision: 2, socialCaption: 'Human caption', agentRevision: 1, hasEditsSinceAgent: true });
+    const manual = (await createCarouselIssue(req, account.id, { name: 'Manual', document: kept.document })).data.issue;
+    expect(manual.composition).toBeUndefined();
+    expect(manual.contextWindow).toBeUndefined();
+    expect(manual.agentRevision).toBeUndefined();
+    expect(manual.hasEditsSinceAgent).toBeUndefined();
   });
 
   test('the worker submission path applies compose automatically, including a retried outbox submission', async () => {
@@ -310,6 +345,119 @@ describe('compose compute result apply with real persistence', () => {
     const applied = await apply(); const issue = (await getCarouselIssue(req, account.id, applied.issueId)).data.issue;
     const assets = []; walkElements(issue.document.slides[0].elements, node => { if (node.asset?.provider === 'unsplash') assets.push(node.asset); });
     expect(assets[0]).toMatchObject(saved);
+  });
+
+  async function queueRevision() {
+    const { Event } = getModels({ db: await connectToDatabase('ic') }, 'Event');
+    const [event] = await Event.find().sort({ name: 1 });
+    const created = await createGeneratedCarouselIssue(req, account.id, {
+      name: 'Draft', document: studioDocument({ sourceTenantKey: 'ic', eventId: String(event._id) }),
+      socialCaption: 'Before caption',
+    }, { composition: { socialCaption: 'Before caption' }, contextWindow: STORED_WINDOW, agentRevision: 1 });
+    expect(created.error).toBeUndefined();
+    const issue = created.data.issue;
+    expect((await approveCarouselIssue(req, account.id, issue.id, { revision: 1 })).error).toBeUndefined();
+    const requested = await requestCarouselRevision(req, account.id, issue.id, { revision: 1, text: 'Swap the cover line.' });
+    expect(requested.error).toBeUndefined();
+    const job = requested.data.job;
+    const now = new Date();
+    const reviseCapability = { contractVersion: '1', implementationRevision: 'relay-worker@test',
+      supportedContractVersions: ['1'], supportedKinds: ['carousel-revise'] };
+    const claim = await claimNextPendingJob(req, { externalJobId: job.externalJobId, workerId: 'revise-worker', capability: reviseCapability, now });
+    const { context } = await fetchJobContext(req, { externalJobId: job.externalJobId, workerId: 'revise-worker',
+      leaseToken: claim.job.lease.token, now });
+    await startComputeJob(req, { externalJobId: job.externalJobId, workerId: 'revise-worker', leaseToken: claim.job.lease.token, now });
+    return { issue, job, context, request: requested.data.request, now };
+  }
+  function reviseResult(job, context, { decision = 'revise' } = {}) {
+    const result = loadFixture('result-compose-valid.json');
+    delete result.editorialAccountKey;
+    Object.assign(result, {
+      kind: 'carousel-revise', decision, jobId: job.externalJobId, cityKey: job.cityKey,
+      basedOnContextVersion: context.contextVersion, issueId: job.options.issueId, requestId: job.options.requestId,
+      idempotencyKey: `idem:revise:${job.options.requestId}`,
+    });
+    if (decision === 'revise') {
+      const selected = context.candidates.slice(0, 3).map(candidate => candidate.ref);
+      result.composition.socialCaption = 'Revised caption';
+      result.composition.cover.headline = 'Revised headline';
+      result.composition.selectedEventRefs = selected;
+      result.composition.cover.assetRef = { kind: 'event-poster', eventRef: selected[0] };
+      result.composition.eventSlides = selected.map((ref, index) => ({
+        eventRef: ref, blurb: `Revised blurb ${index}`, presetId: ['photo-note', 'on-the-bill', 'in-the-room'][index],
+        assetRef: { kind: 'event-poster', eventRef: ref }, crop: { focalX: 0.4, focalY: 0.6, scale: 1.2 },
+      }));
+    } else {
+      delete result.composition;
+      result.reason = 'The cover line is already what they asked for.';
+    }
+    expect(validateExecutionResult(result)).toEqual({ valid: true });
+    return result;
+  }
+  const applyRevision = externalJobId => applyStoredComputeJob(req, externalJobId, { tenantKey: 'ic', actor: 'editor' });
+
+  test('revise rebuilds the approved draft once and a second apply writes nothing', async () => {
+    const { issue, job, context } = await queueRevision();
+    const result = reviseResult(job, context);
+    await submitComputeJobResult(req, { externalJobId: job.externalJobId, workerId: 'revise-worker',
+      leaseToken: (await findJobByExternalId(req, job.externalJobId)).lease.token, result, requiresReview: false, now: new Date() });
+    const applied = await applyRevision(job.externalJobId);
+    expect(applied).toMatchObject({ duplicate: false, decision: 'revise', issueId: issue.id });
+    expect(applied.job).toMatchObject({ status: 'completed', reviseOutcome: { decision: 'revise' } });
+    const saved = (await getCarouselIssue(req, account.id, issue.id)).data.issue;
+    expect(saved).toMatchObject({
+      revision: 2, agentRevision: 2, hasEditsSinceAgent: false, reviewState: 'unapproved', approval: null,
+      socialCaption: 'Revised caption', contextWindow: STORED_WINDOW,
+    });
+    expect(saved.composition).toMatchObject({ socialCaption: 'Revised caption', cover: { headline: 'Revised headline' } });
+    expect(saved.document.slides.map(slide => slide.role)).toEqual(['cover', 'event', 'event', 'event']);
+    const again = await applyRevision(job.externalJobId);
+    expect(again).toMatchObject({ duplicate: true, decision: 'revise', issueId: issue.id });
+    const kept = (await getCarouselIssue(req, account.id, issue.id)).data.issue;
+    expect(kept).toMatchObject({ revision: 2, editorialVersion: saved.editorialVersion, socialCaption: 'Revised caption', agentRevision: 2 });
+    expect(kept.document).toEqual(saved.document);
+  });
+
+  test('a draft that moved on or was edited by hand stores a conflict and keeps the hand edit', async () => {
+    const { issue, job, context } = await queueRevision();
+    await submitComputeJobResult(req, { externalJobId: job.externalJobId, workerId: 'revise-worker',
+      leaseToken: (await findJobByExternalId(req, job.externalJobId)).lease.token,
+      result: reviseResult(job, context), requiresReview: false, now: new Date() });
+    const edited = await updateCarouselIssue(req, account.id, issue.id, { revision: 1, socialCaption: 'Hand edited caption' });
+    expect(edited.data.issue).toMatchObject({ revision: 2, agentRevision: 1, hasEditsSinceAgent: true, socialCaption: 'Hand edited caption' });
+    const applied = await applyRevision(job.externalJobId);
+    expect(applied).toMatchObject({ duplicate: false, decision: 'conflict', issueId: issue.id });
+    expect(applied.job.reviseOutcome.decision).toBe('conflict');
+    const after = (await getCarouselIssue(req, account.id, issue.id)).data.issue;
+    expect(after).toMatchObject({
+      revision: 2, agentRevision: 1, hasEditsSinceAgent: true, socialCaption: 'Hand edited caption',
+      composition: { socialCaption: 'Before caption' }, document: edited.data.issue.document,
+    });
+    const again = await applyRevision(job.externalJobId);
+    expect(again).toMatchObject({ duplicate: true, decision: 'conflict' });
+    const kept = (await getCarouselIssue(req, account.id, issue.id)).data.issue;
+    expect(kept).toMatchObject({ revision: 2, editorialVersion: after.editorialVersion, socialCaption: 'Hand edited caption' });
+  });
+
+  test('cannot-revise stores the reason on the request and a second apply writes nothing', async () => {
+    const { issue, job, context, request } = await queueRevision();
+    const result = reviseResult(job, context, { decision: 'cannot-revise' });
+    await submitComputeJobResult(req, { externalJobId: job.externalJobId, workerId: 'revise-worker',
+      leaseToken: (await findJobByExternalId(req, job.externalJobId)).lease.token, result, requiresReview: false, now: new Date() });
+    const applied = await applyRevision(job.externalJobId);
+    expect(applied).toMatchObject({ duplicate: false, decision: 'cannot-revise', issueId: issue.id });
+    const after = (await getCarouselIssue(req, account.id, issue.id)).data.issue;
+    expect(after).toMatchObject({
+      revision: 1, agentRevision: 1, hasEditsSinceAgent: false, reviewState: 'approved',
+      socialCaption: 'Before caption', composition: { socialCaption: 'Before caption' },
+    });
+    expect(after.document.slides).toHaveLength(2);
+    expect(after.revisionRequests.find(row => row.id === request.id).reason).toBe(result.reason);
+    const again = await applyRevision(job.externalJobId);
+    expect(again).toMatchObject({ duplicate: true, decision: 'cannot-revise' });
+    const kept = (await getCarouselIssue(req, account.id, issue.id)).data.issue;
+    expect(kept).toMatchObject({ revision: 1, editorialVersion: after.editorialVersion, socialCaption: 'Before caption' });
+    expect(kept.revisionRequests.find(row => row.id === request.id).reason).toBe(result.reason);
   });
 
   test('rejects mismatched accounts, missing captured contexts, wrong tenants and contextless manual uploads', async () => {

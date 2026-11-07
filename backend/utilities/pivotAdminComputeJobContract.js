@@ -8,6 +8,7 @@ const COMPUTE_JOB_KINDS = Object.freeze([
   'city-curation-refresh',
   'carousel-export',
   'carousel-compose',
+  'carousel-revise',
 ]);
 
 const CAROUSEL_EXPORT_LIMITS = Object.freeze({
@@ -354,7 +355,9 @@ function validateJobRequest(value) {
 }
 
 function validateContextSnapshot(value) {
-  return validateWithSchema(SCHEMAS.contextSnapshot, value, { importable: value?.kind === 'carousel-compose' });
+  return validateWithSchema(SCHEMAS.contextSnapshot, value, {
+    importable: value?.kind === 'carousel-compose' || value?.kind === 'carousel-revise',
+  });
 }
 
 function validateComposeComposition(composition, path) {
@@ -397,10 +400,16 @@ function validateComposeResult(value) {
   return errors.length ? { valid: false, errors } : { valid: true };
 }
 
+function validateReviseResult(value) {
+  if (value.decision !== 'revise') return { valid: true };
+  return validateComposeResult({ ...value, decision: 'compose' });
+}
+
 function validateExecutionResult(value) {
   const validation = validateWithSchema(SCHEMAS.executionResult, value, { importable: true });
   if (!validation.valid) return validation;
   if (value?.kind === 'carousel-compose') return validateComposeResult(value);
+  if (value?.kind === 'carousel-revise') return validateReviseResult(value);
   if (value?.kind !== 'carousel-export') return validation;
 
   const errors = [];

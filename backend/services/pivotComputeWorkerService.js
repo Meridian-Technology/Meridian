@@ -106,6 +106,12 @@ async function buildAuthorizedContext(req, job, workerId) {
     if (result?.error) throw serviceError(result.error, result.code || 'COMPOSE_CONTEXT_FAILED', result.status || 500);
     return result.data.snapshot;
   }
+  if (job.kind === 'carousel-revise') {
+    const { buildCarouselReviseContextSnapshot } = require('./pivotCarouselComposeContextService');
+    const result = await buildCarouselReviseContextSnapshot(req, { job });
+    if (result?.error) throw serviceError(result.error, result.code || 'REVISE_CONTEXT_FAILED', result.status || 500);
+    return result.data.snapshot;
+  }
   throw serviceError(`Unsupported compute job kind: ${job.kind}`, 'UNSUPPORTED_COMPUTE_JOB_KIND');
 }
 
@@ -233,7 +239,9 @@ async function fetchJobContext(req, {
   assertLeaseBinding({ job, workerId, leaseToken, requireActive: true, now });
   const context = await buildAuthorizedContext(req, job, workerId);
   const updatedJob = await updateComputeJobContextVersion(req, job.externalJobId, context.contextVersion,
-    job.kind === 'carousel-compose' ? { composeContext: context, leaseToken } : {});
+    job.kind === 'carousel-compose' ? { composeContext: context, leaseToken }
+      : job.kind === 'carousel-revise' ? { reviseContext: context, leaseToken }
+        : {});
   return { job: updatedJob, context };
 }
 
@@ -322,6 +330,10 @@ async function submitTerminalJobResult(req, {
   if (job.kind === 'carousel-compose' && job.result?.embedded?.outcome === 'completed') {
     const { applyCarouselComposeJob } = require('./pivotComputeAdminService');
     return applyCarouselComposeJob(req, externalJobId, { tenantKey: job.tenantKey, actor: `worker:${workerId}`, now });
+  }
+  if (job.kind === 'carousel-revise' && job.result?.embedded?.outcome === 'completed') {
+    const { applyCarouselReviseJob } = require('./pivotComputeAdminService');
+    return applyCarouselReviseJob(req, externalJobId, { tenantKey: job.tenantKey, actor: `worker:${workerId}`, now });
   }
   return { job };
 }

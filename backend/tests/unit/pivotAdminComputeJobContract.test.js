@@ -24,6 +24,7 @@ describe('Pivot admin compute job contracts v1 (Phase 1, Step 1.2)', () => {
       'city-curation-refresh',
       'carousel-export',
       'carousel-compose',
+      'carousel-revise',
     ]);
   });
 

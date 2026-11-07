@@ -1771,6 +1771,9 @@ async function previewStoredComputeJob(req, externalJobId, options = {}) {
   if (job.kind === 'carousel-compose') {
     throw serviceError('Review generated compose issues in the carousel editor.', 'COMPOSE_PREVIEW_UNSUPPORTED', 409);
   }
+  if (job.kind === 'carousel-revise') {
+    throw serviceError('Review a revised carousel issue in the carousel editor.', 'REVISE_PREVIEW_UNSUPPORTED', 409);
+  }
   if (job.kind === 'carousel-export') {
     throw serviceError('Carousel export jobs do not support preview.', 'CAROUSEL_PREVIEW_UNSUPPORTED', 409);
   }
@@ -1796,6 +1799,9 @@ async function applyStoredComputeJob(req, externalJobId, {
   if (!job) throw serviceError('Compute job not found.', 'COMPUTE_JOB_NOT_FOUND', 404);
   if (job.kind === 'carousel-compose') {
     return require('./pivotComputeAdminService').applyCarouselComposeJob(req, externalJobId, { tenantKey, actor, now });
+  }
+  if (job.kind === 'carousel-revise') {
+    return require('./pivotComputeAdminService').applyCarouselReviseJob(req, externalJobId, { tenantKey, actor, now });
   }
   if (job.kind === 'carousel-export') {
     throw serviceError('Carousel export jobs do not support apply.', 'CAROUSEL_APPLY_UNSUPPORTED', 409);
