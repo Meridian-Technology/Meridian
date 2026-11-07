@@ -389,10 +389,8 @@ describe('unreleaseBatch', () => {
         'customFields.pivot.batchWeek': BATCH_WEEK,
         'customFields.pivot.ingestStatus': 'published',
       }),
-      {
-        $set: { 'customFields.pivot.ingestStatus': 'staged' },
-        $unset: { 'customFields.pivot.semanticText': '', 'customFields.pivot.semanticTextVersion': '' },
-      },
+      // Staged events keep their related-search text.
+      { $set: { 'customFields.pivot.ingestStatus': 'staged' } },
     );
     expect(PivotBatch.findOneAndUpdate).toHaveBeenCalledWith(
       { batchWeek: BATCH_WEEK },

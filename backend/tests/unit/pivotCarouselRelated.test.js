@@ -7,7 +7,7 @@ const getModels = require('../../services/getModelService');
 const { loadAccount } = require('../../services/pivotCarouselIssueService');
 const {
   relatedPipeline, chooseNeighbors, findRelatedCurationEvents, orderGroupSeeds, seedSignal,
-  findSuggestedCurationGroups,
+  findSuggestedCurationGroups, findComposeCuratedGroups,
 } = require('../../services/pivotCarouselRelatedService');
 const { setJustGoSemanticText, refreshJustGoSemanticText } = require('../../utilities/justGoSemanticText');
 
@@ -24,12 +24,15 @@ beforeEach(() => {
   loadAccount.mockResolvedValue({ account: { sourceTenantKeys: ['sf'] } });
 });
 
-test('materializes only published public event text', () => {
+test('materializes public event text for published and staged events, never drafts', () => {
   const published = event(1, 'Jazz Night', ['jazz']);
   setJustGoSemanticText(published);
   expect(published.customFields.pivot.semanticText).toContain('Title: Jazz Night');
   expect(published.customFields.pivot.semanticText).toContain('Tags: jazz');
   expect(published.customFields.pivot.semanticText).not.toContain(String(published._id));
+  published.customFields.pivot.ingestStatus = 'staged';
+  setJustGoSemanticText(published);
+  expect(published.customFields.pivot.semanticText).toContain('Title: Jazz Night');
   published.customFields.pivot.ingestStatus = 'draft';
   setJustGoSemanticText(published);
   expect(published.customFields.pivot.semanticText).toBeUndefined();
@@ -39,14 +42,17 @@ test('refreshes stored text after in-place status changes', async () => {
   const published = event(1, 'Jazz Night', ['jazz']);
   const staged = event(2, 'Jazz Brunch');
   staged.customFields.pivot.ingestStatus = 'staged';
-  const lean = jest.fn().mockResolvedValue([published, staged]);
+  const draft = event(3, 'Jazz Supper');
+  draft.customFields.pivot.ingestStatus = 'draft';
+  const lean = jest.fn().mockResolvedValue([published, staged, draft]);
   const Event = { find: jest.fn(() => ({ lean })), bulkWrite: jest.fn() };
-  await expect(refreshJustGoSemanticText(Event, [id(1), id(2)])).resolves.toBe(2);
-  expect(Event.find.mock.calls[0][0]).toEqual({ _id: { $in: [id(1), id(2)] } });
-  const [first, second] = Event.bulkWrite.mock.calls[0][0].map((op) => op.updateOne);
+  await expect(refreshJustGoSemanticText(Event, [id(1), id(2), id(3)])).resolves.toBe(3);
+  expect(Event.find.mock.calls[0][0]).toEqual({ _id: { $in: [id(1), id(2), id(3)] } });
+  const [first, second, third] = Event.bulkWrite.mock.calls[0][0].map((op) => op.updateOne);
   expect(first.filter._id).toBe(id(1));
   expect(first.update.$set['customFields.pivot.semanticText']).toContain('Title: Jazz Night');
-  expect(second.update).toEqual({ $unset: {
+  expect(second.update.$set['customFields.pivot.semanticText']).toContain('Title: Jazz Brunch');
+  expect(third.update).toEqual({ $unset: {
     'customFields.pivot.semanticText': '', 'customFields.pivot.semanticTextVersion': '',
   } });
   await expect(refreshJustGoSemanticText(Event, [])).resolves.toBe(0);
@@ -168,4 +174,73 @@ test('builds four disjoint groups with the seed included, using eligible events'
   expect(result.data.groups[0].candidates[0].ref.eventId).toBe(seeds[0]._id);
   expect(Event.find.mock.calls[0][0].visibility).toBe('public');
   expect(Event.find.mock.calls[0][0].start_time.$gte).toEqual(now);
+});
+
+describe('compose curated groups', () => {
+  const candidate = (row, extra = {}) => ({
+    ref: { sourceTenantKey: 'sf', eventId: row._id },
+    snapshot: { name: row.name, startTime: row.start_time.toISOString(), tags: row.customFields.pivot.tags,
+      featured: row.customFields.pivot.featured === true, rankingOverride: row.customFields.pivot.rankingOverride || null,
+      publication: row.customFields.pivot.ingestStatus },
+    panelSignals: { intentStats: { interested: 0, registered: 0 } },
+    ...extra,
+  });
+
+  test('is off with the related-event flag and touches no catalog', async () => {
+    await expect(findComposeCuratedGroups([candidate(event(1, 'Seed'))])).resolves.toEqual({ data: { status: 'disabled', groups: [] } });
+    expect(getModels).not.toHaveBeenCalled();
+  });
+
+  test('asks Atlas for published and staged neighbors and keeps only candidate members', async () => {
+    const seed = event(1, 'Featured Jazz', ['jazz', 'live']);
+    seed.customFields.pivot.featured = true;
+    const staged = event(2, 'Staged Trio', ['jazz']);
+    staged.customFields.pivot.ingestStatus = 'staged';
+    const other = event(3, 'Basement Jazz', ['jazz']);
+    const outsideWindow = id(9);
+    const Event = {
+      find: jest.fn(() => ({ lean: async () => [seed] })),
+      aggregate: jest.fn(async () => [
+        { _id: seed._id, score: 0.99 }, { _id: outsideWindow, score: 0.95 },
+        { _id: staged._id, score: 0.9 }, { _id: other._id, score: 0.8 },
+      ]),
+    };
+    getModels.mockReturnValue({ Event });
+    const result = await findComposeCuratedGroups([seed, staged, other].map((row) => candidate(row)),
+      { enabled: true, statuses: ['published', 'staged'], minMembers: 3, maxMembers: 5 });
+    expect(Event.aggregate.mock.calls[0][0][0].$vectorSearch).toMatchObject({
+      filter: { 'customFields.pivot.ingestStatus': { $in: ['published', 'staged'] } }, limit: 150, numCandidates: 1500,
+    });
+    expect(result.data.status).toBe('ok');
+    expect(result.data.groups).toEqual([{
+      id: `sf:${seed._id}`, label: 'jazz', signal: { kind: 'featured', label: 'Featured' },
+      seed: { sourceTenantKey: 'sf', eventId: seed._id },
+      members: [seed, staged, other].map((row) => ({ sourceTenantKey: 'sf', eventId: row._id })),
+    }]);
+  });
+
+  test('drops groups smaller than an issue and labels plain past seeds as in-window', async () => {
+    const rows = [1, 2, 3, 4].map((n) => event(n, `Event ${n}`));
+    const Event = {
+      find: jest.fn(() => ({ lean: async () => rows })),
+      // Seed 1 finds only one neighbor; seed 2 finds two once seed 1's group is rejected.
+      aggregate: jest.fn(async (pipeline) => (pipeline[0].$vectorSearch.query.text.includes('Title: Event 1')
+        ? [{ _id: rows[1]._id, score: 0.9 }]
+        : [{ _id: rows[2]._id, score: 0.9 }, { _id: rows[3]._id, score: 0.8 }])),
+    };
+    getModels.mockReturnValue({ Event });
+    const result = await findComposeCuratedGroups(rows.map((row) => candidate(row)), { enabled: true, minMembers: 3 });
+    expect(result.data.groups).toHaveLength(1);
+    expect(result.data.groups[0].signal).toEqual({ kind: 'window', label: 'In window' });
+    expect(result.data.groups[0].members).toHaveLength(3);
+  });
+
+  test('reports an unavailable index without failing', async () => {
+    const seed = event(1, 'Seed');
+    getModels.mockReturnValue({ Event: {
+      find: () => ({ lean: async () => [seed] }),
+      aggregate: async () => { throw new Error('missing index'); },
+    } });
+    await expect(findComposeCuratedGroups([candidate(seed)], { enabled: true })).resolves.toEqual({ data: { status: 'unavailable', groups: [] } });
+  });
 });

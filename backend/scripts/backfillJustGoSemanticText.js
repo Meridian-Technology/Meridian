@@ -5,7 +5,7 @@
  */
 require('dotenv').config();
 const { connectToDatabase } = require('../connectionsManager');
-const { buildJustGoSemanticText } = require('../utilities/justGoSemanticText');
+const { buildJustGoSemanticText, SEMANTIC_TEXT_STATUSES } = require('../utilities/justGoSemanticText');
 const { JUST_GO_EVENT_DOCUMENT_VERSION } = require('../utilities/justGoEventDocument');
 
 async function main() {
@@ -22,7 +22,7 @@ async function main() {
   await db.asPromise();
   const collection = db.collection('events');
   const cursor = collection.find({
-    'customFields.pivot.ingestStatus': 'published',
+    'customFields.pivot.ingestStatus': { $in: SEMANTIC_TEXT_STATUSES },
     isDeleted: { $ne: true },
   }, {
     projection: { _id: 1, name: 1, description: 1, type: 1, richLocation: 1, start_time: 1, end_time: 1, 'customFields.pivot': 1 },
@@ -38,7 +38,7 @@ async function main() {
     changed += 1;
     if (apply) {
       batch.push({ updateOne: {
-        filter: { _id: event._id, 'customFields.pivot.ingestStatus': 'published' },
+        filter: { _id: event._id, 'customFields.pivot.ingestStatus': { $in: SEMANTIC_TEXT_STATUSES } },
         update: { $set: {
           'customFields.pivot.semanticText': text,
           'customFields.pivot.semanticTextVersion': JUST_GO_EVENT_DOCUMENT_VERSION,

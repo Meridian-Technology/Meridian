@@ -391,6 +391,9 @@ function buildCurationMongoQuery(spec, { now = new Date(), usedEventIds = [] } =
 
   if (spec.publication === 'inspect-unreleased') {
     query['customFields.pivot.ingestStatus'] = { $in: ['draft', 'staged', 'published'] };
+  } else if (spec.ingestStatuses?.length) {
+    // Internal only (compose): parseCurationQuery never sets it from a request.
+    query['customFields.pivot.ingestStatus'] = { $in: [...spec.ingestStatuses] };
   } else {
     query['customFields.pivot.ingestStatus'] = 'published';
   }

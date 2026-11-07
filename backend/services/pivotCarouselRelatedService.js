@@ -5,7 +5,7 @@ const getModels = require('./getModelService');
 const { getTenantByKey } = require('./tenantConfigService');
 const { loadAccount } = require('./pivotCarouselIssueService');
 const { parseCurationQuery, buildCurationMongoQuery, serializeCurationCandidate } = require('./pivotCarouselCurationQuery');
-const { buildJustGoSemanticText } = require('../utilities/justGoSemanticText');
+const { buildJustGoSemanticText, SEMANTIC_TEXT_PROJECTION } = require('../utilities/justGoSemanticText');
 const { loadIntentStatsByEventId } = require('./pivotLabEventsService');
 
 const INDEX_NAME = 'just_go_event_autoembed_v1';
@@ -16,15 +16,19 @@ const GROUP_LIMIT = 4;
 const SEED_SCAN_LIMIT = 250;
 const SEED_ATTEMPT_LIMIT = 16;
 
-function relatedPipeline(text) {
+// Compose post-filters hits to its windowed candidates, so it asks for a deeper neighborhood.
+const COMPOSE_FETCH_LIMIT = 150;
+const COMPOSE_NUM_CANDIDATES = 1500;
+
+function relatedPipeline(text, { statuses = ['published'], limit = FETCH_LIMIT, numCandidates = 1200 } = {}) {
   return [
     { $vectorSearch: {
       index: INDEX_NAME,
       path: TEXT_PATH,
       query: { text },
-      filter: { 'customFields.pivot.ingestStatus': 'published' },
-      numCandidates: 1200,
-      limit: FETCH_LIMIT,
+      filter: { 'customFields.pivot.ingestStatus': statuses.length === 1 ? statuses[0] : { $in: [...statuses] } },
+      numCandidates,
+      limit,
     } },
     { $project: { _id: 1, score: { $meta: 'vectorSearchScore' } } },
   ];
@@ -238,8 +242,89 @@ async function findSuggestedGroupsForSources(req, sourceTenantKeys, options = {}
   return { data: { groups, sources } };
 }
 
+function candidateSeed(candidate) {
+  const stats = candidate.panelSignals?.intentStats || {};
+  const interestCount = (stats.interested || 0) + (stats.registered || 0);
+  const signal = seedSignal({ customFields: { pivot: {
+    featured: candidate.snapshot?.featured, rankingOverride: candidate.snapshot?.rankingOverride,
+  } } }, interestCount);
+  return {
+    tenantKey: candidate.ref.sourceTenantKey,
+    // orderGroupSeeds and chooseNeighbors read these event fields.
+    event: { _id: candidate.ref.eventId, name: candidate.snapshot?.name, start_time: candidate.snapshot?.startTime },
+    interestCount,
+    // A compose window may be in the past, so a seed with no other signal is just in the window.
+    signal: signal.kind === 'upcoming' ? { kind: 'window', label: 'In window', rank: signal.rank } : signal,
+    candidate,
+  };
+}
+
+/** Curated groups over a compose context's candidates: same seeds and Atlas neighbors as the
+ * curator's groups, but members are only those candidates, so every group is pickable as-is.
+ * Never fails the compose context; an unavailable index reports a status and no groups.
+ */
+async function findComposeCuratedGroups(candidates, options = {}) {
+  if (relatedDisabled(options)) return { data: { status: 'disabled', groups: [] } };
+  const statuses = options.statuses || ['published'];
+  const minMembers = options.minMembers || 3;
+  const maxMembers = options.maxMembers || RESULT_LIMIT;
+  const byTenant = new Map();
+  for (const candidate of candidates) {
+    const key = candidate.ref.sourceTenantKey;
+    if (!byTenant.has(key)) byTenant.set(key, []);
+    byTenant.get(key).push(candidate);
+  }
+  const seeds = orderGroupSeeds(candidates.map(candidateSeed)).slice(0, SEED_ATTEMPT_LIMIT);
+  const models = new Map();
+  const seedDocs = new Map();
+  for (const tenantKey of new Set(seeds.map((seed) => seed.tenantKey))) {
+    const db = await connectToDatabase(tenantKey);
+    const { Event } = getModels({ db }, 'Event');
+    models.set(tenantKey, Event);
+    const ids = seeds.filter((seed) => seed.tenantKey === tenantKey).map((seed) => seed.event._id);
+    const docs = await Event.find({ _id: { $in: ids } }, SEMANTIC_TEXT_PROJECTION).lean();
+    docs.forEach((doc) => seedDocs.set(`${tenantKey}:${doc._id}`, doc));
+  }
+
+  const groups = [];
+  const used = new Set();
+  for (const seed of seeds) {
+    if (groups.length === GROUP_LIMIT) break;
+    const seedKey = `${seed.tenantKey}:${seed.event._id}`;
+    if (used.has(seedKey)) continue;
+    const doc = seedDocs.get(seedKey);
+    const text = doc ? buildJustGoSemanticText(doc) : '';
+    if (!text) continue;
+    let hits;
+    try {
+      hits = await models.get(seed.tenantKey).aggregate(relatedPipeline(text, {
+        statuses, limit: COMPOSE_FETCH_LIMIT, numCandidates: COMPOSE_NUM_CANDIDATES,
+      }));
+    } catch (error) {
+      return { data: { status: 'unavailable', groups: [] } };
+    }
+    const pool = byTenant.get(seed.tenantKey)
+      .filter((candidate) => !used.has(`${candidate.ref.sourceTenantKey}:${candidate.ref.eventId}`))
+      .map(candidateSeed);
+    const neighbors = chooseNeighbors(hits, pool.map((row) => row.event), seed.event, maxMembers - 1);
+    if (neighbors.length + 1 < minMembers) continue;
+    const members = [seed.candidate, ...neighbors.map(({ event }) => pool.find((row) => row.event === event).candidate)];
+    members.forEach((candidate) => used.add(`${candidate.ref.sourceTenantKey}:${candidate.ref.eventId}`));
+    const seedTags = new Set(doc.customFields?.pivot?.tags || []);
+    const sharedTags = [...seedTags].filter((tag) => members.slice(1).some((candidate) => candidate.snapshot?.tags?.includes(tag)));
+    groups.push({
+      id: seedKey,
+      label: (sharedTags.length ? sharedTags.slice(0, 2).join(' + ') : `More like ${seed.event.name}`).slice(0, 300),
+      signal: { kind: seed.signal.kind, label: seed.signal.label },
+      seed: seed.candidate.ref,
+      members: members.map((candidate) => candidate.ref),
+    });
+  }
+  return { data: { status: 'ok', groups } };
+}
+
 module.exports = {
   INDEX_NAME, TEXT_PATH, relatedPipeline, chooseNeighbors, findRelatedCurationEvents,
   seedSignal, orderGroupSeeds, findSuggestedCurationGroups,
-  findRelatedForSources, findSuggestedGroupsForSources,
+  findRelatedForSources, findSuggestedGroupsForSources, findComposeCuratedGroups,
 };

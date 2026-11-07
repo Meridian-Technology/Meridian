@@ -908,6 +908,9 @@
             "$ref": "#/$defs/composeCandidate"
           }
         },
+        "curatedGroups": {
+          "$ref": "#/$defs/composeCuratedGroups"
+        },
         "lastPostedIssues": {
           "type": "array",
           "maxItems": 10,
@@ -1172,6 +1175,87 @@
         },
         "inspectUnreleased": {
           "const": false
+        }
+      }
+    },
+    "composeCuratedGroups": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "explanation",
+        "groups"
+      ],
+      "properties": {
+        "status": {
+          "enum": [
+            "ok",
+            "disabled",
+            "unavailable"
+          ]
+        },
+        "explanation": {
+          "type": "string",
+          "maxLength": 500
+        },
+        "groups": {
+          "type": "array",
+          "maxItems": 4,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "label",
+              "signal",
+              "seed",
+              "members"
+            ],
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              },
+              "label": {
+                "type": "string",
+                "maxLength": 300
+              },
+              "signal": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "kind",
+                  "label"
+                ],
+                "properties": {
+                  "kind": {
+                    "enum": [
+                      "featured",
+                      "promoted",
+                      "interest",
+                      "window"
+                    ]
+                  },
+                  "label": {
+                    "type": "string",
+                    "maxLength": 100
+                  }
+                }
+              },
+              "seed": {
+                "$ref": "#/$defs/composeEventRef"
+              },
+              "members": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 5,
+                "items": {
+                  "$ref": "#/$defs/composeEventRef"
+                }
+              }
+            }
+          }
         }
       }
     },

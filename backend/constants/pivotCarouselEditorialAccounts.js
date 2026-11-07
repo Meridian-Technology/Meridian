@@ -24,6 +24,8 @@ const COMPOSE_POLICY = Object.freeze({
   coverImageKinds: Object.freeze(['event-poster', 'unsplash']),
   eventImageKind: 'event-poster', preferDifferentCover: true,
   repeatedCoverNeedsReason: true, captionRequired: true, browsingAllowed: false,
+  // Staged events are queued for the next batch release; drafts never qualify.
+  catalogIngestStatuses: Object.freeze(['published', 'staged']),
 });
 
 function editorialAccountFor(key) {

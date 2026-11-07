@@ -12,6 +12,7 @@ const { CONTRACT_VERSION, validateContextSnapshot } = require('../utilities/pivo
 const { resolveImplementationRevision } = require('../utilities/pivotComputeContextVersion');
 const { COVER_FAMILIES, EVENT_PRESETS, BACK_PRESETS, titleOf } = require('./pivotCarouselPresets');
 const { listComposeCoverAssets } = require('./pivotCarouselCompositionService');
+const { findComposeCuratedGroups } = require('./pivotCarouselRelatedService');
 
 const CONTEXT_LIMITS = Object.freeze({ events: 60, postedIssues: 10, pageSize: 24, pagesPerTenant: 100, bytes: 2 * 1024 * 1024 });
 const refKey = ref => `${ref.sourceTenantKey}:${ref.eventId}`;
@@ -145,7 +146,8 @@ async function readCandidates(req, tenantKeys, window, used, now) {
         const result = await searchEditorialCatalogPage(req, state.tenantKey, {
           dateFrom: window.from, dateTo: window.to, dateToExclusive: window.toExclusive,
           timezone: window.timezone, sort, limit: CONTEXT_LIMITS.pageSize, cursor: state.cursor,
-        }, { now, usedEventIds: [...used].filter(key => key.startsWith(`${state.tenantKey}:`)).map(key => key.slice(state.tenantKey.length + 1)) });
+        }, { now, ingestStatuses: COMPOSE_POLICY.catalogIngestStatuses,
+          usedEventIds: [...used].filter(key => key.startsWith(`${state.tenantKey}:`)).map(key => key.slice(state.tenantKey.length + 1)) });
         state.pagesRead += 1;
         if (result.error || result.data.sources.some(source => source.status !== 'ok')) {
           state.error = 'CATALOG_READ_FAILED';
@@ -190,6 +192,21 @@ async function readCandidates(req, tenantKeys, window, used, now) {
   };
 }
 
+const CURATED_GROUPS_EXPLANATION = 'Starting points from the Carousel Studio curated groups: a featured, promoted, '
+  + 'high-interest or in-window seed plus candidates with similar public text. Retrieval hints, not editorial '
+  + 'judgments; every member is in candidates. Use, trim, combine or ignore them.';
+
+async function curatedGroups(candidates) {
+  let result;
+  try {
+    result = await findComposeCuratedGroups(candidates, { statuses: COMPOSE_POLICY.catalogIngestStatuses,
+      minMembers: COMPOSE_POLICY.minEvents, maxMembers: COMPOSE_POLICY.maxEvents });
+  } catch (error) {
+    result = { data: { status: 'unavailable', groups: [] } };
+  }
+  return { status: result.data.status, explanation: CURATED_GROUPS_EXPLANATION, groups: result.data.groups };
+}
+
 async function buildCarouselComposeContextSnapshot(req, { job, now = new Date(), sinceVersion = null }) {
   const resolved = await resolveEditorialAccount(req, job.options?.editorialAccountKey);
   if (resolved.error) return resolved;
@@ -208,6 +225,7 @@ async function buildCarouselComposeContextSnapshot(req, { job, now = new Date(),
   const feedback = await listEditorialFeedback(req, String(account._id), sinceVersion);
   if (feedback.error) return feedback;
   const { candidates, coverage } = await readCandidates(req, tenantKeys, window, history.used, now);
+  const groups = await curatedGroups(candidates);
   const snapshot = JSON.parse(JSON.stringify({
     contractVersion: CONTRACT_VERSION, jobId: job.externalJobId,
     scheduleOccurrenceId: job.scheduleOccurrenceId || null, kind: 'carousel-compose',
@@ -217,12 +235,15 @@ async function buildCarouselComposeContextSnapshot(req, { job, now = new Date(),
     account: { id: String(account._id), key: definition.key, displayName: definition.displayName,
       handle: definition.handle, format: definition.format, ownerTenantKey: account.ownerTenantKey,
       sourceTenantKeys: tenantKeys, timezone, voice: account.voice || {} },
-    policy: COMPOSE_POLICY, window, candidates,
+    policy: COMPOSE_POLICY, window, candidates, curatedGroups: groups,
     lastPostedIssues: history.recent,
     coverAssets: await listComposeCoverAssets(req, account._id),
     editorialFeedback: feedback.data, coverage,
     templates: { version: 2, coverFamilies: COVER_FAMILIES, coverVariations: [1, 2, 3], eventPresets: EVENT_PRESETS, closingPresets: BACK_PRESETS },
-    missingSignals: ['Catalog interest does not verify attendance.', 'No web, social or calendar lookups were performed.'],
+    missingSignals: ['Catalog interest does not verify attendance.', 'No web, social or calendar lookups were performed.',
+      ...(candidates.some(candidate => candidate.snapshot.publication === 'staged')
+        ? ['Candidates with snapshot.publication "staged" are queued for the next batch release and are not yet visible in the app.'] : []),
+      ...(groups.status === 'ok' ? [] : [`Curated groups are ${groups.status}; judge themes from candidates alone.`])],
   }));
   const material = { ...snapshot, candidates: snapshot.candidates.map(candidate => {
     const { capturedAt, ...provenance } = candidate.provenance;
