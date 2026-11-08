@@ -313,6 +313,7 @@ function createApp() {
   const adminRoutes = require('./routes/adminRoutes.js');
   const carouselMcpRoutes = require('./routes/carouselMcpRoutes.js');
   const platformTenantRoutes = require('./routes/platformTenantRoutes.js');
+  const platformIntegrationRoutes = require('./routes/platformIntegrationRoutes.js');
   const pivotWeeklyDropRoutes = require('./routes/pivotWeeklyDropRoutes.js');
   const meridianJobAdminRoutes = require('./routes/meridianJobAdminRoutes.js');
   const eventsRoutes = require('./events/index.js');
@@ -362,6 +363,7 @@ function createApp() {
   app.use('/mcp/carousel', carouselMcpRoutes);
   app.use(adminRoutes);
   app.use(platformTenantRoutes);
+  app.use(platformIntegrationRoutes);
   app.use(pivotWeeklyDropRoutes);
   app.use(meridianJobAdminRoutes);
   app.use(formRoutes);

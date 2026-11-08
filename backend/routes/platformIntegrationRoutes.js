@@ -1,0 +1,66 @@
+/**
+ * Platform Admin → Integrations. Access tokens for grokbot's connector.
+ * Reads need a platform admin; every change also needs an MFA-verified
+ * session.
+ */
+const express = require('express');
+const { verifyToken } = require('../middlewares/verifyToken');
+const { requirePlatformAdmin } = require('../middlewares/requirePlatformAdmin');
+const { requireAdminMfaVerified } = require('../middlewares/requireAdminMfaVerified');
+const {
+  mintPlatformAccessToken,
+  listPlatformAccessTokens,
+  revokePlatformAccessToken,
+} = require('../services/platformAccessTokenService');
+
+const router = express.Router();
+const adminChange = [verifyToken, requirePlatformAdmin, requireAdminMfaVerified];
+
+function sendResult(res, result, successStatus = 200) {
+  if (result.error) {
+    return res.status(result.status || 400).json({
+      success: false,
+      message: result.error,
+      code: result.code,
+    });
+  }
+  return res.status(successStatus).json({ success: true, data: result.data });
+}
+
+router.get('/admin/platform/access-tokens', verifyToken, requirePlatformAdmin, async (req, res) => {
+  try {
+    return sendResult(res, await listPlatformAccessTokens(req));
+  } catch (err) {
+    console.error('GET /admin/platform/access-tokens failed:', err);
+    return res.status(500).json({ success: false, message: 'Could not list access tokens.' });
+  }
+});
+
+// Always mints for the signed-in admin; the body cannot name another owner.
+router.post('/admin/platform/access-tokens', ...adminChange, async (req, res) => {
+  try {
+    const result = await mintPlatformAccessToken(req, {
+      globalUserId: req.user.globalUserId,
+      label: req.body?.label,
+      createdBy: req.user.globalUserId,
+    });
+    return sendResult(res, result, 201);
+  } catch (err) {
+    console.error('POST /admin/platform/access-tokens failed:', err);
+    return res.status(500).json({ success: false, message: 'Could not create an access token.' });
+  }
+});
+
+router.post('/admin/platform/access-tokens/:id/revoke', ...adminChange, async (req, res) => {
+  try {
+    const result = await revokePlatformAccessToken(req, req.params.id, {
+      actor: { globalUserId: req.user.globalUserId },
+    });
+    return sendResult(res, result);
+  } catch (err) {
+    console.error('POST /admin/platform/access-tokens/:id/revoke failed:', err);
+    return res.status(500).json({ success: false, message: 'Could not revoke the access token.' });
+  }
+});
+
+module.exports = router;

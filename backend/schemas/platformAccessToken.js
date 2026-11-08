@@ -5,6 +5,8 @@ const mongoose = require('mongoose');
  * tokenHash is the SHA-256 of the secret. displayPrefix is the short prefix
  * shown when listing tokens. expiresAt is the expiry. A revoked token stays
  * so it can be recognized and so its owner can mint a replacement.
+ * createdBy and revokedBy name the admin who minted or revoked it from
+ * Platform Admin; both stay null for the CLI.
  */
 const platformAccessTokenSchema = new mongoose.Schema(
   {
@@ -40,6 +42,16 @@ const platformAccessTokenSchema = new mongoose.Schema(
     },
     revokedAt: {
       type: Date,
+      default: null,
+    },
+    createdBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'GlobalUser',
+      default: null,
+    },
+    revokedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'GlobalUser',
       default: null,
     },
   },

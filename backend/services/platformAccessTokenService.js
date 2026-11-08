@@ -33,6 +33,10 @@ function isPlatformAdmin(role) {
   return PLATFORM_ADMIN_ROLES.some((name) => roles.includes(name));
 }
 
+function idOrNull(value) {
+  return value ? String(value) : null;
+}
+
 function serializeToken(token) {
   return {
     id: String(token._id),
@@ -43,6 +47,8 @@ function serializeToken(token) {
     lastUsedAt: token.lastUsedAt || null,
     revokedAt: token.revokedAt || null,
     createdAt: token.createdAt || null,
+    createdBy: idOrNull(token.createdBy),
+    revokedBy: idOrNull(token.revokedBy),
   };
 }
 
@@ -66,9 +72,10 @@ function normalizeLabel(value) {
 
 /**
  * Mint a token for a current platform admin. The returned secret is the only
- * copy; later reads return the display prefix.
+ * copy; later reads return the display prefix. `createdBy` is the admin who
+ * asked for it from Platform Admin (null from the CLI).
  */
-async function mintPlatformAccessToken(req, { globalUserId, label: rawLabel } = {}) {
+async function mintPlatformAccessToken(req, { globalUserId, label: rawLabel, createdBy = null } = {}) {
   const ownerId = parseObjectId(globalUserId);
   if (!ownerId) {
     return { error: 'Global user not found.', status: 404, code: 'GLOBAL_USER_NOT_FOUND' };
@@ -113,6 +120,7 @@ async function mintPlatformAccessToken(req, { globalUserId, label: rawLabel } = 
       expiresAt: new Date(now + TOKEN_TTL_MS),
       lastUsedAt: null,
       revokedAt: null,
+      createdBy: parseObjectId(createdBy),
     });
     return { data: { ...serializeToken(created), secret } };
   } catch (err) {
@@ -127,24 +135,56 @@ async function mintPlatformAccessToken(req, { globalUserId, label: rawLabel } = 
   }
 }
 
+/** Every token, newest first, with each owner's email. Never the hash. */
 async function listPlatformAccessTokens(req) {
-  const { PlatformAccessToken } = getGlobalModels(req, 'PlatformAccessToken');
+  const { PlatformAccessToken, GlobalUser } = getGlobalModels(req, 'PlatformAccessToken', 'GlobalUser');
   const tokens = await PlatformAccessToken.find({}).sort({ createdAt: -1 }).lean();
-  return { data: tokens.map(serializeToken) };
+  const ownerIds = [...new Set(tokens.map((token) => String(token.globalUserId)))];
+  const owners = ownerIds.length
+    ? await GlobalUser.find({ _id: { $in: ownerIds } }).select('email').lean()
+    : [];
+  const emailById = new Map(owners.map((owner) => [String(owner._id), owner.email || null]));
+  return {
+    data: tokens.map((token) => ({
+      ...serializeToken(token),
+      ownerEmail: emailById.get(String(token.globalUserId)) || null,
+    })),
+  };
 }
 
-async function revokePlatformAccessToken(req, tokenId) {
+/**
+ * Revoke a token. With `actor` (a Platform Admin request), only the token's
+ * owner or a root admin may revoke, and the actor is recorded. The CLI passes
+ * no actor.
+ */
+async function revokePlatformAccessToken(req, tokenId, { actor = null } = {}) {
   const id = parseObjectId(tokenId);
   if (!id) {
     return { error: 'Token not found.', status: 404, code: 'TOKEN_NOT_FOUND' };
   }
-  const { PlatformAccessToken } = getGlobalModels(req, 'PlatformAccessToken');
+  const { PlatformAccessToken, PlatformRole } = getGlobalModels(req, 'PlatformAccessToken', 'PlatformRole');
   const token = await PlatformAccessToken.findById(id);
   if (!token) {
     return { error: 'Token not found.', status: 404, code: 'TOKEN_NOT_FOUND' };
   }
+  let actorId = null;
+  if (actor) {
+    actorId = parseObjectId(actor.globalUserId);
+    const isOwner = Boolean(actorId) && String(token.globalUserId) === String(actorId);
+    if (!isOwner) {
+      const role = actorId ? await PlatformRole.findOne({ globalUserId: actorId }).lean() : null;
+      if (!role?.roles?.includes('root')) {
+        return {
+          error: 'Only the token owner or a root admin can revoke this token.',
+          status: 403,
+          code: 'NOT_TOKEN_OWNER',
+        };
+      }
+    }
+  }
   if (!token.revokedAt) {
     token.revokedAt = new Date();
+    token.revokedBy = actorId;
     await token.save();
   }
   return { data: serializeToken(token) };
