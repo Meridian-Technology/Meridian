@@ -1,4 +1,3 @@
-const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
 const QRCode = require('qrcode');
 const { generateSecret, generateURI, verify } = require('otplib');
@@ -9,6 +8,7 @@ const {
     verifyAuthenticationResponse,
 } = require('@simplewebauthn/server');
 const { isoBase64URL } = require('@simplewebauthn/server/helpers');
+const { createSecretBox } = require('../utilities/aesGcmSecret');
 
 const MFA_ISSUER = process.env.MFA_ISSUER || 'Meridian';
 const MFA_PENDING_EXPIRY = '10m';
@@ -22,35 +22,7 @@ function getMfaJwtSecret() {
     return process.env.JWT_MFA_SECRET || process.env.JWT_SECRET;
 }
 
-function getMfaEncryptionKey() {
-    const base = process.env.MFA_ENCRYPTION_KEY || process.env.JWT_SECRET || '';
-    return crypto.createHash('sha256').update(base).digest();
-}
-
-function encryptSecret(plainText) {
-    const iv = crypto.randomBytes(12);
-    const cipher = crypto.createCipheriv('aes-256-gcm', getMfaEncryptionKey(), iv);
-    const encrypted = Buffer.concat([cipher.update(String(plainText), 'utf8'), cipher.final()]);
-    const tag = cipher.getAuthTag();
-    return `${iv.toString('hex')}:${tag.toString('hex')}:${encrypted.toString('hex')}`;
-}
-
-function decryptSecret(payload) {
-    if (!payload) return null;
-    const [ivHex, tagHex, encryptedHex] = String(payload).split(':');
-    if (!ivHex || !tagHex || !encryptedHex) return null;
-    const decipher = crypto.createDecipheriv(
-        'aes-256-gcm',
-        getMfaEncryptionKey(),
-        Buffer.from(ivHex, 'hex'),
-    );
-    decipher.setAuthTag(Buffer.from(tagHex, 'hex'));
-    const decrypted = Buffer.concat([
-        decipher.update(Buffer.from(encryptedHex, 'hex')),
-        decipher.final(),
-    ]);
-    return decrypted.toString('utf8');
-}
+const { encryptSecret, decryptSecret } = createSecretBox(['MFA_ENCRYPTION_KEY', 'JWT_SECRET']);
 
 function isAdminLevelAccount(tenantUser, platformRoles = []) {
     const tenantRoles = Array.isArray(tenantUser?.roles) ? tenantUser.roles : [];
