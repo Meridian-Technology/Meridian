@@ -72,6 +72,17 @@ describe('pivotComputeAutoApplyService', () => {
     );
   });
 
+  it.each(['carousel-compose', 'carousel-revise'])('leaves a %s job to the worker apply without recording a skip', async (kind) => {
+    PivotComputeJob.findOne.mockReturnValue(lean(reviewableJob({ kind, origin: { type: 'admin' } })));
+
+    const result = await maybeAutoApplyComputeJob({}, 'job-123');
+
+    expect(result).toMatchObject({ attempted: false, outcome: 'skipped', skipCode: 'CAROUSEL_WORKER_APPLIES' });
+    expect(PivotComputeJob.findOneAndUpdate).not.toHaveBeenCalled();
+    expect(PivotComputeJob.updateOne).not.toHaveBeenCalled();
+    expect(previewStoredComputeJob).not.toHaveBeenCalled();
+  });
+
   it('claims, previews, and applies trusted allowed jobs with the system idempotency key', async () => {
     const job = reviewableJob();
     PivotComputeJob.findOne.mockReturnValue(lean(job));

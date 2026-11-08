@@ -29,9 +29,13 @@ function normalizeExternalJobId(value) {
   return trimString(typeof value === 'object' && value ? value.externalJobId : value);
 }
 
+const WORKER_APPLIED_KINDS = new Set(['carousel-compose', 'carousel-revise']);
+
 function policySkipCode(job, policy) {
   if (!job || job.status !== 'review-required' || !job.result?.embedded) return 'JOB_NOT_REVIEWABLE';
   if (job.kind === 'carousel-export') return 'CAROUSEL_EXPORT_EXCLUDED';
+  // The worker route applies these itself as soon as their result is saved.
+  if (WORKER_APPLIED_KINDS.has(job.kind)) return 'CAROUSEL_WORKER_APPLIES';
   if (!policy.trusted) return 'TENANT_NOT_TRUSTED';
   if (job.kind === 'city-curation-refresh' && !policy.autoApplyRefresh) return 'REFRESH_NOT_ENABLED';
   if (job.kind === 'city-source-discovery' && !policy.autoApplyDiscovery) return 'DISCOVERY_NOT_ENABLED';
@@ -126,7 +130,8 @@ async function maybeAutoApplyComputeJob(req, externalJobId, { now = new Date() }
   if (denied) {
     // Record why this otherwise reviewable job was deliberately left alone.
     // This does not claim the job, so changing the tenant policy can retry it.
-    if (initial.status === 'review-required' && initial.kind !== 'carousel-export') {
+    if (initial.status === 'review-required' && initial.kind !== 'carousel-export'
+      && !WORKER_APPLIED_KINDS.has(initial.kind)) {
       await updateAutoApply(freshReq, normalizedExternalJobId, {
         lastAttemptAt: now, outcome: 'skipped', skipCode: denied,
         message: 'Tenant auto-apply policy does not permit this job.',
