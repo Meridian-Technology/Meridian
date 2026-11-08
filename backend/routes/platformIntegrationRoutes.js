@@ -1,7 +1,7 @@
 /**
- * Platform Admin → Integrations. Access tokens for grokbot's connector.
- * Reads need a platform admin; every change also needs an MFA-verified
- * session.
+ * Platform Admin → Integrations. Access tokens for grokbot's connector and
+ * grokbot's webhook settings. Reads need a platform admin; every change also
+ * needs an MFA-verified session.
  */
 const express = require('express');
 const { verifyToken } = require('../middlewares/verifyToken');
@@ -12,6 +12,11 @@ const {
   listPlatformAccessTokens,
   revokePlatformAccessToken,
 } = require('../services/platformAccessTokenService');
+const {
+  getGrokbotSettings,
+  updateGrokbotSettings,
+  mcpServerUrl,
+} = require('../services/grokbotIntegrationService');
 
 const router = express.Router();
 const adminChange = [verifyToken, requirePlatformAdmin, requireAdminMfaVerified];
@@ -60,6 +65,30 @@ router.post('/admin/platform/access-tokens/:id/revoke', ...adminChange, async (r
   } catch (err) {
     console.error('POST /admin/platform/access-tokens/:id/revoke failed:', err);
     return res.status(500).json({ success: false, message: 'Could not revoke the access token.' });
+  }
+});
+
+function withServerUrl(req, result) {
+  if (result.error) return result;
+  return { data: { ...result.data, mcpServerUrl: mcpServerUrl(req) } };
+}
+
+router.get('/admin/platform/integrations/grokbot', verifyToken, requirePlatformAdmin, async (req, res) => {
+  try {
+    return sendResult(res, withServerUrl(req, await getGrokbotSettings(req)));
+  } catch (err) {
+    console.error('GET /admin/platform/integrations/grokbot failed:', err);
+    return res.status(500).json({ success: false, message: 'Could not load grokbot settings.' });
+  }
+});
+
+router.put('/admin/platform/integrations/grokbot', ...adminChange, async (req, res) => {
+  try {
+    const result = await updateGrokbotSettings(req, req.body, { actorId: req.user.globalUserId });
+    return sendResult(res, withServerUrl(req, result));
+  } catch (err) {
+    console.error('PUT /admin/platform/integrations/grokbot failed:', err);
+    return res.status(500).json({ success: false, message: 'Could not save grokbot settings.' });
   }
 });
 

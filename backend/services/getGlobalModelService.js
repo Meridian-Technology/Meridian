@@ -3,6 +3,7 @@ const platformRoleSchema = require('../schemas/platformRole');
 const platformAccessTokenSchema = require('../schemas/platformAccessToken');
 const carouselMcpActionSchema = require('../schemas/carouselMcpAction');
 const platformAdminInviteSchema = require('../schemas/platformAdminInvite');
+const platformIntegrationSettingSchema = require('../schemas/platformIntegrationSetting');
 const tenantMembershipSchema = require('../schemas/tenantMembership');
 const pendingRegistrationSchema = require('../schemas/pendingRegistration');
 const globalSessionSchema = require('../schemas/globalSession');
@@ -54,7 +55,7 @@ const meridianNotificationDefinitionSchema = require('../schemas/meridianNotific
  * Requires req.globalDb to be set (see app.js middleware).
  *
  * @param {object} req - request with req.globalDb
- * @param {...string} names - model names including 'GlobalUser', 'PlatformRole', 'PlatformAccessToken', 'CarouselMcpAction', 'PlatformAdminInvite', 'PivotCitySource', 'PivotCreatorGrant', 'PivotCopyPack', 'PivotCarouselDeck', 'PivotCarouselVoice', 'PivotCarouselAccount', 'PivotCarouselSavedSearch', 'JustGoLandingEvent', 'JustGoWaitlist', 'JustGoLandingQr', 'MeridianJobRun', 'MeridianJobAttempt', 'MeridianJobDelivery', 'MeridianNotificationDefinition', …
+ * @param {...string} names - model names including 'GlobalUser', 'PlatformRole', 'PlatformAccessToken', 'CarouselMcpAction', 'PlatformAdminInvite', 'PlatformIntegrationSetting', 'PivotCitySource', 'PivotCreatorGrant', 'PivotCopyPack', 'PivotCarouselDeck', 'PivotCarouselVoice', 'PivotCarouselAccount', 'PivotCarouselSavedSearch', 'JustGoLandingEvent', 'JustGoWaitlist', 'JustGoLandingQr', 'MeridianJobRun', 'MeridianJobAttempt', 'MeridianJobDelivery', 'MeridianNotificationDefinition', …
  * @returns {object} map of requested models
  */
 const getGlobalModels = (req, ...names) => {
@@ -91,6 +92,11 @@ const getGlobalModels = (req, ...names) => {
             'PlatformAdminInvite',
             platformAdminInviteSchema,
             'platform_admin_invites'
+        ),
+        PlatformIntegrationSetting: model(
+            'PlatformIntegrationSetting',
+            platformIntegrationSettingSchema,
+            'platform_integration_settings'
         ),
         TenantMembership: model('TenantMembership', tenantMembershipSchema, 'tenant_memberships'),
         PendingRegistration: model(
