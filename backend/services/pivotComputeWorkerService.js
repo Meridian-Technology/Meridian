@@ -360,6 +360,28 @@ async function initializeJobArtifactUploads(req, {
   });
 }
 
+/** Build one unsaved composition for this compose or revise job so the worker can render it. */
+async function createJobDraftRender(req, {
+  workerId,
+  externalJobId,
+  body,
+  now = new Date(),
+}) {
+  rejectUnknownFields(body, ['leaseToken', 'capability', 'composition']);
+  const leaseToken = trimString(body.leaseToken);
+  normalizeCapabilityForLease(body.capability, workerId);
+  const job = await findJobByExternalId(req, externalJobId);
+  if (!job) throw serviceError('Compute job not found', 'COMPUTE_JOB_NOT_FOUND', 404);
+  assertLeaseBinding({ job, workerId, leaseToken, requireActive: true, now });
+  const { createDraftRender } = require('./pivotCarouselDraftRenderService');
+  const { renderUrlBase } = require('./pivotCarouselComputeContextService');
+  try {
+    return await createDraftRender(req, { job, composition: body.composition, renderUrlBase: renderUrlBase(req), now });
+  } catch (error) {
+    throw serviceError(error.message, error.code || 'DRAFT_RENDER_INVALID', error.status || 422);
+  }
+}
+
 async function finalizeJobArtifactUploads(req, {
   workerId,
   externalJobId,
@@ -545,6 +567,7 @@ module.exports = {
   reportRetryableJobFailure,
   initializeJobArtifactUploads,
   finalizeJobArtifactUploads,
+  createJobDraftRender,
   listJobAttempts,
   handleWorkerServiceError,
 };
