@@ -19,11 +19,16 @@ function draftError(message, code, status = 422) {
   const error = new Error(message); error.code = code; error.status = status; return error;
 }
 
-/** The composition shape this job returns: an option for compose, a bare composition for revise. */
+/**
+ * The composition shapes this job can return: a revise writes a bare composition;
+ * a compose writes themed options, or one bare composition from older agents.
+ */
 function compositionErrors(kind, composition) {
   const root = SCHEMAS.executionResult;
-  const definition = kind === 'carousel-revise' ? 'composeComposition' : 'composeOption';
-  return collectSchemaErrors(composition, root.$defs[definition], root, '$.composition');
+  const check = definition => collectSchemaErrors(composition, root.$defs[definition], root, '$.composition');
+  if (kind === 'carousel-revise') return check('composeComposition');
+  const asOption = check('composeOption');
+  return asOption.length && !check('composeComposition').length ? [] : asOption;
 }
 
 async function createDraftRender(req, { job, composition, renderUrlBase, now = new Date() }) {

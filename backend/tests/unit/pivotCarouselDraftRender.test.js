@@ -68,6 +68,14 @@ describe('draft renders for the compose review pass', () => {
     expect(otherDeck.code).toBe('TOKEN_WRONG_DECK');
   });
 
+  it('accepts one bare composition from a compose job, as older agents return', async () => {
+    const job = await storeJob();
+    const { composition } = fixtures();
+    const { themeLabel, rationale, ...bare } = composition;
+    const draft = await createDraftRender(req, { job, composition: bare, renderUrlBase: 'https://x.test/carousel-export' });
+    expect(draft.slideCount).toBe(1 + bare.eventSlides.length);
+  });
+
   it('rejects a composition outside the contract or one the builder refuses', async () => {
     const job = await storeJob();
     const { composition } = fixtures();
