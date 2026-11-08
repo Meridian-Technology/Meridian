@@ -4,27 +4,16 @@ Grokbot reaches carousel drafts only through `POST /mcp/carousel`. Meridian keep
 
 ## Token
 
-Mint from `backend/` against the database for that environment. The owner must be a platform admin. Each admin has one unrevoked token. It expires one year after minting, is stored only as a hash, and is accepted only on this route.
+Create the token in Platform Admin → Integrations → Grokbot connector. Changes on that page need a platform admin session that passed admin MFA. An admin with no MFA set up is refused. Enter a label and choose Create token. A dialog shows the secret once. Copy it into the connector. It cannot be shown again.
 
-```bash
-node scripts/platformAccessToken.js mint --global-user-id <id> --label grokbot --ack-write
-```
-
-The secret is printed once on stdout. The id, prefix, and expiry go to stderr. Put the secret in the connector and do not log it again.
-
-```bash
-node scripts/platformAccessToken.js list
-node scripts/platformAccessToken.js revoke --id <id> --ack-write
-```
-
-`list` shows id, prefix, label, owner, expiry, last use, and whether it is active. Revoke, then mint, to rotate. Every request rechecks the owner's platform role. A revoked, expired, or non-admin token is rejected. Actions are stored as that owner, and the audit names the token label.
+A token is always minted for the admin who creates it. Each admin has one unrevoked token. It expires one year after minting, is stored only as a hash, and is accepted only on this route. The token table shows label, owner, prefix, expiry, last use, and status. To rotate, revoke the token, then create another. The owner or a root admin can revoke. The token row records who minted it, who revoked it, and when. Every request rechecks the owner's platform role. A revoked, expired, or non-admin token is rejected. Actions are stored as that owner, and the audit names the token label.
 
 ## Connector
 
 In grokbot, add a custom connector:
 
 - Transport: Remote HTTPS
-- Server URL: `https://<meridian-host>/mcp/carousel`
+- Server URL: copy it from the Grokbot connector card (`https://<meridian-host>/mcp/carousel`)
 - Header: `Authorization: Bearer <token>`
 - Client ID: empty
 
@@ -32,11 +21,25 @@ The server is stateless. Each call is one JSON POST and returns JSON. Do not sen
 
 ## Webhook
 
-On the Meridian process set `GROKBOT_CAROUSEL_WEBHOOK_URL` to grokbot's inbound URL. After a job write, Meridian POSTs one notice. The body is only `event`, `accountKey`, `jobId`, and `issues` (`issueId`, `revision`). It never includes captions, reasons, or URLs. The same event is not sent again if apply or export runs twice. The POST runs in the background, so the job never waits on it. A failed POST is retried with backoff for about 30 seconds and each failure is logged. If every attempt fails, the event is released and the next trigger for that job sends it; until then, use the missed-notice routine below. Leave the variable unset and nothing is sent.
+Grokbot's webhook routines accept only a POST that carries `Authorization: Bearer <routine key>`. In grokbot, open the routine that presents results and copy the URL and the key from its Webhook section. In Platform Admin → Integrations → Grokbot webhook, paste both, turn on Send notices, and Save. The key is stored encrypted and is never shown again; the card shows only its last four characters. Leave the key field blank to keep the current key. The URL must be `https://` on a public host name. IP addresses, localhost, and names that resolve to private addresses are refused. Send test posts `{ "event": "test" }` with the key, even while notices are off, and shows the HTTP status grokbot returned.
 
-Set `GROKBOT_CAROUSEL_WEBHOOK_SECRET` to a shared secret to sign notices. Each POST then carries `X-Meridian-Signature: sha256=<hex>`, the HMAC-SHA256 of the raw request body under that secret. Compute it over the bytes received, before parsing, compare in constant time, and drop a notice that does not match. Without the variable, notices are unsigned.
+After a job write, Meridian POSTs one notice with that bearer key. The body is only `event`, `accountKey`, `jobId`, and `issues` (`issueId`, `revision`). It never includes captions, reasons, or URLs. The same event is not sent again if apply or export runs twice. The POST runs in the background, so the job never waits on it. A failed POST is retried with backoff for about 30 seconds. If every attempt fails, the event is released and the next trigger for that job sends it; until then, use the missed-notice routine below. With Send notices off, nothing is sent. A saved change reaches every Meridian process within 30 seconds.
 
-`preview-ready` means an agent-written revision's slides are ready. `jobId` is the compose job for the first revision and the revise job after that. `issues` names the revision that just became ready. `wait`, `needs-editor`, `cannot-revise`, `conflict`, and `failure` mean the job ended with no new draft. `failure` covers both a worker failure and a result Meridian refused to apply.
+Recent deliveries on the card lists the last 20 attempts, including retries and tests: time, event, job id, and the HTTP status or error. It never stores the body. A 401 there means the key does not match the routine.
+
+`preview-ready` means an agent-written revision's slides are ready. `jobId` is the compose job for the first revision and the revise job after that. `issues` names the revision that just became ready. `wait`, `needs-editor`, `cannot-revise`, `conflict`, and `failure` mean the job ended with no new draft. `failure` covers both a worker failure and a result Meridian refused to apply. `test` comes only from Send test and carries nothing else; the routine can ignore it.
+
+### Backup: CLI and env vars
+
+If the page is unavailable, mint, list, and revoke from `backend/` against that environment's database. `mint` prints the secret once on stdout.
+
+```bash
+node scripts/platformAccessToken.js mint --global-user-id <id> --label grokbot --ack-write
+node scripts/platformAccessToken.js list
+node scripts/platformAccessToken.js revoke --id <id> --ack-write
+```
+
+`GROKBOT_CAROUSEL_WEBHOOK_URL` applies only until the webhook settings are first saved on the page, and it sends no bearer key, so grokbot routines reject it. `GROKBOT_CAROUSEL_WEBHOOK_SECRET`, if set, still adds `X-Meridian-Signature: sha256=<hex>`; grokbot does not use it. `INTEGRATION_ENCRYPTION_KEY` encrypts the stored routine key and falls back to `JWT_SECRET`. If it changes, save the key again.
 
 ## Daily routine
 
@@ -60,10 +63,11 @@ Call `list_awaiting_review`. It returns every unapproved, unarchived generated i
 
 ## Staging checklist
 
-Use synthetic accounts and drafts on staging. Leave the production webhook unset until every line below has been seen there.
+Use synthetic accounts and drafts on staging. Keep Send notices off in production until every line below has been seen there.
 
 - Transport: a POST to `/mcp/carousel` returns one JSON body, and a GET returns 405 with no session id.
 - Headers: the connector sends `Authorization: Bearer <token>`, Client ID is empty, and that token is rejected on an admin route.
+- Webhook: Send test returns a 2xx from the routine, and a real notice shows in Recent deliveries with a 2xx.
 - Images: `get_issue` on a ready synthetic revision shows `slideImageUrls` in slide order, and the routine displays those images beside the issue id and revision.
 - Approvals: the daily routine and the webhook routine require a person before `start_compose`, `request_revision`, `pick_option`, `approve`, and `mark_posted`. Declining leaves the draft unchanged.
 - Timeouts: a timed-out daily run, retried with the same idempotency key, does not create a second job. A missed webhook still shows the draft or the running job in `list_awaiting_review`.
