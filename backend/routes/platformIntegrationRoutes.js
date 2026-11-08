@@ -17,6 +17,7 @@ const {
   updateGrokbotSettings,
   mcpServerUrl,
 } = require('../services/grokbotIntegrationService');
+const { sendTestNotice } = require('../services/pivotCarouselGrokbotNotifyService');
 
 const router = express.Router();
 const adminChange = [verifyToken, requirePlatformAdmin, requireAdminMfaVerified];
@@ -89,6 +90,15 @@ router.put('/admin/platform/integrations/grokbot', ...adminChange, async (req, r
   } catch (err) {
     console.error('PUT /admin/platform/integrations/grokbot failed:', err);
     return res.status(500).json({ success: false, message: 'Could not save grokbot settings.' });
+  }
+});
+
+router.post('/admin/platform/integrations/grokbot/test', ...adminChange, async (req, res) => {
+  try {
+    return sendResult(res, await sendTestNotice(req));
+  } catch (err) {
+    console.error('POST /admin/platform/integrations/grokbot/test failed:', err);
+    return res.status(500).json({ success: false, message: 'Could not send the test notice.' });
   }
 });
 

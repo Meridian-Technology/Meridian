@@ -3,15 +3,25 @@
  * job write, at most once per event, then posted in the background with
  * backoff. A notice that never gets through releases its reservation so a
  * later trigger can send it. Delivery never fails or delays the job.
+ *
+ * The URL, routine key, and on/off switch come from Platform Admin →
+ * Integrations (grokbotIntegrationService); GROKBOT_CAROUSEL_WEBHOOK_URL
+ * applies only until those are saved. Each attempt's outcome is kept in the
+ * settings record's delivery list.
  */
 const { createHmac } = require('crypto');
 const getGlobalModels = require('./getGlobalModelService');
+const {
+  resolveGrokbotWebhook,
+  recordGrokbotDelivery,
+} = require('./grokbotIntegrationService');
 const { editorialAccountFor } = require('../constants/pivotCarouselEditorialAccounts');
 const { logPivot } = require('../utilities/pivotLogger');
 
 const WEBHOOK_ENV = 'GROKBOT_CAROUSEL_WEBHOOK_URL';
 const SECRET_ENV = 'GROKBOT_CAROUSEL_WEBHOOK_SECRET';
 const SIGNATURE_HEADER = 'x-meridian-signature';
+const TEST_TIMEOUT_MS = 5000;
 // About 30 seconds from the first attempt to the last.
 const RETRY_DELAYS_MS = [0, 2000, 5000, 9000, 14000];
 const REQUEST_TIMEOUT_MS = 1500;
@@ -96,33 +106,64 @@ async function releaseNotice(req, externalJobId, event) {
   );
 }
 
-async function postNotice(url, body, { fetchImpl = global.fetch, delays = delivery.retryDelaysMs } = {}) {
-  const raw = JSON.stringify(body);
+/** Grokbot routines accept only `Authorization: Bearer <routine key>`. */
+function noticeHeaders(raw, key) {
   const headers = { 'content-type': 'application/json' };
+  if (key) headers.authorization = `Bearer ${key}`;
   const secret = webhookSecret();
   if (secret) headers[SIGNATURE_HEADER] = signBody(raw, secret);
+  return headers;
+}
+
+/** One POST. Resolves `{ ok, status, error }` and never throws. */
+async function postOnce(url, raw, headers, { fetchImpl = global.fetch, timeoutMs = REQUEST_TIMEOUT_MS } = {}) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  if (typeof timer.unref === 'function') timer.unref();
+  try {
+    const response = await fetchImpl(url, {
+      method: 'POST',
+      headers,
+      body: raw,
+      signal: controller.signal,
+    });
+    const status = Number.isInteger(response?.status) ? response.status : null;
+    if (response?.ok) return { ok: true, status, error: null };
+    return { ok: false, status, error: new Error(`Webhook returned ${status || 'no status'}`) };
+  } catch (error) {
+    return { ok: false, status: null, error };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function postNotice(url, body, {
+  key = null,
+  onAttempt = () => {},
+  fetchImpl = global.fetch,
+  delays = delivery.retryDelaysMs,
+} = {}) {
+  const raw = JSON.stringify(body);
+  const headers = noticeHeaders(raw, key);
   let lastError = null;
   for (let attempt = 0; attempt < delays.length; attempt += 1) {
     if (attempt > 0) await wait(delays[attempt]);
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
-    if (typeof timer.unref === 'function') timer.unref();
-    try {
-      const response = await fetchImpl(url, {
-        method: 'POST',
-        headers,
-        body: raw,
-        signal: controller.signal,
-      });
-      if (response?.ok) return { ok: true };
-      lastError = new Error(`Webhook returned ${response?.status || 'no status'}`);
-    } catch (error) {
-      lastError = error;
-    } finally {
-      clearTimeout(timer);
-    }
+    const result = await postOnce(url, raw, headers, { fetchImpl });
+    onAttempt({ attempt: attempt + 1, ...result });
+    if (result.ok) return { ok: true };
+    lastError = result.error;
   }
   return { ok: false, error: lastError };
+}
+
+function deliveryRow(event, jobId, { attempt = 1, status = null, error = null } = {}) {
+  return {
+    event,
+    jobId: jobId || null,
+    attempt,
+    status,
+    error: error ? error.message || String(error) : null,
+  };
 }
 
 function logFailure(event, jobId, error) {
@@ -133,9 +174,14 @@ function logFailure(event, jobId, error) {
   });
 }
 
-async function sendReserved(req, { url, body, externalJobId }) {
+async function sendReserved(req, { target, body, externalJobId }) {
   try {
-    const result = await postNotice(url, body);
+    const result = await postNotice(target.url, body, {
+      key: target.key,
+      onAttempt: (outcome) => {
+        inBackground(recordGrokbotDelivery(req, deliveryRow(body.event, body.jobId, outcome)));
+      },
+    });
     if (result.ok) return;
     logFailure(body.event, body.jobId, result.error);
   } catch (error) {
@@ -163,9 +209,29 @@ async function whenNoticesSettled() {
  * for the same event does not send again while the first holds it. Errors are
  * logged and swallowed.
  */
+/** The resolved webhook, or why nothing should be sent. */
+async function webhookTarget(req) {
+  const target = await resolveGrokbotWebhook(req);
+  if (!target.url) return { skip: 'unset' };
+  if (!target.enabled) return { skip: 'disabled' };
+  return { target };
+}
+
 async function deliverNotice(req, { event, accountKey, jobId, issues, reserveJobId }) {
-  const url = webhookUrl();
-  if (!url) return { skipped: true, reason: 'unset' };
+  let target;
+  try {
+    const resolved = await webhookTarget(req);
+    if (resolved.skip) return { skipped: true, reason: resolved.skip };
+    target = resolved.target;
+  } catch (error) {
+    logFailure(event, jobId, error);
+    return { skipped: true, reason: 'notify_error' };
+  }
+  if (target.keyError) {
+    logFailure(event, jobId, new Error(target.keyError));
+    inBackground(recordGrokbotDelivery(req, deliveryRow(event, jobId, { error: target.keyError })));
+    return { skipped: true, reason: 'key_error' };
+  }
   const externalJobId = reserveJobId || jobId;
   if (!externalJobId) return { skipped: true, reason: 'missing_job' };
   try {
@@ -176,7 +242,7 @@ async function deliverNotice(req, { event, accountKey, jobId, issues, reserveJob
     return { skipped: true, reason: 'notify_error' };
   }
   const body = noticeBody({ event, accountKey, jobId, issues });
-  inBackground(sendReserved(req, { url, body, externalJobId }));
+  inBackground(sendReserved(req, { target, body, externalJobId }));
   return { skipped: false, queued: true };
 }
 
@@ -261,9 +327,10 @@ async function notifyPreviewReady(req, job) {
 }
 
 async function deliverPreviewReady(req, job) {
-  if (!webhookUrl() || job?.kind !== 'carousel-export' || job.status !== 'completed') {
+  if (job?.kind !== 'carousel-export' || job.status !== 'completed') {
     return { skipped: true, reason: 'not_ready' };
   }
+  if ((await webhookTarget(req)).skip) return { skipped: true, reason: 'not_ready' };
   const match = EXPORT_JOB_ID.exec(job.externalJobId || '');
   if (!match) return { skipped: true, reason: 'not_ready' };
   const issueId = match[1];
@@ -295,8 +362,32 @@ async function deliverPreviewReady(req, job) {
   });
 }
 
+/**
+ * Platform Admin's "Send test": one `{ "event": "test" }` POST with the saved
+ * key, sent even while notices are switched off. Records the outcome.
+ */
+async function sendTestNotice(req, { fetchImpl = global.fetch } = {}) {
+  const target = await resolveGrokbotWebhook(req, { fresh: true });
+  if (!target.url) {
+    return { error: 'Save a webhook URL first.', status: 400, code: 'WEBHOOK_URL_UNSET' };
+  }
+  if (target.keyError) {
+    await recordGrokbotDelivery(req, deliveryRow('test', null, { error: target.keyError }));
+    return { error: target.keyError, status: 409, code: 'WEBHOOK_KEY_UNREADABLE' };
+  }
+  const raw = JSON.stringify({ event: 'test' });
+  const result = await postOnce(target.url, raw, noticeHeaders(raw, target.key), {
+    fetchImpl,
+    timeoutMs: TEST_TIMEOUT_MS,
+  });
+  const row = deliveryRow('test', null, result);
+  await recordGrokbotDelivery(req, row);
+  return { data: { ok: result.ok, status: result.status, error: row.error } };
+}
+
 module.exports = {
   webhookUrl,
+  sendTestNotice,
   noticeBody,
   signBody,
   notifyCarouselJobEnded,

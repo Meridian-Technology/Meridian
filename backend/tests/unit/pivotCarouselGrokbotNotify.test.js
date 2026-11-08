@@ -26,10 +26,13 @@ const { applyStoredComputeJob } = require('../../services/pivotComputeResultAppl
 const crypto = require('crypto');
 const {
   notifyCarouselJobEnded,
+  sendTestNotice,
   whenNoticesSettled,
   delivery,
   RETRY_DELAYS_MS,
 } = require('../../services/pivotCarouselGrokbotNotifyService');
+const { clearGrokbotSettingsCache } = require('../../services/grokbotIntegrationService');
+const { createSecretBox } = require('../../utilities/aesGcmSecret');
 const {
   createCarouselAccount,
   createGeneratedCarouselIssue,
@@ -43,6 +46,8 @@ const { logPivot } = require('../../utilities/pivotLogger');
 jest.setTimeout(120000);
 
 const WEBHOOK = 'http://127.0.0.1:9/grokbot-carousel';
+const SAVED_WEBHOOK = 'https://grokbot.example.com/routines/r1/webhook';
+const ROUTINE_KEY = 'routine-key-0001';
 const PUBLICATION = '2026-10-12T23:00:00.000Z';
 const SHA = 'a'.repeat(64);
 const WINDOW = {
@@ -109,8 +114,9 @@ describe('grokbot carousel webhook notices', () => {
     delete process.env.GROKBOT_CAROUSEL_WEBHOOK_SECRET;
     // Same number of attempts as production, without the 30 second wait.
     delivery.retryDelaysMs = RETRY_DELAYS_MS.map((delay) => (delay ? 1 : 0));
+    clearGrokbotSettingsCache(req);
     global.fetch = jest.fn(async (url, init) => {
-      if (String(url) !== WEBHOOK) return { ok: false, status: 404 };
+      if (String(url) !== WEBHOOK && String(url) !== SAVED_WEBHOOK) return { ok: false, status: 404 };
       if (webhookThrows) throw new Error('webhook down');
       const body = JSON.parse(init.body);
       if (webhookFailuresLeft > 0) {
@@ -118,11 +124,13 @@ describe('grokbot carousel webhook notices', () => {
         return { ok: false, status: 503 };
       }
       posts.push({
+        url: String(url),
         body,
         raw: init.body,
         method: init.method,
         contentType: init.headers['content-type'],
         signature: init.headers['x-meridian-signature'],
+        authorization: init.headers.authorization,
       });
       return { ok: true, status: 204 };
     });
@@ -759,5 +767,133 @@ describe('grokbot carousel webhook notices', () => {
     expect(applied.job.composeOutcome.decision).toBe('wait');
     expect(posts).toEqual([]);
     expect(global.fetch.mock.calls.some((call) => String(call[0]).includes('grokbot'))).toBe(false);
+  });
+
+  // Platform Admin → Integrations writes this record; tests write it directly.
+  async function saveSettings({ webhookUrl = SAVED_WEBHOOK, webhookKey = ROUTINE_KEY, enabled = true } = {}) {
+    const { PlatformIntegrationSetting } = getGlobalModels(req, 'PlatformIntegrationSetting');
+    const box = createSecretBox(['INTEGRATION_ENCRYPTION_KEY', 'JWT_SECRET']);
+    await PlatformIntegrationSetting.findOneAndUpdate(
+      { key: 'grokbot' },
+      {
+        $set: {
+          webhookUrl,
+          webhookKey: webhookKey ? box.encryptSecret(webhookKey) : null,
+          enabled,
+          updatedAt: new Date(),
+        },
+      },
+      { upsert: true },
+    );
+    clearGrokbotSettingsCache(req);
+  }
+
+  async function deliveries() {
+    await whenNoticesSettled();
+    const { PlatformIntegrationSetting } = getGlobalModels(req, 'PlatformIntegrationSetting');
+    const record = await PlatformIntegrationSetting.findOne({ key: 'grokbot' }).lean();
+    return (record?.deliveries || []).map(({ at, ...rest }) => {
+      expect(at).toBeInstanceOf(Date);
+      return rest;
+    });
+  }
+
+  it('sends the saved routine key as a bearer token to the saved URL, over the env URL', async () => {
+    await saveSettings();
+    process.env.GROKBOT_CAROUSEL_WEBHOOK_SECRET = 'grokbot-shared-secret';
+    await prepare('job:compose-bearer', 'wait');
+    await applyStoredComputeJob(req, 'job:compose-bearer', { tenantKey: 'ic', actor: 'editor' });
+    await whenNoticesSettled();
+
+    expect(posts).toHaveLength(1);
+    const [post] = posts;
+    expect(post.url).toBe(SAVED_WEBHOOK);
+    expect(post.authorization).toBe(`Bearer ${ROUTINE_KEY}`);
+    expect(post.body).toEqual({ event: 'wait', accountKey: 'just.go.ic', jobId: 'job:compose-bearer', issues: [] });
+    const expected = crypto.createHmac('sha256', 'grokbot-shared-secret').update(post.raw).digest('hex');
+    expect(post.signature).toBe(`sha256=${expected}`);
+    expect(global.fetch.mock.calls.some((call) => call[0] === WEBHOOK)).toBe(false);
+  });
+
+  it('sends no bearer header from the env fallback, which has no key', async () => {
+    await prepare('job:compose-env', 'wait');
+    await applyStoredComputeJob(req, 'job:compose-env', { tenantKey: 'ic', actor: 'editor' });
+    await whenNoticesSettled();
+    expect(posts.map((post) => [post.url, post.authorization])).toEqual([[WEBHOOK, undefined]]);
+  });
+
+  it('sends nothing while the saved setting is disabled, even with the env URL set', async () => {
+    await saveSettings({ enabled: false });
+    await prepare('job:compose-disabled', 'wait');
+    const applied = await applyStoredComputeJob(req, 'job:compose-disabled', { tenantKey: 'ic', actor: 'editor' });
+    expect(applied.job.status).toBe('completed');
+    await whenNoticesSettled();
+    expect(posts).toEqual([]);
+    expect(global.fetch.mock.calls.some((call) => [WEBHOOK, SAVED_WEBHOOK].includes(call[0]))).toBe(false);
+    expect(await deliveries()).toEqual([]);
+  });
+
+  it('records every attempt, without body content, in the delivery list', async () => {
+    await saveSettings();
+    webhookFailuresLeft = 2;
+    await prepare('job:compose-recorded', 'needs-editor');
+    await applyStoredComputeJob(req, 'job:compose-recorded', { tenantKey: 'ic', actor: 'editor' });
+
+    const rows = await deliveries();
+    expect(rows).toEqual([1, 2, 3].map((attempt) => ({
+      event: 'needs-editor',
+      jobId: 'job:compose-recorded',
+      attempt,
+      status: attempt < 3 ? 503 : 204,
+      error: attempt < 3 ? 'Webhook returned 503' : null,
+    })));
+
+    webhookThrows = true;
+    expect((await failCompose('job:compose-recorded-down')).status).toBe('failed');
+    const failed = (await deliveries()).filter((row) => row.jobId === 'job:compose-recorded-down');
+    expect(failed).toHaveLength(RETRY_DELAYS_MS.length);
+    expect(failed.every((row) => row.status === null && row.error === 'webhook down')).toBe(true);
+    expect(JSON.stringify(await deliveries())).not.toMatch(/accountKey|issues|caption|reason/);
+  });
+
+  it('records env-only deliveries and keeps using the env URL', async () => {
+    await prepare('job:compose-env-recorded', 'wait');
+    await applyStoredComputeJob(req, 'job:compose-env-recorded', { tenantKey: 'ic', actor: 'editor' });
+    expect(await deliveries()).toEqual([
+      { event: 'wait', jobId: 'job:compose-env-recorded', attempt: 1, status: 204, error: null },
+    ]);
+    clearGrokbotSettingsCache(req);
+    await prepare('job:compose-env-again', 'wait');
+    await applyStoredComputeJob(req, 'job:compose-env-again', { tenantKey: 'ic', actor: 'editor' });
+    await whenNoticesSettled();
+    expect(posts.map((post) => post.url)).toEqual([WEBHOOK, WEBHOOK]);
+  });
+
+  it('keeps only the last 20 delivery attempts', async () => {
+    await saveSettings();
+    for (let index = 0; index < 22; index += 1) {
+      await sendTestNotice(req);
+    }
+    const rows = await deliveries();
+    expect(rows).toHaveLength(20);
+  });
+
+  it('sends a test notice with the saved key, even when disabled, and records it', async () => {
+    await saveSettings({ enabled: false });
+    const result = await sendTestNotice(req);
+    expect(result).toEqual({ data: { ok: true, status: 204, error: null } });
+    expect(posts).toEqual([expect.objectContaining({
+      url: SAVED_WEBHOOK,
+      body: { event: 'test' },
+      authorization: `Bearer ${ROUTINE_KEY}`,
+    })]);
+    expect(await deliveries()).toEqual([{ event: 'test', jobId: null, attempt: 1, status: 204, error: null }]);
+
+    webhookFailuresLeft = 1;
+    expect((await sendTestNotice(req)).data).toEqual({ ok: false, status: 503, error: 'Webhook returned 503' });
+
+    await saveSettings({ webhookUrl: null });
+    delete process.env.GROKBOT_CAROUSEL_WEBHOOK_URL;
+    expect(await sendTestNotice(req)).toMatchObject({ status: 400, code: 'WEBHOOK_URL_UNSET' });
   });
 });

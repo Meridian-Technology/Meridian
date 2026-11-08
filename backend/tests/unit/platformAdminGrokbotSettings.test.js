@@ -248,4 +248,43 @@ describe('Platform Admin grokbot settings', () => {
       enabled: true,
     });
   });
+
+  it('sends a test notice with the stored key and lists its status', async () => {
+    const app = buildApp();
+    const previousFetch = global.fetch;
+    global.fetch = jest.fn(async () => ({ ok: false, status: 401 }));
+    try {
+      const unset = await request(app)
+        .post('/admin/platform/integrations/grokbot/test')
+        .set('Authorization', session());
+      expect(unset.status).toBe(400);
+      expect(unset.body.code).toBe('WEBHOOK_URL_UNSET');
+
+      await put(app, { webhookUrl: 'https://grokbot.example.com/hook', webhookKey: ROUTINE_KEY });
+      const refused = await request(app)
+        .post('/admin/platform/integrations/grokbot/test')
+        .set('Authorization', session({ mfaVerified: false }));
+      expect(refused.status).toBe(403);
+      expect(global.fetch).not.toHaveBeenCalled();
+
+      const sent = await request(app)
+        .post('/admin/platform/integrations/grokbot/test')
+        .set('Authorization', session());
+      expect(sent.status).toBe(200);
+      expect(sent.body.data).toEqual({ ok: false, status: 401, error: 'Webhook returned 401' });
+      const [url, init] = global.fetch.mock.calls[0];
+      expect(url).toBe('https://grokbot.example.com/hook');
+      expect(init.headers.authorization).toBe(`Bearer ${ROUTINE_KEY}`);
+      expect(JSON.parse(init.body)).toEqual({ event: 'test' });
+
+      const read = await request(app)
+        .get('/admin/platform/integrations/grokbot')
+        .set('Authorization', session());
+      expect(read.body.data.deliveries).toEqual([
+        expect.objectContaining({ event: 'test', jobId: null, status: 401, error: 'Webhook returned 401' }),
+      ]);
+    } finally {
+      global.fetch = previousFetch;
+    }
+  });
 });
