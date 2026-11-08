@@ -7,6 +7,7 @@ const TENANT_KEY_PATTERN = /^[a-z0-9][a-z0-9-]{0,62}$/;
 const JOB_ID_PATTERN = /^[a-zA-Z0-9:_-]{8,128}$/;
 const LOGICAL_NAME_PATTERN = /^(slide-(0[1-9]|1[0-9]|20)\.png|carousel\.zip)$/;
 const DEFAULT_PRESIGN_TTL_SECONDS = 10 * 60;
+const MAX_GET_PRESIGN_TTL_SECONDS = 60 * 60;
 
 function serviceError(message, code, status = 400) {
   const error = new Error(message);
@@ -88,7 +89,8 @@ async function createPresignedGetUrl({
   expiresInSeconds = 120,
 }) {
   const bucket = resolveBucket();
-  const ttl = Math.max(1, Math.min(DEFAULT_PRESIGN_TTL_SECONDS, Number(expiresInSeconds) || 120));
+  // Downloads keep a short default. A preview asks for an hour, which is the longest GET this signs.
+  const ttl = Math.max(1, Math.min(MAX_GET_PRESIGN_TTL_SECONDS, Number(expiresInSeconds) || 120));
   const safeName = assertLogicalName(filename);
   const params = {
     Bucket: bucket,
@@ -316,6 +318,7 @@ async function diagnoseCarouselExportStorage({
 module.exports = {
   EXPORT_PREFIX_ROOT,
   DEFAULT_PRESIGN_TTL_SECONDS,
+  MAX_GET_PRESIGN_TTL_SECONDS,
   LOGICAL_NAME_PATTERN,
   buildExportPrefix,
   buildExportObjectKey,

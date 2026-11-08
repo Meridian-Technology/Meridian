@@ -8,6 +8,24 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
+const request = require('supertest');
+
+jest.mock('../../connectionsManager', () => ({
+  connectToDatabase: jest.fn(async () => ({})),
+  connectToGlobalDatabase: jest.fn(async () => ({})),
+}));
+
+// ESM-only; jest here loads CommonJS. Only the auth routes call it.
+jest.mock('otplib', () => ({}));
+
+// A private repo CI does not clone; the symlink dangles there.
+jest.mock('../../events/index.js', () => require('express').Router(), { virtual: true });
+
+jest.mock('../../services/tenantConfigService', () => ({
+  ...jest.requireActual('../../services/tenantConfigService'),
+  syncTenantUriCache: jest.fn(async () => {}),
+  getMergedTenants: jest.fn(async () => [{ tenantKey: 'rpi' }]),
+}));
 
 const serverSource = fs.readFileSync(
   path.join(__dirname, '../../app.js'),
@@ -59,5 +77,24 @@ describe('the www path lock', () => {
       if (!serverPaths.includes(route)) continue;
       expect(clientPaths).toContain(route);
     }
+  });
+
+  /*
+   * Grokbot calls the connector on www. The router's own token check answers
+   * 401 NO_TOKEN; the www lock would answer 403 USE_TENANT_SUBDOMAIN first.
+   */
+  test('a www POST to the carousel connector reaches its router', async () => {
+    const { createApp } = require('../../app');
+    const { app } = createApp();
+
+    const response = await request(app)
+      .post('/mcp/carousel')
+      .set('Host', 'www.meridian.study')
+      .set('Content-Type', 'application/json')
+      .send({ jsonrpc: '2.0', id: 1, method: 'tools/list' });
+
+    expect(response.body.code).not.toBe('USE_TENANT_SUBDOMAIN');
+    expect(response.status).toBe(401);
+    expect(response.body.code).toBe('NO_TOKEN');
   });
 });

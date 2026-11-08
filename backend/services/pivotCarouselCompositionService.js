@@ -5,6 +5,8 @@ const { COVER_FAMILIES, EVENT_PRESETS, BACK_PRESETS, generateCoverSlide,
 
 const refKey = ref => `${ref.sourceTenantKey}:${ref.eventId}`;
 const composeIssueId = jobId => createHash('sha256').update(`carousel-compose:${jobId}`).digest('hex').slice(0, 24);
+const composeOptionIssueId = (jobId, optionIndex) => createHash('sha256')
+  .update(`carousel-compose:${jobId}:${optionIndex}`).digest('hex').slice(0, 24);
 function invalid(message, code = 'COMPOSE_INVALID') {
   const error = new Error(message); error.code = code; error.status = 422; throw error;
 }
@@ -100,4 +102,6 @@ function buildCompositionDocument(composition, context, currentCandidates = cont
   return { schemaVersion: 2, presetVersion: 2, width: 1080, height: 1350, slides };
 }
 
-module.exports = { composeIssueId, safeUnsplashAsset, listComposeCoverAssets, buildCompositionDocument, refKey };
+module.exports = {
+  composeIssueId, composeOptionIssueId, safeUnsplashAsset, listComposeCoverAssets, buildCompositionDocument, refKey,
+};

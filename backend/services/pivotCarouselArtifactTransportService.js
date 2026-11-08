@@ -508,6 +508,70 @@ async function cleanupExpiredCarouselExports(req, { now = new Date(), limit = 25
   return { cleaned };
 }
 
+/**
+ * Queue the same carousel-export job an admin export uses: pin this saved
+ * revision, create one pending job, and wake the worker.
+ * One issue revision has one job. A second call returns that job and does not
+ * pin or enqueue again.
+ */
+async function queueCarouselExportForIssueRevision(req, {
+  issueId,
+  revision,
+  tenantKey,
+  actor = null,
+  now = new Date(),
+} = {}) {
+  const id = trimString(issueId).toLowerCase();
+  const cityKey = trimString(tenantKey).toLowerCase();
+  const issueRevision = Number(revision);
+  if (!/^[0-9a-f]{24}$/.test(id) || !Number.isInteger(issueRevision) || issueRevision < 1 || !cityKey) {
+    throw serviceError('A carousel export needs an issue, revision, and tenant', 'INVALID_CAROUSEL_EXPORT_REQUEST');
+  }
+  const externalJobId = `job:export:${id}:r${issueRevision}`;
+  const { findJobByExternalId } = require('./pivotComputeJobStore');
+  const existing = await findJobByExternalId(req, externalJobId);
+  if (existing) {
+    if (existing.kind !== 'carousel-export' || existing.options?.deckId !== id) {
+      throw serviceError('Carousel export identity is already in use', 'CAROUSEL_EXPORT_JOB_CONFLICT', 409);
+    }
+    return { job: existing, created: false };
+  }
+
+  const { PivotCarouselDeck } = getGlobalModels(req, 'PivotCarouselDeck');
+  const deck = await PivotCarouselDeck.findOne({ _id: id, tenantKey: cityKey }).lean();
+  if (!deck) throw serviceError('Carousel issue not found', 'DECK_NOT_FOUND', 404);
+  if ((deck.revision || 1) !== issueRevision) {
+    throw serviceError(
+      'The issue revision is not the one that was just written',
+      'EXPORT_REVISION_MISMATCH',
+      409,
+    );
+  }
+  const { deckRevision } = require('./pivotCarouselExportService');
+  const stampedRevision = deckRevision(deck);
+  if (!stampedRevision) throw serviceError('Carousel issue is missing a revision', 'DECK_REVISION_INVALID');
+
+  const { CONTRACT_VERSION } = require('../utilities/pivotAdminComputeJobContract');
+  const { resolveImplementationRevision } = require('../utilities/pivotComputeContextVersion');
+  const { createAdminComputeJob } = require('./pivotComputeAdminService');
+  return createAdminComputeJob(req, {
+    request: {
+      contractVersion: CONTRACT_VERSION,
+      jobId: externalJobId,
+      scheduleOccurrenceId: null,
+      kind: 'carousel-export',
+      cityKey,
+      implementationRevision: resolveImplementationRevision(),
+      contextVersion: 'ctx:carousel.pending',
+      requestedAt: now.toISOString(),
+      idempotencyKey: `export:${id}:r${issueRevision}`,
+      options: { deckId: id, deckRevision: stampedRevision },
+    },
+    actor,
+    now,
+  });
+}
+
 function assertCompletedResultMatchesVerifiedArtifacts(job, result) {
   if (job?.kind !== 'carousel-export' || result?.outcome !== 'completed') return;
   const verified = job.exportArtifacts?.artifacts;
@@ -529,6 +593,7 @@ module.exports = {
   finalizeCarouselArtifactUploads,
   cleanupCarouselAttemptPrefix,
   cleanupExpiredCarouselExports,
+  queueCarouselExportForIssueRevision,
   assertCompletedResultMatchesVerifiedArtifacts,
   DEFAULT_RETENTION_MS,
 };

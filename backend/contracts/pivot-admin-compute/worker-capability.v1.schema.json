@@ -27,7 +27,7 @@
       "type": "array",
       "minItems": 1,
       "maxItems": 8,
-      "items": { "enum": ["city-source-discovery", "city-curation-refresh", "carousel-export", "carousel-compose"] }
+      "items": { "enum": ["city-source-discovery", "city-curation-refresh", "carousel-export", "carousel-compose", "carousel-revise"] }
     },
     "capabilities": {
       "type": "object",

@@ -5,7 +5,8 @@ jest.mock('../../services/tenantConfigService', () => ({
 const getGlobalModels = require('../../services/getGlobalModelService');
 const {
   createCarouselAccount, createCarouselIssue, createGeneratedCarouselIssue, updateCarouselIssue,
-  renameCarouselIssue, archiveCarouselIssue, approveCarouselIssue,
+  renameCarouselIssue, archiveCarouselIssue, approveCarouselIssue, requestCarouselRevision,
+  markCarouselIssuePosted,
 } = require('../../services/pivotCarouselIssueService');
 const {
   addCarouselIssueFeedback, listEditorialFeedback,
@@ -52,6 +53,24 @@ describe('carousel editorial edits and feedback', () => {
     return result.data.issue;
   }
   const note = (issue, text = 'Feedback', disposition = 'change') => addCarouselIssueFeedback(req, accountId, issue.id, { revision: issue.revision, text, disposition });
+  const agentWindow = {
+    from: '2026-10-01T00:00:00.000Z', to: '2026-10-15T00:00:00.000Z',
+    toExclusive: false, timezone: 'America/Los_Angeles', mode: 'upcoming', days: 14,
+  };
+  async function agentDraft() {
+    const result = await createGeneratedCarouselIssue(req, accountId, {
+      name: 'Issue', document: document(), socialCaption: 'Before caption',
+    }, {
+      composition: { socialCaption: 'Before caption' },
+      contextWindow: agentWindow,
+      agentRevision: 1,
+    });
+    expect(result.error).toBeUndefined();
+    return result.data.issue;
+  }
+  async function jobs() {
+    return getGlobalModels(req, 'PivotComputeJob').PivotComputeJob.countDocuments({ kind: 'carousel-revise' });
+  }
 
   test('one save captures all changed editorial fields with before and after values', async () => {
     const issue = await generated();
@@ -256,5 +275,98 @@ describe('carousel editorial edits and feedback', () => {
     const latest = { ...issue, revision: 6 };
     await note(latest, 'After cursor');
     expect((await listEditorialFeedback(req, accountId, feedback.data.version)).data.items.map(item => item.text)).toEqual(['After cursor']);
+  });
+
+  test('a revision request keeps the thread, queues a revise job, and is listed as a change', async () => {
+    const issue = await agentDraft();
+    const requested = await requestCarouselRevision(req, accountId, issue.id, {
+      revision: 1, text: 'Swap the cover line.',
+    });
+    expect(requested.error).toBeUndefined();
+    expect(requested.data.issue).toMatchObject({ revision: 1, hasEditsSinceAgent: false });
+    expect(requested.data.request).toMatchObject({
+      requester: 'editor-1', revision: 1, text: 'Swap the cover line.',
+    });
+    expect(requested.data.issue.revisionRequests).toEqual([
+      expect.objectContaining({ id: requested.data.request.id, text: 'Swap the cover line.' }),
+    ]);
+    expect(requested.data.job).toMatchObject({
+      kind: 'carousel-revise',
+      status: 'pending',
+      cityKey: 'sf',
+      options: { issueId: issue.id, revision: 1, requestId: requested.data.request.id },
+    });
+    const feedback = await listEditorialFeedback(req, accountId);
+    expect(feedback.data.items).toEqual([
+      expect.objectContaining({
+        kind: 'note', disposition: 'change', text: 'Swap the cover line.', issueId: issue.id, revision: 1,
+      }),
+    ]);
+    expect(await jobs()).toBe(1);
+  });
+
+  test('a revision request refuses a posted draft, a stale revision, and a studio edit', async () => {
+    const posted = await agentDraft();
+    expect((await approveCarouselIssue(req, accountId, posted.id, { revision: 1 })).error).toBeUndefined();
+    expect((await markCarouselIssuePosted(req, accountId, posted.id, { revision: 1 })).error).toBeUndefined();
+    expect(await requestCarouselRevision(req, accountId, posted.id, { revision: 1, text: 'Too late' }))
+      .toMatchObject({ code: 'POSTED_ISSUE', status: 409 });
+
+    const stale = await agentDraft();
+    expect(await requestCarouselRevision(req, accountId, stale.id, { revision: 2, text: 'Wrong revision' }))
+      .toMatchObject({ code: 'REVISION_CONFLICT', status: 409 });
+
+    const edited = await agentDraft();
+    expect((await updateCarouselIssue(req, accountId, edited.id, { revision: 1, socialCaption: 'Human caption' })).error).toBeUndefined();
+    expect(await requestCarouselRevision(req, accountId, edited.id, { revision: 2, text: 'Please change the cover' }))
+      .toMatchObject({ code: 'EDITS_SINCE_AGENT', status: 409 });
+
+    const feedback = await listEditorialFeedback(req, accountId);
+    expect(feedback.data.items.some(item => item.kind === 'note')).toBe(false);
+    expect(await jobs()).toBe(0);
+  });
+
+  test('a revision request whose job cannot be created leaves no request and no feedback note', async () => {
+    const issue = await agentDraft();
+    const store = require('../../services/pivotComputeJobStore');
+    jest.spyOn(store, 'createComputeJob').mockRejectedValueOnce(new Error('job store unavailable'));
+    await expect(requestCarouselRevision(req, accountId, issue.id, { revision: 1, text: 'Swap the cover line.' }))
+      .rejects.toThrow('job store unavailable');
+
+    const stored = await model().findById(issue.id).lean();
+    expect(stored.revisionRequests).toEqual([]);
+    expect(stored.feedbackNotes).toEqual([]);
+    expect(stored.revision).toBe(1);
+    expect(await jobs()).toBe(0);
+
+    const retried = await requestCarouselRevision(req, accountId, issue.id, { revision: 1, text: 'Swap the cover line.' });
+    expect(retried.error).toBeUndefined();
+    expect((await model().findById(issue.id).lean()).revisionRequests).toHaveLength(1);
+  });
+
+  test('a revision request whose feedback note is refused leaves no request', async () => {
+    const issue = await agentDraft();
+    const feedbackService = require('../../services/pivotCarouselEditorialFeedbackService');
+    jest.spyOn(feedbackService, 'addCarouselIssueFeedback')
+      .mockResolvedValueOnce({ error: 'The issue changed while saving feedback.', status: 409, code: 'REVISION_CONFLICT' });
+    expect(await requestCarouselRevision(req, accountId, issue.id, { revision: 1, text: 'Swap the cover line.' }))
+      .toMatchObject({ code: 'REVISION_CONFLICT', status: 409 });
+
+    const stored = await model().findById(issue.id).lean();
+    expect(stored.revisionRequests).toEqual([]);
+    expect(stored.feedbackNotes).toEqual([]);
+    expect(await jobs()).toBe(0);
+  });
+
+  test('a revision request refuses a generated draft with no stored composition and writes nothing', async () => {
+    const legacy = await generated();
+    expect(legacy.agentRevision).toBeUndefined();
+    expect(await requestCarouselRevision(req, accountId, legacy.id, { revision: 1, text: 'Swap the cover line.' }))
+      .toMatchObject({ code: 'REVISE_COMPOSITION_MISSING', status: 409 });
+
+    const stored = await model().findById(legacy.id).lean();
+    expect(stored.revisionRequests).toEqual([]);
+    expect(stored.feedbackNotes).toEqual([]);
+    expect(await jobs()).toBe(0);
   });
 });

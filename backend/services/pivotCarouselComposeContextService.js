@@ -1,4 +1,4 @@
-/** Read-only, catalog-only context for a new issue. Never reserves or revises a draft. */
+/** Read-only, catalog-only context for a new issue or a stored draft. Never reserves or rewrites a draft. */
 const { createHash } = require('crypto');
 const getGlobalModels = require('./getGlobalModelService');
 const { getMergedTenants, getTenantByKey } = require('./tenantConfigService');
@@ -257,4 +257,130 @@ async function buildCarouselComposeContextSnapshot(req, { job, now = new Date(),
   return { data: { snapshot } };
 }
 
-module.exports = { listCarouselComposeScheduleAccounts, EDITORIAL_ACCOUNTS, CONTEXT_LIMITS, composeWindow, resolveEditorialAccount, postedHistory, buildCarouselComposeContextSnapshot };
+function editorialDefinitionFor(account) {
+  const handle = String(account.handle || '');
+  return EDITORIAL_ACCOUNTS.find(item => item.handle === handle || item.key === handle.replace(/^@/, '')) || null;
+}
+
+function storedWindow(issue) {
+  const raw = issue.contextWindow?.toObject?.() || issue.contextWindow;
+  if (!raw || typeof raw !== 'object') return null;
+  const window = {
+    from: raw.from, to: raw.to, toExclusive: raw.toExclusive,
+    timezone: raw.timezone, mode: raw.mode, days: raw.days,
+  };
+  if (typeof window.from !== 'string' || typeof window.to !== 'string' || typeof window.toExclusive !== 'boolean'
+    || typeof window.timezone !== 'string' || !window.timezone
+    || (window.mode !== 'past' && window.mode !== 'upcoming')
+    || (window.days !== 7 && window.days !== 14)) return null;
+  return window;
+}
+
+function revisionThread(issue, requestId) {
+  return (issue.revisionRequests || []).map(request => {
+    const row = request.toObject ? request.toObject() : request;
+    return {
+      id: String(row._id),
+      requester: row.requester || null,
+      time: new Date(row.time).toISOString(),
+      revision: row.revision,
+      text: row.text,
+      reason: row.reason || null,
+      current: String(row._id) === requestId,
+    };
+  });
+}
+
+/**
+ * Context for revising one stored draft. The window is the one saved with the
+ * composition, not a window recomputed from the clock. The request this job is
+ * bound to is marked current; earlier requests stay on the thread.
+ */
+async function buildCarouselReviseContextSnapshot(req, { job, now = new Date(), sinceVersion = null }) {
+  const issueId = String(job.options?.issueId || '');
+  const requestId = String(job.options?.requestId || '');
+  const revision = job.options?.revision;
+  if (!/^[0-9a-f]{24}$/.test(issueId) || !/^[0-9a-f]{24}$/.test(requestId) || !Number.isInteger(revision) || revision < 1) {
+    return fail('A revise job must name an issue, revision, and request.', 'REVISE_BINDING_INVALID');
+  }
+  const { PivotCarouselDeck } = getGlobalModels(req, 'PivotCarouselDeck');
+  const issue = await PivotCarouselDeck.findById(issueId);
+  if (!issue) return fail('Issue not found.', 'ISSUE_NOT_FOUND', 404);
+  if ((issue.origin || 'manual') !== 'agent-generated') {
+    return fail('Only a generated draft can be revised.', 'NOT_GENERATED_ISSUE', 409);
+  }
+  if ((issue.revision || 1) !== revision) {
+    return fail('The draft moved on.', 'REVISE_REVISION_STALE', 409);
+  }
+  if (issue.reviewState === 'posted') {
+    return fail('A posted draft cannot be revised.', 'POSTED_ISSUE', 409);
+  }
+  if (issue.agentRevision != null && issue.agentRevision !== (issue.revision || 1)) {
+    return fail('This draft was edited in the studio after the agent last wrote it.', 'EDITS_SINCE_AGENT', 409);
+  }
+  const window = storedWindow(issue);
+  const composition = issue.composition && typeof issue.composition === 'object' && !Array.isArray(issue.composition)
+    ? issue.composition : null;
+  if (!window || !composition || !Object.keys(composition).length) {
+    return fail('This draft has no stored composition.', 'REVISE_COMPOSITION_MISSING', 409);
+  }
+  const loaded = await loadAccount(req, String(issue.accountId));
+  if (loaded.error) return loaded;
+  const { account } = loaded;
+  const definition = editorialDefinitionFor(account);
+  if (!definition) return fail('Unknown editorial account.', 'EDITORIAL_ACCOUNT_UNKNOWN');
+  if (definition.ownerTenantKey && account.ownerTenantKey !== definition.ownerTenantKey) {
+    return fail('Editorial account is attached to the wrong owner tenant.', 'EDITORIAL_ACCOUNT_TENANT_MISMATCH', 409);
+  }
+  if (job.cityKey !== account.ownerTenantKey || (definition.ownerTenantKey && job.cityKey !== definition.ownerTenantKey)) {
+    return fail('Revise job city does not match its editorial account.', 'REVISE_CITY_MISMATCH');
+  }
+  const requests = revisionThread(issue, requestId);
+  if (!requests.some(request => request.current)) {
+    return fail('The revision request is not on this draft.', 'REVISE_REQUEST_MISSING', 409);
+  }
+  const owner = await getTenantByKey(req, account.ownerTenantKey);
+  const timezone = definition.timezone || owner?.pivotDropTimezone || owner?.timezone || window.timezone;
+  const tenants = await getMergedTenants(req);
+  const tenantKeys = definition.sourceTenantKeys === 'all'
+    ? [...new Set(tenants.map(tenant => tenant.tenantKey))].sort()
+    : [...definition.sourceTenantKeys];
+  const history = await postedHistory(req, account._id);
+  if (history.error) return history;
+  const feedback = await listEditorialFeedback(req, String(account._id), sinceVersion);
+  if (feedback.error) return feedback;
+  const { candidates, coverage } = await readCandidates(req, tenantKeys, window, history.used, now);
+  const groups = await curatedGroups(candidates);
+  const snapshot = JSON.parse(JSON.stringify({
+    contractVersion: CONTRACT_VERSION, jobId: job.externalJobId,
+    scheduleOccurrenceId: job.scheduleOccurrenceId || null, kind: 'carousel-revise',
+    cityKey: job.cityKey, implementationRevision: job.implementationRevision || resolveImplementationRevision(),
+    contextVersion: 'ctx:revise.pending', snapshotAt: now.toISOString(),
+    editorialAccountKey: definition.key, issueId: String(issue._id), revision,
+    composition, socialCaption: issue.socialCaption || '', revisionRequests: requests,
+    account: { id: String(account._id), key: definition.key, displayName: definition.displayName,
+      handle: definition.handle, format: definition.format, ownerTenantKey: account.ownerTenantKey,
+      sourceTenantKeys: tenantKeys, timezone, voice: account.voice || {} },
+    policy: COMPOSE_POLICY, window, candidates, curatedGroups: groups,
+    lastPostedIssues: history.recent,
+    coverAssets: await listComposeCoverAssets(req, account._id),
+    editorialFeedback: feedback.data, coverage,
+    templates: { version: 2, coverFamilies: COVER_FAMILIES, coverVariations: [1, 2, 3], eventPresets: EVENT_PRESETS, closingPresets: BACK_PRESETS },
+    missingSignals: ['Catalog interest does not verify attendance.', 'No web, social or calendar lookups were performed.',
+      ...(candidates.some(candidate => candidate.snapshot.publication === 'staged')
+        ? ['Candidates with snapshot.publication "staged" are queued for the next batch release and are not yet visible in the app.'] : []),
+      ...(groups.status === 'ok' ? [] : [`Curated groups are ${groups.status}; judge themes from candidates alone.`])],
+  }));
+  const material = { ...snapshot, candidates: snapshot.candidates.map(candidate => {
+    const { capturedAt, ...provenance } = candidate.provenance;
+    return { ...candidate, provenance };
+  }) };
+  delete material.contextVersion; delete material.snapshotAt;
+  snapshot.contextVersion = `ctx:revise.${createHash('sha256').update(JSON.stringify(material)).digest('hex').slice(0, 32)}`;
+  if (Buffer.byteLength(JSON.stringify(snapshot)) > CONTEXT_LIMITS.bytes) return fail('Revise context exceeds its byte limit.', 'REVISE_CONTEXT_TOO_LARGE', 422);
+  const validation = validateContextSnapshot(snapshot);
+  if (!validation.valid) return fail(`Invalid revise context: ${validation.errors.join(', ')}`, 'REVISE_CONTEXT_INVALID', 500);
+  return { data: { snapshot } };
+}
+
+module.exports = { listCarouselComposeScheduleAccounts, EDITORIAL_ACCOUNTS, CONTEXT_LIMITS, composeWindow, resolveEditorialAccount, postedHistory, buildCarouselComposeContextSnapshot, buildCarouselReviseContextSnapshot };

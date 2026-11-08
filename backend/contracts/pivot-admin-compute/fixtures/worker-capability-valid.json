@@ -3,7 +3,7 @@
   "workerId": "relay-mini-1",
   "implementationRevision": "relay-worker@2026.09.08",
   "supportedContractVersions": ["1"],
-  "supportedKinds": ["city-source-discovery", "city-curation-refresh", "carousel-export", "carousel-compose"],
+  "supportedKinds": ["city-source-discovery", "city-curation-refresh", "carousel-export", "carousel-compose", "carousel-revise"],
   "capabilities": {
     "firecrawl": true,
     "nativeProviders": ["luma", "partiful"],
