@@ -1,6 +1,6 @@
 const { createHash } = require('crypto');
 const getGlobalModels = require('./getGlobalModelService');
-const { COVER_FAMILIES, EVENT_PRESETS, BACK_PRESETS, generateCoverSlide,
+const { COVER_FAMILIES, EVENT_PRESETS, BACK_PRESETS, generateCoverSlide, generateFreeCoverSlide,
   generateEventSlide, generateBackSlide, walkElements } = require('./pivotCarouselPresets');
 
 const refKey = ref => `${ref.sourceTenantKey}:${ref.eventId}`;
@@ -41,6 +41,21 @@ async function listComposeCoverAssets(req, accountId) {
   return [...assets.values()].slice(0, 24);
 }
 
+const SLIDE_UNITS = Object.freeze({ width: 100, height: 125 });
+/**
+ * A free cover keeps its words on the slide, says what it is about, and carries
+ * the Just Go mark. Images and shapes may bleed past the edge.
+ */
+function checkCoverLayout(layout) {
+  const elements = layout.elements || [];
+  const texts = elements.filter(item => item.kind === 'text');
+  const outside = texts.find(({ box }) => box.x < -0.5 || box.y < -0.5
+    || box.x + box.width > SLIDE_UNITS.width + 0.5 || box.y + box.height > SLIDE_UNITS.height + 0.5);
+  if (outside) invalid(`Cover text "${outside.text.slice(0, 40)}" must sit inside the slide (0–100 across, 0–125 down).`, 'COMPOSE_LAYOUT_INVALID');
+  if (!texts.some(item => item.role === 'headline')) invalid('A free cover needs a headline text.', 'COMPOSE_LAYOUT_INVALID');
+  if (!elements.some(item => item.kind === 'sticker')) invalid('A free cover needs the Just Go sticker.', 'COMPOSE_LAYOUT_INVALID');
+}
+
 /** Build the editable document with exactly the browser's versioned preset generators. */
 function buildCompositionDocument(composition, context, currentCandidates = context.candidates) {
   const known = new Map(context.candidates.map(row => [refKey(row.ref), row]));
@@ -66,22 +81,33 @@ function buildCompositionDocument(composition, context, currentCandidates = cont
     || (composition.optionalClosingSlide && !BACK_PRESETS.includes(composition.optionalClosingSlide.presetId))) {
     invalid('A selected carousel preset does not exist.', 'COMPOSE_PRESET_INVALID');
   }
+  const layout = composition.cover.layout;
   const lastCover = context.lastPostedIssues[0]?.cover;
-  if (lastCover?.family === composition.cover.family && lastCover.variation === composition.cover.variation
+  if (!layout && lastCover?.family === composition.cover.family && lastCover.variation === composition.cover.variation
     && (!composition.cover.repeatReason?.trim() || /[\r\n]/.test(composition.cover.repeatReason))) invalid('A repeated cover family and variation needs a one-line reason.', 'COMPOSE_COVER_REPEAT_REASON_REQUIRED');
-  let coverImage;
-  const coverRef = composition.cover.assetRef;
-  if (coverRef.kind === 'event-poster') {
-    const candidate = eventFor(coverRef.eventRef);
-    coverImage = { src: candidate.snapshot.image, alt: candidate.snapshot.name };
-  } else if (coverRef.kind === 'unsplash') {
-    coverImage = safeUnsplashAsset((context.coverAssets || []).find(asset => asset.id === coverRef.assetId));
-    if (!coverImage) invalid('The Unsplash photo is not in this account catalog.', 'COMPOSE_ASSET_UNKNOWN');
-  } else invalid('Cover images must be event posters or catalog Unsplash photos.', 'COMPOSE_ASSET_UNKNOWN');
-  const cover = generateCoverSlide({ theme: composition.cover.headline, coverPreset: composition.cover.family,
-    variation: composition.cover.variation, coverImage,
-    copy: { caption: composition.cover.subtitle, location: context.account.format === 'city-picks' ? selected[0].snapshot.city?.name || '' : '' } });
-  walkElements(cover.elements, element => { if (element.kind === 'image') element.crop = { ...composition.cover.crop }; });
+  function imageFor(ref) {
+    if (ref?.kind === 'event-poster') {
+      const candidate = eventFor(ref.eventRef);
+      return { src: candidate.snapshot.image, alt: candidate.snapshot.name };
+    }
+    if (ref?.kind === 'unsplash') {
+      const asset = safeUnsplashAsset((context.coverAssets || []).find(row => row.id === ref.assetId));
+      if (!asset) invalid('The Unsplash photo is not in this account catalog.', 'COMPOSE_ASSET_UNKNOWN');
+      return asset;
+    }
+    return invalid('Cover images must be event posters or catalog Unsplash photos.', 'COMPOSE_ASSET_UNKNOWN');
+  }
+  const coverImage = imageFor(composition.cover.assetRef);
+  let cover;
+  if (layout) {
+    checkCoverLayout(layout);
+    cover = generateFreeCoverSlide(layout, { resolveImage: imageFor });
+  } else {
+    cover = generateCoverSlide({ theme: composition.cover.headline, coverPreset: composition.cover.family,
+      variation: composition.cover.variation, coverImage,
+      copy: { caption: composition.cover.subtitle, location: context.account.format === 'city-picks' ? selected[0].snapshot.city?.name || '' : '' } });
+    walkElements(cover.elements, element => { if (element.kind === 'image') element.crop = { ...composition.cover.crop }; });
+  }
   const slides = [cover];
   const usedSlides = new Set();
   for (const proposed of composition.eventSlides) {
@@ -91,7 +117,8 @@ function buildCompositionDocument(composition, context, currentCandidates = cont
     usedSlides.add(key);
     const candidate = eventFor(proposed.eventRef);
     slides.push(generateEventSlide({ ref: candidate.ref, snapshot: { ...candidate.snapshot, crop: proposed.crop }, blurb: proposed.blurb },
-      proposed.presetId, { format: context.account.format }));
+      proposed.presetId, { format: context.account.format, title: proposed.title, imageFit: proposed.imageFit,
+        background: proposed.background, titleScale: proposed.titleScale }));
   }
   if (usedSlides.size !== refs.length) invalid('Each selected event needs exactly one slide.');
   if (!composition.socialCaption?.trim() || composition.socialCaption.length > 2200) invalid('A social caption is required.');

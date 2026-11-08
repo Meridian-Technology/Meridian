@@ -568,6 +568,266 @@
         }
       ]
     },
+    "composePaletteColor": {
+      "type": "string",
+      "enum": [
+        "paper",
+        "ink",
+        "orange",
+        "blush",
+        "stone"
+      ]
+    },
+    "composeBox": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "x",
+        "y",
+        "width",
+        "height"
+      ],
+      "properties": {
+        "x": {
+          "type": "number",
+          "minimum": -30,
+          "maximum": 130
+        },
+        "y": {
+          "type": "number",
+          "minimum": -30,
+          "maximum": 155
+        },
+        "width": {
+          "type": "number",
+          "minimum": 2,
+          "maximum": 160
+        },
+        "height": {
+          "type": "number",
+          "minimum": 0.75,
+          "maximum": 190
+        },
+        "rotation": {
+          "type": "number",
+          "minimum": -45,
+          "maximum": 45
+        }
+      }
+    },
+    "composeLayoutText": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "role",
+        "text",
+        "box",
+        "font",
+        "size",
+        "color"
+      ],
+      "properties": {
+        "kind": {
+          "const": "text"
+        },
+        "role": {
+          "type": "string",
+          "enum": [
+            "headline",
+            "subtitle",
+            "kicker",
+            "location",
+            "text"
+          ]
+        },
+        "text": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 300,
+          "pattern": "\\S"
+        },
+        "box": {
+          "$ref": "#/$defs/composeBox"
+        },
+        "font": {
+          "type": "string",
+          "enum": [
+            "Les Flos Chaos",
+            "Les Flos Sans",
+            "Les Flos Sage",
+            "Instrument Sans",
+            "Space Mono"
+          ]
+        },
+        "size": {
+          "type": "number",
+          "minimum": 1.4,
+          "maximum": 40
+        },
+        "color": {
+          "$ref": "#/$defs/composePaletteColor"
+        },
+        "align": {
+          "type": "string",
+          "enum": [
+            "left",
+            "center",
+            "right"
+          ]
+        },
+        "lineHeight": {
+          "type": "number",
+          "minimum": 0.8,
+          "maximum": 1.8
+        },
+        "weight": {
+          "type": "integer",
+          "enum": [
+            400,
+            500,
+            600,
+            700
+          ]
+        },
+        "lettering": {
+          "type": "boolean"
+        },
+        "paperStrip": {
+          "$ref": "#/$defs/composePaletteColor"
+        }
+      }
+    },
+    "composeLayoutImage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "assetRef",
+        "box",
+        "fit"
+      ],
+      "properties": {
+        "kind": {
+          "const": "image"
+        },
+        "assetRef": {
+          "$ref": "#/$defs/composeCoverAssetRef"
+        },
+        "box": {
+          "$ref": "#/$defs/composeBox"
+        },
+        "fit": {
+          "type": "string",
+          "enum": [
+            "fill",
+            "whole"
+          ]
+        },
+        "crop": {
+          "$ref": "#/$defs/composeCrop"
+        },
+        "treatment": {
+          "type": "string",
+          "enum": [
+            "plain",
+            "print",
+            "sticker-photo"
+          ]
+        },
+        "mask": {
+          "type": "string",
+          "enum": [
+            "round-cut",
+            "arch",
+            "oval"
+          ]
+        },
+        "brightness": {
+          "type": "number",
+          "minimum": 0.35,
+          "maximum": 1.25
+        }
+      }
+    },
+    "composeLayoutSticker": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "finish",
+        "box"
+      ],
+      "properties": {
+        "kind": {
+          "const": "sticker"
+        },
+        "finish": {
+          "type": "string",
+          "enum": [
+            "light",
+            "dark"
+          ]
+        },
+        "box": {
+          "$ref": "#/$defs/composeBox"
+        }
+      }
+    },
+    "composeLayoutShape": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "box",
+        "color"
+      ],
+      "properties": {
+        "kind": {
+          "const": "shape"
+        },
+        "box": {
+          "$ref": "#/$defs/composeBox"
+        },
+        "color": {
+          "$ref": "#/$defs/composePaletteColor"
+        }
+      }
+    },
+    "composeCoverLayout": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "background",
+        "elements"
+      ],
+      "properties": {
+        "background": {
+          "$ref": "#/$defs/composePaletteColor"
+        },
+        "elements": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 16,
+          "items": {
+            "oneOf": [
+              {
+                "$ref": "#/$defs/composeLayoutText"
+              },
+              {
+                "$ref": "#/$defs/composeLayoutImage"
+              },
+              {
+                "$ref": "#/$defs/composeLayoutSticker"
+              },
+              {
+                "$ref": "#/$defs/composeLayoutShape"
+              }
+            ]
+          }
+        }
+      }
+    },
     "composeCrop": {
       "type": "object",
       "additionalProperties": false,
@@ -637,6 +897,9 @@
           "type": "string",
           "minLength": 1,
           "maxLength": 300
+        },
+        "layout": {
+          "$ref": "#/$defs/composeCoverLayout"
         }
       }
     },
@@ -670,6 +933,33 @@
         },
         "crop": {
           "$ref": "#/$defs/composeCrop"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80,
+          "pattern": "^[^\\r\\n]*\\S[^\\r\\n]*$"
+        },
+        "imageFit": {
+          "type": "string",
+          "enum": [
+            "fill",
+            "whole",
+            "none"
+          ]
+        },
+        "background": {
+          "type": "string",
+          "enum": [
+            "paper",
+            "ink",
+            "orange"
+          ]
+        },
+        "titleScale": {
+          "type": "number",
+          "minimum": 0.6,
+          "maximum": 1.3
         }
       }
     },

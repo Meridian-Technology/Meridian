@@ -27,6 +27,8 @@ function cropStyle(element, filmFilter = true) {
   const filter = filmFilter
     ? `saturate(1.06) contrast(1.03) brightness(${brightness})`
     : (brightness !== 1 ? `brightness(${brightness})` : undefined);
+  // `contain` shows the whole picture, letterboxed in its frame: a flier stays readable.
+  if (element.style?.objectFit === 'contain') return { objectFit: 'contain', ...(filter ? { filter } : {}) };
   return { objectPosition: `${(crop.focalX ?? 0.5) * 100}% ${(crop.focalY ?? 0.5) * 100}%`,
     transform: `translate(${(crop.panX || 0) * Math.max(0, (crop.scale || 1) - 1) * 50}%, ${(crop.panY || 0) * Math.max(0, (crop.scale || 1) - 1) * 50}%) scale(${crop.scale || 1}) rotate(${element.style?.imageRotation || 0}deg)`,
     ...(filter ? { filter } : {}) };
