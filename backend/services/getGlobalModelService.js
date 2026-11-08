@@ -31,6 +31,7 @@ const pivotCarouselAccountSchema = require('../schemas/pivotCarouselAccount');
 const pivotCarouselSavedSearchSchema = require('../schemas/pivotCarouselSavedSearch');
 const pivotCarouselCurationDraftSchema = require('../schemas/pivotCarouselCurationDraft');
 const pivotCarouselRevisionSchema = require('../schemas/pivotCarouselRevision');
+const pivotCarouselDraftRenderSchema = require('../schemas/pivotCarouselDraftRender');
 const justGoLandingEventSchema = require('../schemas/justGoLandingEvent');
 const justGoWaitlistSchema = require('../schemas/justGoWaitlist');
 const justGoCityInterestSchema = require('../schemas/justGoCityInterest');
@@ -200,6 +201,11 @@ const getGlobalModels = (req, ...names) => {
             'PivotCarouselRevision',
             pivotCarouselRevisionSchema,
             'pivot_carousel_revisions'
+        ),
+        PivotCarouselDraftRender: model(
+            'PivotCarouselDraftRender',
+            pivotCarouselDraftRenderSchema,
+            'pivot_carousel_draft_renders'
         ),
         JustGoLandingEvent: model(
             'JustGoLandingEvent',

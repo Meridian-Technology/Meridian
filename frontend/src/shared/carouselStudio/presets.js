@@ -78,6 +78,32 @@ const EVENT_GEOMETRY = Object.freeze({
 const PAPER = '#faf6ef';
 const INK = '#1a1714';
 const ORANGE = '#ff4f1f';
+// The compose agent names colours; these are the only ones it can use.
+const PALETTE = Object.freeze({ paper: PAPER, ink: INK, orange: ORANGE, blush: '#f3d2c4', stone: '#9a938a' });
+const SLIDE_FONTS = Object.freeze(['Les Flos Chaos', 'Les Flos Sans', 'Les Flos Sage', 'Instrument Sans', 'Space Mono']);
+// Rough average glyph width as a share of the font size, for sizing before the
+// browser measures. The renderer's fit corrects what this misses.
+const GLYPH_WIDTH = Object.freeze({ 'Les Flos Chaos': 0.56, 'Les Flos Sans': 0.5, 'Les Flos Sage': 0.42, 'Instrument Sans': 0.5, 'Space Mono': 0.6 });
+/** The largest size, at most `base`, at which `text` wraps to `maxLines` in `width` (slide units). */
+function sizeForLines(text, width, base, maxLines, { font = 'Les Flos Sans', min = base * 0.45 } = {}) {
+  const value = String(text || '').trim();
+  if (!value) return base;
+  const glyph = GLYPH_WIDTH[font] || 0.5;
+  const lines = (size) => {
+    const perLine = Math.max(1, Math.floor(width / (size * glyph)));
+    return value.split(/\n/).reduce((sum, part) => {
+      let count = 1; let used = 0;
+      for (const word of part.split(/\s+/).filter(Boolean)) {
+        const length = word.length + (used ? 1 : 0);
+        if (used && used + length > perLine) { count += Math.ceil(word.length / perLine); used = word.length % perLine; } else used += length;
+      }
+      return sum + count;
+    }, 0);
+  };
+  let size = base;
+  while (size > min && lines(size) > maxLines) size = Math.max(min, size * 0.92);
+  return Math.round(size * 100) / 100;
+}
 const clone = (value) => JSON.parse(JSON.stringify(value));
 const frameOf = (box) => ({ x: px(box.x), y: px(box.y), width: px(box.width), height: px(box.height) });
 function base(kind, role, box) {
@@ -150,12 +176,14 @@ function generateCoverSlide({ theme = '', coverPreset = 'loose-letters', variati
     return { text: line, size: sage ? 9 : sizes[Math.min(i, sizes.length - 1)] || sizes[0], font: sage ? 'Les Flos Sage' : sans ? 'Les Flos Sans' : 'Les Flos Chaos' };
   });
   const children = runs.map((run, i) => {
-    const size = run.size;
+    const font = run.font || 'Les Flos Chaos';
+    const size = Math.max(4, Math.min(run.size, 86 / Math.max(1, String(run.text || '').length * (GLYPH_WIDTH[font] || 0.5))));
     const node = textNode(`cover-line-${i + 1}`, run.text, { x: 0, y, width: 88, height: size + (familyId === 'kept-somewhere' ? 1.6 : 0) }, {
       fontFamily: run.font || 'Les Flos Chaos', fontSizePx: px(size), lineHeight: 1,
       letterSpacingPx: px(run.font === 'Les Flos Sage' ? -0.25 : -0.65), textAlign: 'center',
       color: familyId === 'kept-somewhere' ? ORANGE : PAPER,
       lettering: run.font !== 'Les Flos Sage' && run.font !== 'Les Flos Sans', textBackground: familyId === 'kept-somewhere' ? PAPER : null,
+      fit: 'shrink', minFontSizePx: px(3.5),
     });
     y += size + (familyId === 'loose-letters' ? .5 : familyId === 'kept-somewhere' ? 1.6 : 0);
     return node;
@@ -164,13 +192,55 @@ function generateCoverSlide({ theme = '', coverPreset = 'loose-letters', variati
   const light = familyId !== 'kept-somewhere';
   elements.push(textNode('cover-caption', copy.caption || '', { x: 15, y: familyId === 'loose-letters' ? 99 : familyId === 'open-invitation' ? 108 : 105, width: familyId === 'loose-letters' ? 45 : 70, height: 6 }, {
     fontFamily: 'Space Mono', fontSizePx: px(1.9), color: familyId === 'loose-letters' ? PAPER : INK,
-    textAlign: familyId === 'loose-letters' ? 'left' : 'center',
+    textAlign: familyId === 'loose-letters' ? 'left' : 'center', fit: 'shrink', minFontSizePx: px(1.3),
   }));
   elements.push(textNode('cover-location', copy.location || '', { x: 15, y: familyId === 'open-invitation' ? 113 : familyId === 'kept-somewhere' ? 110 : 108, width: 70, height: 4 }, {
     fontFamily: 'Space Mono', fontSizePx: px(1.8), color: familyId === 'loose-letters' ? PAPER : INK, textAlign: 'center',
+    fit: 'shrink', minFontSizePx: px(1.3),
   }));
   elements.push(stickerNode(light ? 'light' : 'dark', { x: familyId === 'open-invitation' ? 63 : 62, y: light ? (familyId === 'open-invitation' ? 86 : 88) : 85, width: 27, height: 27 * 362 / 629, rotation: familyId === 'open-invitation' ? -9 : light ? 9 : 8 }));
   return finishSlide('cover', familyId, index + 1, family.background, elements, { photoPosition: clone(variant.crop), cropAspect: familyId === 'loose-letters' ? 'full-bleed' : 'aperture', stickerFinish: light ? 'light' : 'dark' });
+}
+/**
+ * A cover laid out element by element by the compose agent. Boxes are in slide
+ * units (100 wide, 125 tall); colours are palette names. `resolveImage` turns an
+ * asset reference into `{ src, alt }`. Every text fits its box when rendered.
+ */
+function generateFreeCoverSlide(layout = {}, { resolveImage = () => null } = {}) {
+  const elements = [];
+  let photos = 0;
+  for (const item of layout.elements || []) {
+    const box = item.box || { x: 0, y: 0, width: 10, height: 10 };
+    if (item.kind === 'text') {
+      const font = SLIDE_FONTS.includes(item.font) ? item.font : 'Instrument Sans';
+      const lettering = Boolean(item.lettering) && (font === 'Les Flos Chaos' || font === 'Les Flos Sans');
+      const node = textNode(`cover-${item.role || 'text'}`, item.text, box, {
+        fontFamily: font, fontSizePx: px(item.size || 4), color: PALETTE[item.color] || INK,
+        textAlign: item.align || 'left', lineHeight: item.lineHeight || (lettering ? 1 : 1.15),
+        ...(item.weight ? { fontWeight: item.weight } : {}),
+        ...(lettering ? { lettering: true, letterSpacingPx: px(font === 'Les Flos Chaos' ? -0.65 : -0.25) } : {}),
+        ...(item.paperStrip ? { textBackground: PALETTE[item.paperStrip] } : {}),
+        fit: 'shrink', minFontSizePx: px(Math.min(item.size || 4, 1.4)),
+      });
+      elements.push({ ...node, presetOwned: false });
+    } else if (item.kind === 'image') {
+      const asset = resolveImage(item.assetRef);
+      const treatment = item.treatment && item.treatment !== 'plain' ? item.treatment : null;
+      const style = {
+        ...(treatment ? { treatment } : {}), ...(item.mask ? { mask: item.mask } : {}),
+        brightness: item.brightness ?? 1, ...(item.fit === 'whole' ? { objectFit: 'contain' } : {}),
+      };
+      photos += 1;
+      elements.push({ ...imageNode(photos === 1 ? 'cover-photo' : 'cover-image', asset || {}, box, item.fit === 'whole' ? {} : item.crop || {}, style), presetOwned: false });
+    } else if (item.kind === 'sticker') {
+      const finish = item.finish === 'dark' ? 'dark' : 'light';
+      elements.push({ ...stickerNode(finish, { ...box, height: box.width * 362 / 629 }), presetOwned: false });
+    } else if (item.kind === 'shape') {
+      elements.push({ ...base('shape', 'cover-shape', box), presetOwned: false, style: { fill: PALETTE[item.color] || INK } });
+    }
+  }
+  const color = PALETTE[layout.background] || INK;
+  return finishSlide('cover', 'free-layout', 1, color, elements, { cropAspect: 'free', stickerFinish: null });
 }
 function finishSlide(role, preset, variation, color, elements, properties = {}) {
   return { id: randomUUID(), role, width: 1080, height: 1350, background: { kind: 'fill', color },
@@ -191,37 +261,70 @@ function logistics(snapshot, format, width, size = 2.7) {
   when.flowWeight = 1; where.flowWeight = 1.2; row.flowDirection = 'row'; row.layout = 'flow'; reflowCard(row);
   return row;
 }
-function generateEventSlide(item = {}, eventPreset = 'photo-note', { format } = {}) {
+// Text colours that read on each event-slide background, for text that sits on it directly.
+const EVENT_INKS = Object.freeze({
+  paper: { text: INK, title: ORANGE, sticker: 'light' },
+  ink: { text: PAPER, title: ORANGE, sticker: 'light' },
+  orange: { text: INK, title: PAPER, sticker: 'light' },
+});
+/**
+ * One event slide. `title` replaces the event name on the slide, `imageFit` is
+ * 'fill' (crop to the frame), 'whole' (the entire poster, letterboxed; for
+ * fliers) or 'none' (type only), `background` is a palette name and
+ * `titleScale` multiplies the length-fitted title size.
+ */
+function generateEventSlide(item = {}, eventPreset = 'photo-note', { format, title: titleText, imageFit = 'fill', background, titleScale = 1 } = {}) {
   const preset = EVENT_PRESETS.includes(eventPreset) ? eventPreset : EVENT_PRESETS[0];
   const spec = EVENT_GEOMETRY[preset]; const snap = item.snapshot || {};
+  const scene = preset === 'in-the-room';
+  const noImage = imageFit === 'none';
+  const backgroundName = EVENT_INKS[background] ? background : null;
+  const backgroundColor = backgroundName ? PALETTE[backgroundName] : spec.background;
+  const inks = EVENT_INKS[backgroundName || (spec.background === ORANGE ? 'orange' : spec.background === INK ? 'ink' : 'paper')];
   const asset = { src: snap.image || null, key: snap.imageKey || null, credit: snap.credit || snap.imageCredit || null, alt: snap.name || '' };
-  const photo = imageNode('event-photo', asset, spec.photo, snap.crop || {}, { treatment: preset === 'in-the-room' ? 'full-bleed' : 'sticker-photo', brightness: preset === 'in-the-room' ? 0.9 : 1 });
-  const size = preset === 'photo-note' ? 8 : preset === 'on-the-bill' ? 10.5 : 7.4;
-  const title = flowText('event-name', snap.name || '', preset === 'in-the-room' ? 68 : 84, size, { fontFamily: 'Les Flos Sans', lineHeight: 0.97, letterSpacingPx: px(-0.32), color: preset === 'photo-note' ? ORANGE : INK });
-  const about = flowText('event-description', item.blurb ?? item.recapNote ?? '', preset === 'in-the-room' ? 68 : 84, 2.8);
+  const photoStyle = { treatment: scene ? 'full-bleed' : 'sticker-photo', brightness: scene && imageFit !== 'whole' ? 0.9 : 1, ...(imageFit === 'whole' ? { objectFit: 'contain' } : {}) };
+  const photo = noImage ? null : imageNode('event-photo', asset, spec.photo, imageFit === 'whole' ? {} : snap.crop || {}, photoStyle);
+  const name = String(titleText || snap.name || '');
+  const scale = Math.min(1.3, Math.max(0.6, Number(titleScale) || 1));
+  const titleWidth = scene ? 68 : 84;
+  const base = (preset === 'photo-note' ? 8 : preset === 'on-the-bill' ? 10.5 : 7.4) * (noImage ? 1.35 : 1);
+  const size = sizeForLines(name, titleWidth, base, noImage ? 4 : preset === 'photo-note' ? 2 : 3) * scale;
+  // Inside in-the-room's paper card the title stays ink; on a bare background it takes the background's title colour.
+  const titleColor = scene ? INK : preset === 'photo-note' ? inks.title : inks.text;
+  const title = flowText('event-name', name, titleWidth, size, { fontFamily: 'Les Flos Sans', lineHeight: 0.97, letterSpacingPx: px(-0.32), color: titleColor });
+  const about = flowText('event-description', item.blurb ?? item.recapNote ?? '', titleWidth, 2.8, { color: scene ? INK : inks.text });
   if (preset === 'photo-note') about.style.maxWidthPx = px(76);
   about.placeholder = 'Write your blurb';
   let elements;
   if (preset === 'on-the-bill') {
-    title.layout = 'free'; title.frame.x = px(8); title.frame.y = px(9);
-    about.layout = 'free'; about.frame = frameOf({ x: 59, y: 43, width: 33, height: 47 }); about.style.fontSizePx = px(3.4);
+    // The title owns the band above the photo and shrinks to stay in it.
+    title.layout = 'free'; title.autoHeight = false; title.frame = frameOf({ x: 8, y: 9, width: 84, height: noImage ? 32 : 25 });
+    title.style = { ...title.style, fit: 'shrink', minFontSizePx: px(4) };
+    about.layout = 'free'; about.autoHeight = false;
+    about.frame = frameOf(noImage ? { x: 8, y: 44, width: 84, height: 50 } : { x: 59, y: 43, width: 33, height: 47 });
+    about.style = { ...about.style, fontSizePx: px(3.4), fit: 'shrink', minFontSizePx: px(2.2) };
     const facts = logistics(snap, format, 84); facts.style.borderTop = false;
     const access = flowText('event-access', snap.access || '', 84, 2.1, { fontFamily: 'Space Mono' }); if (!access.text) access.presence = 'removed';
     const footer = cardNode('event-card', { x: 0, y: 103, width: 100, height: 22 }, [facts, access], { padding: 8, sizing: 'content', gap: 2, style: { fill: PAPER } });
     footer.padding.top = px(3); footer.padding.bottom = px(6); reflowCard(footer); footer.anchor = 'bottom'; footer.bottom = 0; footer.frame.y = px(125) - footer.frame.height;
-    elements = [photo, title, about, footer];
+    footer.fit = 'shrink'; footer.maxHeight = px(30);
+    elements = [photo, title, about, footer].filter(Boolean);
   } else {
-    const scene = preset === 'in-the-room';
-    const facts = logistics(snap, format, scene ? 68 : 84, scene ? 2.4 : 2.7);
-    const access = flowText('event-access', snap.access || '', scene ? 68 : 84, 2.1, { fontFamily: 'Space Mono', color: scene ? '#b12d0b' : INK }); if (!access.text) access.presence = 'removed';
-    if (!scene) { facts.pin = 'end'; access.pin = 'end'; }
+    const facts = logistics(snap, format, titleWidth, scene ? 2.4 : 2.7);
+    const access = flowText('event-access', snap.access || '', titleWidth, 2.1, { fontFamily: 'Space Mono', color: scene ? '#b12d0b' : inks.text }); if (!access.text) access.presence = 'removed';
+    if (!scene) {
+      facts.pin = 'end'; access.pin = 'end';
+      walkElements(facts.children, child => { if (child.kind === 'text') child.style = { ...child.style, color: inks.text }; });
+    }
     if (scene) facts.style.ruleColor = ORANGE;
-    const card = cardNode('event-card', { ...spec.card, rotation: scene ? -1.5 : 0 }, [title, about, facts, access], { padding: scene ? 4 : 0, gap: scene ? 2.5 : 2, sizing: scene ? 'content' : 'fixed', style: scene ? { fill: PAPER, shadow: 'card' } : {} });
-    if (scene) { card.anchor = 'bottom'; card.bottom = px(9); card.frame.y = px(125) - card.bottom - card.frame.height; }
-    elements = [photo, card];
+    const cardBox = noImage && !scene ? { ...spec.card, y: 12, height: 107 } : spec.card;
+    const card = cardNode('event-card', { ...cardBox, rotation: scene ? -1.5 : 0 }, [title, about, facts, access], { padding: scene ? 4 : 0, gap: scene ? 2.5 : 2, sizing: scene ? 'content' : 'fixed', style: scene ? { fill: PAPER, shadow: 'card' } : {} });
+    card.fit = 'shrink';
+    if (scene) { card.anchor = 'bottom'; card.bottom = px(9); card.maxHeight = px(noImage ? 100 : 70); card.frame.y = px(125) - card.bottom - card.frame.height; }
+    elements = [photo, card].filter(Boolean);
   }
-  if (spec.sticker) elements.push(stickerNode(spec.stickerFinish, { ...spec.sticker, height: 21 * 362 / 629 }));
-  const slide = finishSlide('event', preset, 1, spec.background, elements, { cropAspect: spec.cropAspect, stickerFinish: spec.stickerFinish, card: clone(spec.card), photoPosition: clone(spec.photo) });
+  if (spec.sticker) elements.push(stickerNode(inks.sticker === 'dark' ? 'dark' : spec.stickerFinish, { ...spec.sticker, height: 21 * 362 / 629 }));
+  const slide = finishSlide('event', preset, 1, scene && noImage && !backgroundName ? INK : backgroundColor, elements, { cropAspect: spec.cropAspect, stickerFinish: spec.stickerFinish, card: clone(spec.card), photoPosition: clone(spec.photo) });
   slide.sourceTimezone = snap.timezone || snap.timeZone || snap.city?.timezone || snap.city?.timeZone || 'UTC';
   slide.source = item.ref ? { ...item.ref } : null;
   return slide;
@@ -239,13 +342,13 @@ function generateBackSlide(presetId = 'paper-close', copy = {}) {
   const badge = { ...base('image', 'back-badge', { x: 31, y: 78, width: 38, height: 38 * 40 / 119.664 }), lockAspect: true, asset: { id: 'app-store-badge', alt: 'Download on the App Store' } };
   return finishSlide('back', orange ? 'orange-close' : 'paper-close', orange ? 2 : 1, orange ? ORANGE : PAPER, [
     mark,
-    textNode('back-kicker', kicker, { x: 8, y: 46, width: 84, height: 5 }, { fontFamily: 'Space Mono', fontSizePx: px(2.2), textAlign: 'center', color: quiet }),
-    textNode('back-line', line, { x: 6, y: 54, width: 88, height: 12 }, { fontFamily: 'Les Flos Sans', fontSizePx: px(6.6), fontWeight: 700, lineHeight: 1.02, letterSpacingPx: px(-0.08), textAlign: 'center', color: ink }),
-    textNode('back-sub', sub, { x: 20, y: 68, width: 60, height: 5 }, { fontFamily: 'Space Mono', fontSizePx: px(2.4), textAlign: 'center', color: quiet }),
+    textNode('back-kicker', kicker, { x: 8, y: 46, width: 84, height: 5 }, { fontFamily: 'Space Mono', fontSizePx: px(2.2), textAlign: 'center', color: quiet, fit: 'shrink', minFontSizePx: px(1.4) }),
+    textNode('back-line', line, { x: 6, y: 54, width: 88, height: 12 }, { fontFamily: 'Les Flos Sans', fontSizePx: px(6.6), fontWeight: 700, lineHeight: 1.02, letterSpacingPx: px(-0.08), textAlign: 'center', color: ink, fit: 'shrink', minFontSizePx: px(3) }),
+    textNode('back-sub', sub, { x: 20, y: 68, width: 60, height: 5 }, { fontFamily: 'Space Mono', fontSizePx: px(2.4), textAlign: 'center', color: quiet, fit: 'shrink', minFontSizePx: px(1.4) }),
     badge,
-    textNode('back-url', url, { x: 8, y: 114, width: 22, height: 4 }, { fontFamily: 'Space Mono', fontSizePx: px(2), textAlign: 'left', color: ink }),
+    textNode('back-url', url, { x: 8, y: 114, width: 22, height: 4 }, { fontFamily: 'Space Mono', fontSizePx: px(2), textAlign: 'left', color: ink, fit: 'shrink', minFontSizePx: px(1.2) }),
     { ...base('shape', 'back-rule', { x: 32, y: 115.4, width: 36, height: 0.8 }), style: { fill: quiet } },
-    textNode('back-end', end, { x: 72, y: 114, width: 20, height: 4 }, { fontFamily: 'Space Mono', fontSizePx: px(2), textAlign: 'right', color: ink }),
+    textNode('back-end', end, { x: 72, y: 114, width: 20, height: 4 }, { fontFamily: 'Space Mono', fontSizePx: px(2), textAlign: 'right', color: ink, fit: 'shrink', minFontSizePx: px(1.2) }),
   ]);
 }
 function walkElements(elements, callback) {
@@ -257,6 +360,8 @@ function titleOf(slide) {
   }); return parts.join('\n');
 }
 function applyPreset(slide, presetId, variation = 1) {
+  // A free cover has no template to regenerate from.
+  if (presetId === 'free-layout') return slide;
   const old = new Map(); walkElements(slide.elements, element => old.set(element.role, element));
   const isCover = COVER_FAMILIES.includes(presetId);
   const isBack = BACK_PRESETS.includes(presetId);
@@ -318,7 +423,7 @@ function applyPreset(slide, presetId, variation = 1) {
 }
 function shuffleCoverVariation(document, { variation } = {}) {
   const cover = document.slides?.find(slide => slide.role === 'cover');
-  if (!cover) return document;
+  if (!cover || !COVER_FAMILIES.includes(cover.preset?.family)) return document;
   return { ...document, slides: document.slides.map(slide => slide.id === cover.id ? applyPreset(slide, slide.preset?.family || 'loose-letters', variation || (slide.preset?.variation || 1) % 3 + 1) : slide) };
 }
-module.exports = { COVER_FAMILIES, EVENT_PRESETS, BACK_PRESETS, COVER_GEOMETRY, EVENT_GEOMETRY, generateCoverSlide, generateEventSlide, generateBackSlide, shuffleCoverVariation, applyPreset, titleOf, walkElements, formatWhen };
+module.exports = { COVER_FAMILIES, EVENT_PRESETS, BACK_PRESETS, COVER_GEOMETRY, EVENT_GEOMETRY, PALETTE, SLIDE_FONTS, sizeForLines, generateCoverSlide, generateFreeCoverSlide, generateEventSlide, generateBackSlide, shuffleCoverVariation, applyPreset, titleOf, walkElements, formatWhen };

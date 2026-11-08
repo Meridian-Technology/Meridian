@@ -16,6 +16,7 @@ const {
   handleWorkerServiceError,
   initializeJobArtifactUploads,
   finalizeJobArtifactUploads,
+  createJobDraftRender,
 } = require('../services/pivotComputeWorkerService');
 
 // Result submissions wrap an up-to-8 MiB result with lease/capability metadata.
@@ -139,6 +140,20 @@ function createPivotComputeWorkerRouter({
         now: now(),
       });
       return res.json(payload);
+    } catch (error) {
+      return handleWorkerServiceError(res, error);
+    }
+  });
+
+  router.post('/jobs/:externalJobId/draft-renders', requireComputeWorkerAuth, async (req, res) => {
+    try {
+      const payload = await createJobDraftRender(req, {
+        workerId: req.computeWorker.workerId,
+        externalJobId: req.params.externalJobId,
+        body: req.body,
+        now: now(),
+      });
+      return res.status(201).json(payload);
     } catch (error) {
       return handleWorkerServiceError(res, error);
     }

@@ -136,4 +136,46 @@ function cardOverflow(card) {
   const available = end.length ? Math.min(...end.map(child => child.frame.y)) - (card.gap || 0) : card.frame.height - (card.padding?.bottom || 0);
   return Math.max(0, used - available);
 }
-module.exports = { reflowCard, normalizeElement, normalizeSlide, cardOverflow };
+/**
+ * How far a `fit: 'shrink'` card overflows, and the text height that overflow is
+ * measured against. A fixed card overflows into its pinned rows; a content card
+ * past its `maxHeight` (slide pixels).
+ */
+function cardFitOverflow(card) {
+  if (card.sizing === 'fixed') {
+    const start = (card.children || []).filter(child => isFlowChild(child) && child.pin !== 'end');
+    return { overflow: cardOverflow(card), used: Math.max(1, start.reduce((sum, child) => sum + child.frame.height, 0)) };
+  }
+  const max = Number(card.maxHeight);
+  if (!Number.isFinite(max) || max <= 0) return { overflow: 0, used: card.frame.height };
+  const padding = (card.padding?.top || 0) + (card.padding?.bottom || 0);
+  return { overflow: Math.max(0, card.frame.height - max), used: Math.max(1, card.frame.height - padding) };
+}
+
+/** Scale every text size inside a card, nested cards included. */
+function scaleCardText(card, scale) {
+  for (const child of card.children || []) {
+    if (child.kind === 'text' && Number.isFinite(child.style?.fontSizePx)) child.style = { ...child.style, fontSizePx: child.style.fontSizePx * scale };
+    if (child.kind === 'card') scaleCardText(child, scale);
+  }
+  return card;
+}
+
+/** How much a measured text extent must shrink to fit its box; 1 when it fits. */
+function fitRatio(extent, box) {
+  const width = extent.width > box.width + 0.5 ? box.width / extent.width : 1;
+  const height = Number.isFinite(box.height) && extent.height > box.height + 0.5 ? box.height / extent.height : 1;
+  return { ratio: Math.min(1, width, height), widthBound: width <= height };
+}
+
+/**
+ * The next text scale. Width shrinks in proportion to size; wrapped text height
+ * shrinks with roughly its square, so a height overflow steps by the square root.
+ */
+function nextFitScale(scale, ratio, { min = 0.4, widthBound = false } = {}) {
+  if (!(ratio < 0.995)) return scale;
+  const factor = widthBound ? ratio : Math.sqrt(ratio);
+  return Math.max(min, Math.round(scale * factor * 0.985 * 1000) / 1000);
+}
+
+module.exports = { reflowCard, normalizeElement, normalizeSlide, cardOverflow, cardFitOverflow, scaleCardText, fitRatio, nextFitScale };

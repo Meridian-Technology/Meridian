@@ -131,6 +131,9 @@ async function readDeckForExport(req, token, deckId) {
   if (deckId && String(deckId) !== claims.deckId) {
     return { error: 'That token is for a different deck.', status: 403, code: 'TOKEN_WRONG_DECK' };
   }
+  if (claims.draftRenderId) {
+    return require('./pivotCarouselDraftRenderService').readDraftForExport(req, claims);
+  }
 
   const { PivotCarouselDeck, PivotCarouselVoice } = getGlobalModels(
     req,

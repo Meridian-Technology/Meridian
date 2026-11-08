@@ -54,6 +54,23 @@ function imagesSettled(node) {
   );
 }
 
+const FIT_TIMEOUT_MS = 4000;
+function fitSettled(root, cancelled) {
+  return new Promise((resolve) => {
+    if (!root) { resolve(); return; }
+    const started = Date.now();
+    let quiet = 0;
+    const tick = () => {
+      if (cancelled()) { resolve(); return; }
+      const pending = root.querySelector('[data-fit="pending"], [data-fit-pending="1"]');
+      quiet = pending ? 0 : quiet + 1;
+      if (quiet >= 3 || Date.now() - started > FIT_TIMEOUT_MS) resolve();
+      else requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  });
+}
+
 export default function PivotCarouselFrame() {
   const { deckId, index } = useParams();
   const [search] = useSearchParams();
@@ -123,7 +140,9 @@ export default function PivotCarouselFrame() {
           return;
         }
       }
-      // One frame past load, so the last paint has certainly happened.
+      // Text and cards that fit themselves settle over a few frames; wait for
+      // three quiet frames in a row, then one past them.
+      if (studioSlide) await fitSettled(root, () => cancelled);
       requestAnimationFrame(() => {
         if (!cancelled) setReady(true);
       });
