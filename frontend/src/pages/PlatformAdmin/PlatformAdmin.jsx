@@ -5,6 +5,7 @@ import TenantManagementPage from './TenantManagement/TenantManagementPage';
 import PivotLabPage from './PivotLab/PivotLabPage';
 import PivotWeeklyDropPage from './PivotWeeklyDrop/PivotWeeklyDropPage';
 import PlatformAdminsPage from './PlatformAdmins/PlatformAdminsPage';
+import IntegrationsPage from './Integrations/IntegrationsPage';
 import useAdminDashboardTheme from '../../hooks/useAdminDashboardTheme';
 import AdminLogo from '../../assets/Brand Image/ADMIN.svg';
 import '../Admin/Admin.scss';
@@ -36,6 +37,11 @@ function PlatformAdmin() {
       label: 'Platform admins',
       icon: 'mdi:shield-account-outline',
       element: <PlatformAdminsPage />,
+    },
+    {
+      label: 'Integrations',
+      icon: 'mdi:connection',
+      element: <IntegrationsPage />,
     },
   ];
 
