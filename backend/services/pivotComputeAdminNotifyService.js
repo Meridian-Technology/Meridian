@@ -136,6 +136,11 @@ async function resolveNotifyContext({ req, job, tenant, policy } = {}) {
 
 async function reserveNotification(req, externalJobId, type, recipientCount) {
   const { PivotComputeJob } = getGlobalModels(req, 'PivotComputeJob');
+  // New jobs store notifications as null, and Mongo cannot push into a field of null.
+  await PivotComputeJob.updateOne(
+    { externalJobId, notifications: null },
+    { $set: { notifications: { email: [] } } },
+  );
   return PivotComputeJob.findOneAndUpdate(
     { externalJobId, 'notifications.email.type': { $ne: type } },
     { $push: { 'notifications.email': { type, sentAt: new Date(), recipientCount } } },
