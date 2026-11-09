@@ -1,7 +1,10 @@
+const crypto = require('crypto');
 const express = require('express');
 const router = express.Router();
 const { isValid, formatISO, parseISO, setHours, startOfWeek, endOfWeek, setMinutes, setSeconds, setMilliseconds, eachHourOfInterval, eachDayOfInterval } = require('date-fns');
 const { verifyToken, verifyTokenOptional } = require('../middlewares/verifyToken');
+const { requireAdmin } = require('../middlewares/requireAdmin');
+const { keyDigest } = require('../utilities/analyticsHash');
 const getModels = require('../services/getModelService');
 
 
@@ -40,7 +43,7 @@ router.post('/log-repeated-visit', verifyTokenOptional, async (req, res) => {
     }
 });
 
-router.get('/visits-by-day', async (req, res) => {
+router.get('/visits-by-day', verifyToken, requireAdmin, async (req, res) => {
     const {Visit} = getModels(req, 'Visit');
 
     try {
@@ -118,7 +121,7 @@ router.get('/visits-by-day', async (req, res) => {
 });
 
 // `/visits-by-hour` route: Fetches visits grouped by hour within the specified range and pads missing hours with 0 visits
-router.get('/visits-by-hour', async (req, res) => {
+router.get('/visits-by-hour', verifyToken, requireAdmin, async (req, res) => {
     const {Visit} = getModels(req, 'Visit');
 
     try {
@@ -195,7 +198,7 @@ router.get('/visits-by-hour', async (req, res) => {
 });
 
 
-router.get('/visits-by-all', async (req, res) => {
+router.get('/visits-by-all', verifyToken, requireAdmin, async (req, res) => {
     const {Visit} = getModels(req, 'Visit');
 
     try {
@@ -259,7 +262,7 @@ router.get('/visits-by-all', async (req, res) => {
     }
 });
 
-router.get('/users-by-day', async (req, res) => {
+router.get('/users-by-day', verifyToken, requireAdmin, async (req, res) => {
     const { User } = getModels(req, 'User');
 
     try {
@@ -337,7 +340,7 @@ router.get('/users-by-day', async (req, res) => {
     }
 });
 
-router.get('/users-by-hour', async (req, res) => {
+router.get('/users-by-hour', verifyToken, requireAdmin, async (req, res) => {
     const { User } = getModels(req, 'User');
 
     try {
@@ -415,7 +418,7 @@ router.get('/users-by-hour', async (req, res) => {
     }
 });
 
-router.get('/users-by-all', async (req, res) => {
+router.get('/users-by-all', verifyToken, requireAdmin, async (req, res) => {
     const { User } = getModels(req, 'User');
 
     try {
@@ -479,10 +482,21 @@ router.get('/users-by-all', async (req, res) => {
     }
 });
 
+/**
+ * Keyed visitor id for QR scans. Keys the same truncated SHA-256 of IP plus
+ * user agent that was stored unkeyed before, so the analytics privacy migration
+ * can convert old ids into exactly these.
+ */
+function qrScanVisitorId(req) {
+    const legacy = crypto.createHash('sha256')
+        .update((req.ip || '') + (req.headers['user-agent'] || ''))
+        .digest('hex').slice(0, 32);
+    return keyDigest(legacy) || 'unknown';
+}
+
 // Event QR scan (public, no auth) - redirects to event with qr_id for attribution
 router.post('/qr-scan-event', async (req, res) => {
     const { EventQR, Event, AnalyticsEvent } = getModels(req, 'EventQR', 'Event', 'AnalyticsEvent');
-    const crypto = require('crypto');
 
     try {
         const { shortId } = req.body;
@@ -501,9 +515,7 @@ router.post('/qr-scan-event', async (req, res) => {
         }
 
         // Record scan on EventQR
-        const anonymousId = crypto.createHash('sha256')
-            .update((req.ip || '') + (req.headers['user-agent'] || ''))
-            .digest('hex').slice(0, 32);
+        const anonymousId = qrScanVisitorId(req);
         const isRepeat = qr.scanHistory.some(s => s.anonymousId === anonymousId);
 
         qr.scans++;
@@ -558,7 +570,6 @@ router.post('/qr-scan-event', async (req, res) => {
 
 router.post('/qr-scan', async (req, res) => {
     const { QR, AnalyticsEvent } = getModels(req, 'QR', 'AnalyticsEvent');
-    const crypto = require('crypto');
 
     try {
         const { name, repeat } = req.body;
@@ -597,9 +608,7 @@ router.post('/qr-scan', async (req, res) => {
         await qr.save();
 
         // Insert admin_qr_scan into analytics_events (canonical source for analytics)
-        const anonymousId = crypto.createHash('sha256')
-            .update((req.ip || '') + (req.headers['user-agent'] || ''))
-            .digest('hex').slice(0, 32);
+        const anonymousId = qrScanVisitorId(req);
         const env = process.env.NODE_ENV === 'production' ? 'prod' : 'dev';
         const analyticsDoc = {
             schema_version: 1,
@@ -638,7 +647,7 @@ router.post('/qr-scan', async (req, res) => {
     }
 });
 
-router.get('/searches-by-day', async (req, res) => {
+router.get('/searches-by-day', verifyToken, requireAdmin, async (req, res) => {
     const { Search } = getModels(req, 'Search');
 
     try {
@@ -716,7 +725,7 @@ router.get('/searches-by-day', async (req, res) => {
 });
 
 // `/visits-by-hour` route: Fetches visits grouped by hour within the specified range and pads missing hours with 0 visits
-router.get('/searches-by-hour', async (req, res) => {
+router.get('/searches-by-hour', verifyToken, requireAdmin, async (req, res) => {
     const { Search } = getModels(req, 'Search');
     try {
         const { startDate } = req.query;
@@ -792,7 +801,7 @@ router.get('/searches-by-hour', async (req, res) => {
 });
 
 
-router.get('/searches-by-all', async (req, res) => {
+router.get('/searches-by-all', verifyToken, requireAdmin, async (req, res) => {
     const { Search } = getModels(req, 'Search');
 
     try {
@@ -859,7 +868,7 @@ router.get('/searches-by-all', async (req, res) => {
 
 
 // Repeated Visits Analytics (based on RepeatedVisit.visits array)
-router.get('/repeated-visits-by-day', async (req, res) => {
+router.get('/repeated-visits-by-day', verifyToken, requireAdmin, async (req, res) => {
     const { RepeatedVisit } = getModels(req, 'RepeatedVisit');
 
     try {
@@ -921,7 +930,7 @@ router.get('/repeated-visits-by-day', async (req, res) => {
     }
 });
 
-router.get('/repeated-visits-by-hour', async (req, res) => {
+router.get('/repeated-visits-by-hour', verifyToken, requireAdmin, async (req, res) => {
     const { RepeatedVisit } = getModels(req, 'RepeatedVisit');
 
     try {
@@ -977,7 +986,7 @@ router.get('/repeated-visits-by-hour', async (req, res) => {
     }
 });
 
-router.get('/repeated-visits-by-all', async (req, res) => {
+router.get('/repeated-visits-by-all', verifyToken, requireAdmin, async (req, res) => {
     const { RepeatedVisit } = getModels(req, 'RepeatedVisit');
     try {
         const bounds = await RepeatedVisit.aggregate([
@@ -1032,7 +1041,7 @@ router.get('/repeated-visits-by-all', async (req, res) => {
 });
 
 // Summary KPI endpoint: current vs previous period
-router.get('/summary', async (req, res) => {
+router.get('/summary', verifyToken, requireAdmin, async (req, res) => {
     const { User } = getModels(req, 'User');
     const { Visit } = getModels(req, 'Visit');
     const { Search } = getModels(req, 'Search');
