@@ -28,8 +28,30 @@ function track(name, options) {
   analytics.track(name, publicEventAnalyticsProperties(options));
 }
 
+/**
+ * Counts the view on the listing itself, which is what the creator Insights tab reads. Sent with
+ * `keepalive` so it survives the visitor tapping straight through to the store. The analytics
+ * visitor id keeps unique views stable across visits on this browser.
+ */
+export function recordPublicListingView(eventId) {
+  if (!eventId || typeof fetch !== 'function') return;
+  let visitorId;
+  try {
+    visitorId = analytics.getAnonymousId?.();
+  } catch {
+    visitorId = undefined;
+  }
+  fetch(`/api/public/events/${encodeURIComponent(eventId)}/view`, {
+    method: 'POST',
+    keepalive: true,
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(visitorId ? { visitorId } : {}),
+  }).catch(() => {});
+}
+
 export function trackPublicEventView(options) {
   track(PUBLIC_EVENT_ANALYTICS_EVENTS.view, options);
+  recordPublicListingView(options?.eventId);
 }
 
 export function trackPublicEventAppOpenAttempt(options) {
