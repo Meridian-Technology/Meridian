@@ -5,24 +5,25 @@
  * shows them. Scans the platform database and every city database, finds the
  * Just Go city that owns each event, and adds the view there.
  *
- * Safe to re-run: each analytics event is recorded at most once. Needs the same
- * ANALYTICS_HASH_SECRET (or JWT_SECRET) as the servers, so backfilled visitors
- * match the ones the live page records.
+ * Safe to re-run, before or after the deploy that makes the page record views
+ * itself: each listing replays only analytics events received before its first
+ * live view, and only ones a finished run has not replayed. --before=<ISO time>
+ * adds a global cutoff. Needs the servers' ANALYTICS_HASH_SECRET, so backfilled
+ * visitors match the ones the live page records.
  *
  * From Meridian/backend:
  *   node migrations/backfillJustGoListingViews.js --dry-run
  *   node migrations/backfillJustGoListingViews.js
  *   node migrations/backfillJustGoListingViews.js --env=staging
+ *   node migrations/backfillJustGoListingViews.js --before=2026-11-12T00:00:00Z
  *   npm run migrate:justgo-listing-views -- --dry-run
  */
 
 require('./ensureBackendNodeModules');
 require('dotenv').config();
 
-const { analyticsHash } = require('../utilities/analyticsHash');
 const {
-  emptyBackfillCounts,
-  backfillListingViews,
+  createListingViewBackfill,
   createTenantResolver,
 } = require('../services/justGoListingViewBackfill');
 
@@ -31,17 +32,22 @@ const TAG = '[migrate:justgo-listing-views]';
 function parseArgs(argv) {
   const flags = new Set();
   let env = 'prod';
+  let before = null;
   for (const raw of argv.slice(2)) {
     if (raw.startsWith('--env=')) env = raw.slice('--env='.length) || null;
-    else if (raw.startsWith('--')) flags.add(raw.slice(2));
+    else if (raw.startsWith('--before=')) {
+      before = new Date(raw.slice('--before='.length));
+      if (Number.isNaN(before.getTime())) throw new Error(`Invalid --before: ${raw}`);
+    } else if (raw.startsWith('--')) flags.add(raw.slice(2));
   }
-  return { dryRun: flags.has('dry-run'), env };
+  return { dryRun: flags.has('dry-run'), env, before };
 }
 
 async function run() {
-  const { dryRun, env } = parseArgs(process.argv);
-  if (!analyticsHash('probe')) {
-    throw new Error('No analytics hash key: set ANALYTICS_HASH_SECRET (or JWT_SECRET) to the server value.');
+  const { dryRun, env, before } = parseArgs(process.argv);
+  if (!process.env.ANALYTICS_HASH_SECRET) {
+    // A fallback key would hash visitors differently from the servers.
+    throw new Error('Set ANALYTICS_HASH_SECRET to the servers\' value.');
   }
   const eventAnalyticsSchema = require('../events/schemas/eventAnalytics');
   if (!eventAnalyticsSchema.path('viewHistory')?.schema?.path('sourceEventId')) {
@@ -84,17 +90,19 @@ async function run() {
     return getModels({ db, school: tenantKey }, 'EventAnalytics').EventAnalytics;
   };
 
-  const counts = emptyBackfillCounts();
+  const backfill = createListingViewBackfill({
+    resolveTenant, eventAnalyticsFor, dryRun, env, before,
+  });
   for (const { tenantKey, db } of databases) {
     const { AnalyticsEvent } = getModels({ db, school: tenantKey }, 'AnalyticsEvent');
-    await backfillListingViews(AnalyticsEvent, {
-      resolveTenant, eventAnalyticsFor, dryRun, env, counts,
-    });
+    await backfill.replay(AnalyticsEvent);
   }
+  await backfill.finish();
+  const { counts } = backfill;
 
   const mode = dryRun ? 'dry-run' : 'done';
   console.log(
-    `${TAG} ${mode} env=${env || 'any'} cities=${cities.length} scanned=${counts.scanned} invalidEventId=${counts.invalidEventId} unresolved=${counts.unresolved} recorded=${counts.recorded} alreadyRecorded=${counts.alreadyRecorded}`,
+    `${TAG} ${mode} env=${env || 'any'} before=${before ? before.toISOString() : 'none'} cities=${cities.length} scanned=${counts.scanned} invalidEventId=${counts.invalidEventId} unresolved=${counts.unresolved} afterLiveViews=${counts.afterLiveViews} alreadyBackfilled=${counts.alreadyBackfilled} afterCutoff=${counts.afterCutoff} recorded=${counts.recorded} alreadyRecorded=${counts.alreadyRecorded}`,
   );
   for (const [tenantKey, count] of Object.entries(counts.byTenant).sort((a, b) => a[0].localeCompare(b[0]))) {
     console.log(`${TAG} ${mode} ${tenantKey}: ${count} views`);
