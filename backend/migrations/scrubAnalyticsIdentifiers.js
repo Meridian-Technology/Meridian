@@ -9,9 +9,9 @@
  *   `ip-userAgent` anonymous ids → keyed hash
  *
  * Old values are converted to exactly what the servers now write, so unique
- * views and repeat QR scans keep matching. Run it with the same
- * ANALYTICS_HASH_SECRET (or JWT_SECRET) as the servers, after they are
- * deployed. Safe to re-run: keyed values are skipped.
+ * views and repeat QR scans keep matching. Run it with the servers'
+ * ANALYTICS_HASH_SECRET, after they are deployed with it. Safe to re-run:
+ * keyed values are skipped.
  *
  * It also reports databases whose eventAnalytics.eventId index is not unique.
  * It does not change indexes or merge duplicate documents.
@@ -47,6 +47,10 @@ function summary(counts) {
 
 async function run() {
   const { dryRun } = parseArgs(process.argv);
+  if (!process.env.ANALYTICS_HASH_SECRET) {
+    // A fallback key would rewrite values to hashes the servers never produce.
+    throw new Error('Set ANALYTICS_HASH_SECRET to the servers\' value.');
+  }
   const { connectToGlobalDatabase, connectToDatabase } = require('../connectionsManager');
   const getModels = require('../services/getModelService');
   const { syncTenantUriCache, getMergedTenants } = require('../services/tenantConfigService');

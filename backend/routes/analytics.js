@@ -491,7 +491,7 @@ function qrScanVisitorId(req) {
     const legacy = crypto.createHash('sha256')
         .update((req.ip || '') + (req.headers['user-agent'] || ''))
         .digest('hex').slice(0, 32);
-    return keyDigest(legacy) || 'unknown';
+    return keyDigest(legacy);
 }
 
 // Event QR scan (public, no auth) - redirects to event with qr_id for attribution
@@ -516,7 +516,7 @@ router.post('/qr-scan-event', async (req, res) => {
 
         // Record scan on EventQR
         const anonymousId = qrScanVisitorId(req);
-        const isRepeat = qr.scanHistory.some(s => s.anonymousId === anonymousId);
+        const isRepeat = Boolean(anonymousId) && qr.scanHistory.some(s => s.anonymousId === anonymousId);
 
         qr.scans++;
         qr.lastScanned = new Date();
@@ -533,7 +533,7 @@ router.post('/qr-scan-event', async (req, res) => {
             event: 'event_qr_scan',
             ts: new Date(),
             received_at: new Date(),
-            anonymous_id: anonymousId,
+            anonymous_id: anonymousId || 'unknown',
             user_id: null,
             session_id: crypto.randomUUID(),
             platform: 'web',
@@ -616,7 +616,7 @@ router.post('/qr-scan', async (req, res) => {
             event: 'admin_qr_scan',
             ts: new Date(),
             received_at: new Date(),
-            anonymous_id: anonymousId,
+            anonymous_id: anonymousId || 'unknown',
             user_id: null,
             session_id: crypto.randomUUID(),
             platform: 'web',

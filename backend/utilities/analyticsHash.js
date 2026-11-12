@@ -12,17 +12,31 @@ const crypto = require('crypto');
  * `keyDigest` takes an existing unkeyed digest, so a migration can convert old
  * values into exactly what new writes produce for the same visitor.
  *
- * Set ANALYTICS_HASH_SECRET in production. Without it the key is derived from
- * JWT_SECRET, which means rotating that secret resets visitor uniqueness. With
- * neither set, nothing is stored.
+ * Production requires ANALYTICS_HASH_SECRET and never falls back: every key
+ * writes the same `k1:` prefix, so values hashed under a fallback key could
+ * never be converted once the real secret is set. Without the secret nothing
+ * is stored and the server logs an error. Elsewhere (dev, test) the key falls
+ * back to one derived from JWT_SECRET.
  */
 
 const KEYED_PREFIX = 'k1:';
 const KEYED_LENGTH = 32;
 const DERIVATION_LABEL = 'meridian-analytics-hash-v1';
 
+let reportedMissingKey = false;
+
+function reportMissingKey() {
+  if (reportedMissingKey) return;
+  reportedMissingKey = true;
+  console.error('[analytics-hash] ANALYTICS_HASH_SECRET is not set: IP and visitor hashes are not stored.');
+}
+
 function hashKey() {
   if (process.env.ANALYTICS_HASH_SECRET) return process.env.ANALYTICS_HASH_SECRET;
+  if (process.env.NODE_ENV === 'production') {
+    reportMissingKey();
+    return null;
+  }
   if (process.env.JWT_SECRET) {
     return crypto.createHmac('sha256', process.env.JWT_SECRET).update(DERIVATION_LABEL).digest();
   }
@@ -52,8 +66,14 @@ function analyticsHash(raw) {
   return keyDigest(sha256Hex(raw));
 }
 
+/** Called at startup so a missing production secret shows up in the boot log. */
+function checkAnalyticsHashKey() {
+  return Boolean(hashKey());
+}
+
 module.exports = {
   KEYED_PREFIX,
+  checkAnalyticsHashKey,
   analyticsHash,
   keyDigest,
   isKeyedHash,

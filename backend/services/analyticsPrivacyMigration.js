@@ -59,6 +59,15 @@ function scanHistoryEntryNeedsRekey(entry) {
   return typeof entry?.anonymousId === 'string' && entry.anonymousId !== '' && !isKeyedHash(entry.anonymousId);
 }
 
+/**
+ * Raw driver calls on a connection that is still opening are buffered by
+ * Mongoose and return a promise instead of a cursor, so wait for it first.
+ */
+async function connectionsReady(models) {
+  const connections = new Set(Object.values(models).filter(Boolean).map((model) => model.db));
+  await Promise.all([...connections].map((connection) => connection.asPromise()));
+}
+
 async function flushBulk(collection, ops, dryRun) {
   if (!ops.length || dryRun) return;
   await collection.bulkWrite(ops, { ordered: false });
@@ -113,9 +122,10 @@ async function rewriteArray(collection, id, field, needsChange, rewrite, dryRun)
 async function scrubAnalyticsIdentifiers(models, { dryRun = false } = {}) {
   if (!keyDigest('probe')) {
     // Without a key every rewrite would be null and the old values would be lost.
-    throw new Error('No analytics hash key: set ANALYTICS_HASH_SECRET (or JWT_SECRET) to the server value.');
+    throw new Error("No analytics hash key: set ANALYTICS_HASH_SECRET to the servers' value.");
   }
   const counts = emptyCounts();
+  await connectionsReady(models);
 
   if (models.AnalyticsEvent) {
     const events = models.AnalyticsEvent.collection;
@@ -172,6 +182,7 @@ async function scrubAnalyticsIdentifiers(models, { dryRun = false } = {}) {
  * document. Older databases may have built the plain index first.
  */
 async function checkEventAnalyticsIndex(EventAnalytics) {
+  await connectionsReady({ EventAnalytics });
   let indexes = [];
   try {
     indexes = await EventAnalytics.collection.indexes();
@@ -181,6 +192,10 @@ async function checkEventAnalyticsIndex(EventAnalytics) {
   }
   const eventIdIndex = indexes.find((index) => index.name === 'eventId_1');
   if (eventIdIndex?.unique) return { ok: true };
+  // No documents yet: Mongoose builds the unique index when the model is first used.
+  if (!eventIdIndex && !(await EventAnalytics.collection.estimatedDocumentCount())) {
+    return { ok: true, missing: true };
+  }
   const duplicates = await EventAnalytics.collection.aggregate([
     { $group: { _id: '$eventId', count: { $sum: 1 } } },
     { $match: { count: { $gt: 1 } } },

@@ -176,4 +176,25 @@ describe('analyticsPrivacyMigration', () => {
       ok: false, hasIndex: true, duplicateEventIds: 1,
     });
   });
+
+  it('works on a connection that is still opening, like a freshly opened city database', async () => {
+    const seed = mongo.connection.useDb('city_opening');
+    await seed.collection('analytics_events').insertOne(analyticsEvent({ ip_hash: sha256('203.0.113.7') }));
+
+    const opening = mongoose.createConnection(mongo.mongoServer.getUri('city_opening'));
+    try {
+      const cityModels = {
+        AnalyticsEvent: getOrCreateModel(opening, 'AnalyticsEvent', analyticsEventSchema, 'analytics_events'),
+        EventAnalytics: getOrCreateModel(opening, 'EventAnalytics', eventAnalyticsSchema, 'eventAnalytics'),
+        EventQR: getOrCreateModel(opening, 'EventQR', eventQRSchema, 'event_qrs'),
+      };
+
+      const counts = await scrubAnalyticsIdentifiers(cityModels);
+      expect(counts.ipHashes).toBe(1);
+      expect(await checkEventAnalyticsIndex(cityModels.EventAnalytics)).toMatchObject({ ok: true });
+    } finally {
+      await opening.close();
+      await seed.dropDatabase();
+    }
+  });
 });

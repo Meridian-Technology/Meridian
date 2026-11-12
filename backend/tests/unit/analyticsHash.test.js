@@ -1,6 +1,7 @@
 const crypto = require('crypto');
 const {
   analyticsHash,
+  checkAnalyticsHashKey,
   keyDigest,
   isKeyedHash,
   sha256Hex,
@@ -9,10 +10,12 @@ const {
 describe('analyticsHash', () => {
   const originalSecret = process.env.ANALYTICS_HASH_SECRET;
   const originalJwt = process.env.JWT_SECRET;
+  const originalNodeEnv = process.env.NODE_ENV;
 
   afterEach(() => {
     process.env.ANALYTICS_HASH_SECRET = originalSecret;
     process.env.JWT_SECRET = originalJwt;
+    process.env.NODE_ENV = originalNodeEnv;
     if (originalSecret === undefined) delete process.env.ANALYTICS_HASH_SECRET;
     if (originalJwt === undefined) delete process.env.JWT_SECRET;
   });
@@ -58,5 +61,20 @@ describe('analyticsHash', () => {
     expect(analyticsHash('')).toBeNull();
     expect(analyticsHash(null)).toBeNull();
     expect(keyDigest('')).toBeNull();
+  });
+
+  it('never falls back to JWT_SECRET in production, and says so', () => {
+    delete process.env.ANALYTICS_HASH_SECRET;
+    process.env.JWT_SECRET = 'jwt-secret';
+    process.env.NODE_ENV = 'production';
+    const error = jest.spyOn(console, 'error').mockImplementation(() => {});
+
+    expect(checkAnalyticsHashKey()).toBe(false);
+    expect(analyticsHash('203.0.113.7')).toBeNull();
+    expect(error).toHaveBeenCalledWith(expect.stringContaining('ANALYTICS_HASH_SECRET'));
+    error.mockRestore();
+
+    process.env.ANALYTICS_HASH_SECRET = 'secret-a';
+    expect(checkAnalyticsHashKey()).toBe(true);
   });
 });
