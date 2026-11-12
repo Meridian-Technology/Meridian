@@ -20,31 +20,35 @@ export function dailyInterestCount(day) {
 }
 
 /**
- * Funnel steps, ordered, each with its conversion off the previous step.
+ * Funnel steps, ordered, each with its conversion off the step named in `basis`.
  *
  * Values mirror the ops event-performance row field for field: `interested` is ops'
  * `interestedTotal` (interested + registered, everyone who showed positive intent), and `tapped`
  * counts *people* who opened the ticket link (`externalOpenUsers`) rather than total taps, so a
  * conversion cannot exceed 100% just because someone tapped twice.
  *
- * @returns {Array<{ key: string, value: number, conversion: number|null }>}
+ * `registered` converts off `interested`, not `tapped`: people who register in the app never tap
+ * the ticket link, so "of previous" could pass 100%. Everyone registered is counted in interested.
+ *
+ * @returns {Array<{ key: string, value: number, conversion: number|null, basis: string|null }>}
  */
 export function buildIntentFunnel(stats) {
   const intents = stats?.intents;
   const interested = (intents?.interested ?? 0) + (intents?.registered ?? 0);
 
   const values = [
-    { key: 'views', value: totalViewCount(stats?.analytics) },
-    { key: 'interested', value: interested },
-    { key: 'tapped', value: intents?.externalOpenUsers ?? 0 },
-    { key: 'registered', value: intents?.registered ?? 0 },
+    { key: 'views', value: totalViewCount(stats?.analytics), basis: null },
+    { key: 'interested', value: interested, basis: 'views' },
+    { key: 'tapped', value: intents?.externalOpenUsers ?? 0, basis: 'interested' },
+    { key: 'registered', value: intents?.registered ?? 0, basis: 'interested' },
   ];
+  const valueByKey = Object.fromEntries(values.map((step) => [step.key, step.value]));
 
-  return values.map((step, index) => {
-    const previous = index > 0 ? values[index - 1].value : null;
+  return values.map((step) => {
+    const base = step.basis ? valueByKey[step.basis] : null;
     return {
       ...step,
-      conversion: previous ? step.value / previous : null,
+      conversion: base ? step.value / base : null,
     };
   });
 }

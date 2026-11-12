@@ -237,7 +237,10 @@ const justGoCreatorCopy = Object.freeze({
         tapped: 'Tapped the ticket link',
         registered: 'Got a ticket',
       }),
-      ofPrevious: 'of previous',
+      conversionOf: Object.freeze({
+        views: 'of views',
+        interested: 'of interested',
+      }),
       funnelNote:
         'Page views come from your listing’s web page, while interest comes from swipes in the Just Go app — so the first two steps aren’t the same crowd, and interest can run ahead of views.',
 

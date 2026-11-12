@@ -52,7 +52,7 @@ function IntentFunnel({ stats }) {
               </span>
               <span className="jg-funnel__value">{step.value}</span>
               <span className="jg-funnel__conversion">
-                {conversion ? `${conversion} ${copy.ofPrevious}` : '\u00a0'}
+                {conversion ? `${conversion} ${copy.conversionOf[step.basis]}` : '\u00a0'}
               </span>
             </div>
           );

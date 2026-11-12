@@ -20,6 +20,7 @@ const {
   resolveFunnelEventName,
   getJourneyOverview,
   getJourneyFunnel,
+  getJourneyPath,
   getUserJourneyHistory,
   wipeUserWeekIntents,
   searchJourneyUsers,
@@ -132,6 +133,8 @@ describe('getJourneyOverview', () => {
       'going',
     ]);
     expect(result.data.conversionRates.interestRate).toBe(0.3);
+    // 4 registered of 12 interested; in-app registrations never open the ticket link.
+    expect(result.data.conversionRates.registerRate).toBeCloseTo(4 / 12);
   });
 
   it('returns 404 for unknown tenant', async () => {
@@ -207,6 +210,41 @@ describe('getJourneyFunnel', () => {
     expect(result.data.steps[2].count).toBe(1);
     expect(result.data.steps[3].count).toBe(1);
     expect(result.data.intentFunnel).toHaveLength(4);
+  });
+});
+
+describe('getJourneyPath', () => {
+  beforeEach(() => {
+    getModels.mockReset();
+    connectToDatabase.mockReset();
+    resolvePivotTenant.mockReset();
+    connectToDatabase.mockResolvedValue({});
+    resolvePivotTenant.mockResolvedValue({ tenant: TENANT });
+  });
+
+  it('keeps the batchWeek filter on the next-step stream query', async () => {
+    const aggregate = jest.fn().mockResolvedValue([
+      { _id: 'session-1', stream: ['pivot_deck_open', 'pivot_card_view'] },
+    ]);
+    getModels.mockReturnValue({
+      AnalyticsEvent: {
+        countDocuments: jest.fn().mockResolvedValue(1),
+        distinct: jest.fn().mockResolvedValue(['session-1']),
+        aggregate,
+      },
+    });
+
+    await getJourneyPath(mockReq(), {
+      tenantKey: 'nyc',
+      batchWeek: BATCH_WEEK,
+      startingPoint: 'pivot_deck_open',
+    });
+
+    const match = aggregate.mock.calls[0][0][0].$match;
+    expect(match.$or).toEqual(expect.arrayContaining([{ 'properties.batchWeek': BATCH_WEEK }]));
+    expect(match.$and[0].$or).toEqual(expect.arrayContaining([
+      { event: 'screen_view', 'context.screen': 'PivotWeek' },
+    ]));
   });
 });
 

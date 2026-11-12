@@ -4,6 +4,7 @@ const mongoose = require('mongoose');
 const { verifyToken, authorizeRoles, verifyTokenOptional } = require('../middlewares/verifyToken');
 const { requireAdmin } = require('../middlewares/requireAdmin');
 const getModels = require('../services/getModelService');
+const { recordEventPageView, publicViewHistoryEntry } = require('../services/eventViewService');
 
 /**
  * Parse time range into startDate and endDate
@@ -56,127 +57,20 @@ function parseTimeRange(timeRange, startDateParam, endDateParam) {
 
 // Track anonymous event view (called when non-logged in users view an event page)
 router.post('/track-anonymous-view/:eventId', verifyTokenOptional, async (req, res) => {
-    const { EventAnalytics } = getModels(req, 'EventAnalytics');
-    const { eventId } = req.params;
-    const userId = req.user ? req.user.userId : null;
-
-    try {
-        // Skip if user is logged in and is admin
-        if (userId) {
-            const { User } = getModels(req, 'User');
-            const user = await User.findById(userId);
-            if (user && user.roles && user.roles.includes('admin')) {
-                return res.status(200).json({ success: true, message: 'Admin user excluded from analytics' });
-            }
-        }
-
-        // Generate anonymous ID based on IP and user agent for uniqueness
-        const anonymousId = req.headers['x-anonymous-id'] || 
-                           `${req.ip || req.connection.remoteAddress}-${req.headers['user-agent'] || ''}`;
-
-        // Find or create analytics record for this event
-        let analytics = await EventAnalytics.findOne({ eventId });
-        
-        if (!analytics) {
-            analytics = new EventAnalytics({
-                eventId,
-                views: 0,
-                uniqueViews: 0,
-                anonymousViews: 0,
-                uniqueAnonymousViews: 0,
-                rsvps: 0,
-                uniqueRsvps: 0,
-                viewHistory: [],
-                rsvpHistory: []
-            });
-        }
-
-        // Check if this is a unique anonymous view
-        const existingView = analytics.viewHistory.find(view => 
-            view.isAnonymous && view.anonymousId === anonymousId
-        );
-
-        if (!existingView) {
-            analytics.uniqueAnonymousViews += 1;
-        }
-
-        // Add view to history
-        analytics.viewHistory.push({
-            userId: null,
-            isAnonymous: true,
-            anonymousId,
-            timestamp: new Date(),
-            userAgent: req.headers['user-agent'] || '',
-            ipAddress: req.ip || req.connection.remoteAddress || ''
-        });
-
-        analytics.anonymousViews += 1;
-        await analytics.save();
-
-        res.status(200).json({ success: true });
-    } catch (error) {
-        console.error('Error tracking anonymous event view:', error);
-        res.status(500).json({ success: false, message: error.message });
+    const result = await recordEventPageView(req, req.params.eventId, { source: 'event_page' });
+    if (result.excluded === 'admin') {
+        return res.status(200).json({ success: true, message: 'Admin user excluded from analytics' });
     }
+    res.status(200).json({ success: true });
 });
 
 // Track event view (called when logged-in users view an event page)
 router.post('/track-event-view/:eventId', verifyToken, async (req, res) => {
-    const { EventAnalytics, User } = getModels(req, 'EventAnalytics', 'User');
-    const { eventId } = req.params;
-        const userId = req.user.userId;
-
-    try {
-        // Check if user is an admin - exclude admin users from analytics
-        const user = await User.findById(userId);
-        if (user && user.roles && user.roles.includes('admin')) {
-            return res.status(200).json({ success: true, message: 'Admin user excluded from analytics' });
-        }
-
-        // Find or create analytics record for this event
-        let analytics = await EventAnalytics.findOne({ eventId });
-        
-        if (!analytics) {
-            analytics = new EventAnalytics({
-                eventId,
-                views: 0,
-                uniqueViews: 0,
-                anonymousViews: 0,
-                uniqueAnonymousViews: 0,
-                rsvps: 0,
-                uniqueRsvps: 0,
-                viewHistory: [],
-                rsvpHistory: []
-            });
-        }
-
-        // Check if this is a unique view (user hasn't viewed this event before)
-        const existingView = analytics.viewHistory.find(view => 
-            !view.isAnonymous && view.userId && view.userId.toString() === userId.toString()
-        );
-
-        if (!existingView) {
-            analytics.uniqueViews += 1;
-        }
-
-        // Add view to history
-        analytics.viewHistory.push({
-            userId,
-            isAnonymous: false,
-            anonymousId: null,
-            timestamp: new Date(),
-            userAgent: req.headers['user-agent'] || '',
-            ipAddress: req.ip || req.connection.remoteAddress || ''
-        });
-
-        analytics.views += 1;
-        await analytics.save();
-
-        res.status(200).json({ success: true });
-    } catch (error) {
-        console.error('Error tracking event view:', error);
-        res.status(500).json({ success: false, message: error.message });
+    const result = await recordEventPageView(req, req.params.eventId, { source: 'event_page' });
+    if (result.excluded === 'admin') {
+        return res.status(200).json({ success: true, message: 'Admin user excluded from analytics' });
     }
+    res.status(200).json({ success: true });
 });
 
 // Track RSVP (called when someone RSVPs to an event)
@@ -745,9 +639,9 @@ router.get('/event/:eventId', verifyToken, async (req, res) => {
         const analytics = await EventAnalytics.findOne({ eventId });
         const viewHistory = analytics?.viewHistory || [];
         const rsvpOrRegHistory = analytics?.rsvpHistory || analytics?.registrationHistory || [];
-        const filteredViewHistory = viewHistory.filter(view =>
-            view.timestamp >= startDate && view.timestamp <= endDate
-        );
+        const filteredViewHistory = viewHistory
+            .filter(view => view.timestamp >= startDate && view.timestamp <= endDate)
+            .map(publicViewHistoryEntry);
         const filteredRsvpHistory = rsvpOrRegHistory.filter(entry =>
             entry.timestamp >= startDate && entry.timestamp <= endDate
         );

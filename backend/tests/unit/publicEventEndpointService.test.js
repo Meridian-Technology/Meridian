@@ -67,8 +67,9 @@ describe('public event endpoint cache and observability service', () => {
       now: new Date('2026-09-05T01:00:00Z'),
     });
     const second = await loadPublicEvent({}, EVENT_ID, { dependencies: deps });
-    expect(first).toMatchObject({ available: true, cacheStatus: 'miss' });
-    expect(second).toMatchObject({ available: true, cacheStatus: 'hit' });
+    expect(first).toMatchObject({ available: true, cacheStatus: 'miss', tenantKey: 'oakland' });
+    expect(second).toMatchObject({ available: true, cacheStatus: 'hit', tenantKey: 'oakland' });
+    expect(first.body).not.toHaveProperty('tenantKey');
     expect(deps.connectToDatabase).toHaveBeenCalledTimes(1);
     info.mockRestore();
   });

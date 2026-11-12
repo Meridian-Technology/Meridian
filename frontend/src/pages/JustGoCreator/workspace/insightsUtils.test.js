@@ -58,11 +58,21 @@ describe('buildIntentFunnel', () => {
     expect(buildIntentFunnel(stats)[0].conversion).toBeNull();
   });
 
-  it('computes each conversion off the previous step', () => {
+  it('computes each conversion off its basis step', () => {
     const steps = buildIntentFunnel(stats);
 
+    expect(steps.map((step) => step.basis)).toEqual([null, 'views', 'interested', 'interested']);
     expect(steps[1].conversion).toBeCloseTo(0.4);
-    expect(steps[3].conversion).toBeCloseTo(0.5);
+    expect(steps[3].conversion).toBeCloseTo(0.25);
+  });
+
+  it('keeps tickets under 100% when people register in the app without tapping the link', () => {
+    const steps = buildIntentFunnel({
+      analytics: { views: 50 },
+      intents: { interested: 6, registered: 4, externalOpenUsers: 1 },
+    });
+
+    expect(steps[3].conversion).toBeCloseTo(0.4);
   });
 
   it('reports no conversion instead of dividing by zero', () => {

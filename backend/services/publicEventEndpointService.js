@@ -68,14 +68,22 @@ async function loadPublicEvent(req, eventId, options = {}) {
   const startedAt = process.hrtime.bigint();
   const eventKey = opaqueEventKey(eventId);
   const state = { internalState: 'incomplete', resolvedTenant: null };
+  const dependencies = options.dependencies || createDependencies(req, eventKey, state);
   const work = (async () => {
     const body = await lookupPublicEvent(
       eventId,
-      options.dependencies || createDependencies(req, eventKey, state),
+      {
+        ...dependencies,
+        onResolutionComplete: (classification) => {
+          state.resolvedTenant = classification.available ? classification.tenantKey : null;
+          dependencies.onResolutionComplete?.(classification);
+        },
+      },
       { now: options.now },
     );
     const available = Boolean(body.data);
-    const result = { body, available };
+    // tenantKey stays server-side: the view route needs the city database.
+    const result = { body, available, tenantKey: available ? state.resolvedTenant : null };
     responseCache.set(eventId, {
       value: result,
       expiresAt: Date.now() + (available ? SUCCESS_TTL_MS : UNAVAILABLE_TTL_MS),

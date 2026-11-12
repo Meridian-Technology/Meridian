@@ -4,14 +4,20 @@ jest.mock('../../services/publicEventEndpointService', () => ({
 jest.mock('../../services/justGoPublicEventShareImageService', () => ({
   renderJustGoPublicEventShareImage: jest.fn(),
 }));
+jest.mock('../../services/eventViewService', () => ({
+  isLikelyBot: jest.requireActual('../../services/eventViewService').isLikelyBot,
+  recordJustGoListingView: jest.fn(),
+}));
 
 const { loadPublicEvent } = require('../../services/publicEventEndpointService');
 const {
   renderJustGoPublicEventShareImage,
 } = require('../../services/justGoPublicEventShareImageService');
+const { recordJustGoListingView } = require('../../services/eventViewService');
 const {
   getPublicEventOpenGraphImage,
   openGraphImageEtag,
+  recordPublicEventView,
 } = require('../../routes/publicEventRoutes');
 
 const EVENT_ID = '64f1234567890abcdef12345';
@@ -41,6 +47,10 @@ function response() {
       return this;
     }),
     send: jest.fn(function send(body) {
+      this.body = body;
+      return this;
+    }),
+    json: jest.fn(function json(body) {
       this.body = body;
       return this;
     }),
@@ -147,5 +157,70 @@ describe('GET /api/public/events/:eventId/opengraph.png handler', () => {
     expect(res.headers['Cache-Control']).toBe('no-store');
     expect(res.ended).toBe(true);
     errorSpy.mockRestore();
+  });
+});
+
+describe('POST /api/public/events/:eventId/view handler', () => {
+  const browser = { 'user-agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X)' };
+
+  beforeEach(() => {
+    loadPublicEvent.mockReset();
+    recordJustGoListingView.mockReset();
+  });
+
+  it('records the view in the city that owns the event', async () => {
+    loadPublicEvent.mockResolvedValue({ available: true, tenantKey: 'oakland', body: { data: EVENT } });
+    const req = { params: { eventId: EVENT_ID }, headers: browser, body: { visitorId: 'visitor-1234' } };
+    const res = response();
+
+    await recordPublicEventView(req, res);
+
+    expect(recordJustGoListingView).toHaveBeenCalledWith(req, {
+      tenantKey: 'oakland', eventId: EVENT_ID, visitorId: 'visitor-1234',
+    });
+    expect(res.statusCode).toBe(204);
+    expect(res.headers['Cache-Control']).toBe('no-store');
+  });
+
+  it('rejects malformed IDs before any lookup', async () => {
+    const res = response();
+    await recordPublicEventView({ params: { eventId: 'BAD-ID' }, headers: browser }, res);
+
+    expect(loadPublicEvent).not.toHaveBeenCalled();
+    expect(res.statusCode).toBe(404);
+  });
+
+  it('does not count unavailable events', async () => {
+    loadPublicEvent.mockResolvedValue({ available: false, tenantKey: null, body: {} });
+    const res = response();
+    await recordPublicEventView({ params: { eventId: EVENT_ID }, headers: browser }, res);
+
+    expect(recordJustGoListingView).not.toHaveBeenCalled();
+    expect(res.statusCode).toBe(404);
+  });
+
+  it('accepts but ignores crawlers', async () => {
+    const res = response();
+    await recordPublicEventView(
+      { params: { eventId: EVENT_ID }, headers: { 'user-agent': 'Twitterbot/1.0' } },
+      res,
+    );
+
+    expect(loadPublicEvent).not.toHaveBeenCalled();
+    expect(recordJustGoListingView).not.toHaveBeenCalled();
+    expect(res.statusCode).toBe(204);
+  });
+
+  it('fails closed with a generic error when the write fails', async () => {
+    loadPublicEvent.mockResolvedValue({ available: true, tenantKey: 'oakland', body: { data: EVENT } });
+    recordJustGoListingView.mockRejectedValue(new Error('mongo down: secret detail'));
+    jest.spyOn(console, 'error').mockImplementation(() => {});
+    const res = response();
+
+    await recordPublicEventView({ params: { eventId: EVENT_ID }, headers: browser, body: {} }, res);
+
+    expect(res.statusCode).toBe(503);
+    expect(JSON.stringify(res.body)).not.toContain('secret detail');
+    console.error.mockRestore();
   });
 });

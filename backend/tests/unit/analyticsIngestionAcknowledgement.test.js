@@ -1,20 +1,28 @@
 jest.mock('../../services/getModelService', () => jest.fn());
+const mockResolveRequestUser = jest.fn(async (req, decoded) => {
+  req.user = {userId: decoded.userId};
+});
 jest.mock('../../events/backendRoot', () => ({
   require: (modulePath) => {
     if (modulePath === 'services/getModelService') {
       return require('../../services/getModelService');
     }
     if (modulePath === 'middlewares/verifyToken') {
-      return {resolveRequestUser: jest.fn()};
+      return {resolveRequestUser: mockResolveRequestUser};
     }
     if (modulePath === 'services/mobileAnalyticsMigration') {
-      return {normalizeAnalyticsUserId: value => value || null};
+      return require('../../services/mobileAnalyticsMigration');
+    }
+    if (modulePath === 'utilities/analyticsHash') {
+      return require('../../utilities/analyticsHash');
     }
     throw new Error(`Unexpected backend module: ${modulePath}`);
   },
 }));
 
+const crypto = require('crypto');
 const express = require('express');
+const jwt = require('jsonwebtoken');
 const request = require('supertest');
 const getModels = require('../../services/getModelService');
 const analyticsRoutes = require('../../events/routes/analyticsRoutes');
@@ -36,13 +44,21 @@ function event(id, overrides = {}) {
   };
 }
 
-function appWithInsert(insertMany) {
+const USER_A = '507f191e810c19729de860ea';
+const USER_B = '507f191e810c19729de860eb';
+
+function tokenFor(userId, options = {}) {
+  return jwt.sign({userId}, process.env.JWT_SECRET, options);
+}
+
+function appWithInsert(insertMany, {school = 'nyc', cookies = {}} = {}) {
   getModels.mockReturnValue({AnalyticsEvent: {insertMany}});
   const app = express();
   app.use(express.json());
   app.use((req, _res, next) => {
-    req.school = 'nyc';
+    req.school = school;
     req.ip = '127.0.0.1';
+    req.cookies = cookies;
     next();
   });
   app.use(analyticsRoutes);
@@ -50,6 +66,21 @@ function appWithInsert(insertMany) {
 }
 
 describe('analytics ingestion acknowledgement', () => {
+  const originalJwtSecret = process.env.JWT_SECRET;
+  const originalHashSecret = process.env.ANALYTICS_HASH_SECRET;
+
+  beforeAll(() => {
+    process.env.JWT_SECRET = 'test-jwt-secret';
+    process.env.ANALYTICS_HASH_SECRET = 'test-analytics-secret';
+  });
+
+  afterAll(() => {
+    process.env.JWT_SECRET = originalJwtSecret;
+    process.env.ANALYTICS_HASH_SECRET = originalHashSecret;
+    if (originalJwtSecret === undefined) delete process.env.JWT_SECRET;
+    if (originalHashSecret === undefined) delete process.env.ANALYTICS_HASH_SECRET;
+  });
+
   beforeEach(() => jest.clearAllMocks());
 
   it('acknowledges stored and rejected event IDs without assigning anonymous events to the bearer user', async () => {
@@ -111,5 +142,90 @@ describe('analytics ingestion acknowledgement', () => {
 
     expect(response.status).toBe(503);
     expect(response.body.error).toBe('Incomplete analytics write result');
+  });
+
+  describe('user attribution', () => {
+    async function storedUserIds(events, {authorization, cookies, school} = {}) {
+      const insertMany = jest.fn(async docs => docs);
+      let call = request(appWithInsert(insertMany, {cookies, school})).post('/v1/events');
+      if (authorization) call = call.set('Authorization', authorization);
+      const response = await call.send({events});
+      expect(response.status).toBe(200);
+      return insertMany.mock.calls[0][0].map(doc => doc.user_id);
+    }
+
+    it('drops a user_id the request cannot prove', async () => {
+      expect(await storedUserIds([event('spoofed', {user_id: USER_A})])).toEqual([null]);
+    });
+
+    it('keeps a user_id that matches the bearer token', async () => {
+      const ids = await storedUserIds(
+        [event('mine', {user_id: USER_A})],
+        {authorization: `Bearer ${tokenFor(USER_A)}`},
+      );
+      expect(ids).toEqual([USER_A]);
+    });
+
+    it('drops a user_id that names someone other than the bearer', async () => {
+      const ids = await storedUserIds(
+        [event('theirs', {user_id: USER_B})],
+        {authorization: `Bearer ${tokenFor(USER_A)}`},
+      );
+      expect(ids).toEqual([null]);
+    });
+
+    it('verifies web events from the access-token cookie', async () => {
+      const ids = await storedUserIds(
+        [event('web', {platform: 'web', user_id: USER_A})],
+        {cookies: {accessToken: tokenFor(USER_A)}},
+      );
+      expect(ids).toEqual([USER_A]);
+    });
+
+    it('still attributes queued events after the access token has expired', async () => {
+      const expired = tokenFor(USER_A, {expiresIn: -60});
+      const ids = await storedUserIds(
+        [event('late', {user_id: USER_A})],
+        {authorization: `Bearer ${expired}`},
+      );
+      expect(ids).toEqual([USER_A]);
+    });
+
+    it('ignores tokens signed with another secret', async () => {
+      const forged = jwt.sign({userId: USER_A}, 'not-the-secret');
+      const ids = await storedUserIds(
+        [event('forged', {user_id: USER_A})],
+        {authorization: `Bearer ${forged}`},
+      );
+      expect(ids).toEqual([null]);
+    });
+
+    it('fills an omitted user_id from the verified user', async () => {
+      const {user_id: _omitted, ...withoutUser} = event('omitted');
+      const ids = await storedUserIds(
+        [withoutUser],
+        {authorization: `Bearer ${tokenFor(USER_A)}`},
+      );
+      expect(ids).toEqual([USER_A]);
+    });
+
+    it('stores no user ids on the platform host', async () => {
+      const ids = await storedUserIds(
+        [event('www', {user_id: USER_A})],
+        {authorization: `Bearer ${tokenFor(USER_A)}`, school: 'www'},
+      );
+      expect(ids).toEqual([null]);
+    });
+  });
+
+  it('stores a keyed IP hash, not a plain SHA-256 of the address', async () => {
+    const insertMany = jest.fn(async docs => docs);
+    await request(appWithInsert(insertMany)).post('/v1/events').send({events: [event('ip')]});
+
+    const stored = insertMany.mock.calls[0][0][0];
+    expect(stored.ip_hash).toMatch(/^k1:[a-f0-9]{32}$/);
+    expect(stored.ip_hash).not.toContain(
+      crypto.createHash('sha256').update('127.0.0.1').digest('hex').slice(0, 32),
+    );
   });
 });
