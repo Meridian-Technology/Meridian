@@ -11,7 +11,12 @@ const { analyticsHash } = require('../utilities/analyticsHash');
  * stores a keyed visitor hash, never a raw IP address or user agent.
  */
 
-const BOT_USER_AGENT = /bot|crawl|spider|slurp|preview|facebookexternalhit|embedly|whatsapp|telegram|discord|headless|lighthouse/i;
+// Named crawlers and link unfurlers, plus a standalone "bot" token. Not a bare /bot/, which
+// matches CUBOT phones, and not messaging apps, whose in-app browsers are real visitors.
+const BOT_USER_AGENT = /googlebot|bingbot|applebot|duckduckbot|yandexbot|baiduspider|adsbot|petalbot|bytespider|gptbot|claudebot|ccbot|semrushbot|ahrefsbot|mj12bot|twitterbot|linkedinbot|slackbot|discordbot|telegrambot|pinterestbot|redditbot|facebookexternalhit|facebookcatalog|embedly|skypeuripreview|slurp|headlesschrome|lighthouse|crawler|spider|(?:^|[^a-z])bot(?:[^a-z]|$)/i;
+// Newest entries kept per event. Bounds document size (MongoDB caps documents at
+// 16 MB) and the cost of the unique-visitor check; covers the dashboards' windows.
+const MAX_VIEW_HISTORY = 5000;
 const VISITOR_ID_PATTERN = /^[A-Za-z0-9_-]{8,128}$/;
 
 function isLikelyBot(userAgent) {
@@ -54,9 +59,10 @@ async function ensureAnalyticsDoc(EventAnalytics, eventId) {
  * @param {import('mongoose').Model} EventAnalytics
  * @param {string|import('mongoose').Types.ObjectId} eventId
  * @param {{ userId?: string|null, visitorKey?: string|null, source?: string|null,
- *   sourceEventId?: string|null, timestamp?: Date }} [view]
- *   `sourceEventId` makes the write idempotent: a view already recorded with
- *   that id is skipped (used by backfills).
+ *   sourceEventId?: string|null, timestamp?: Date, live?: boolean }} [view]
+ *   `sourceEventId` skips a view already recorded with that id. `live: false`
+ *   marks a replayed view (backfills); live views keep `firstLiveViewAt`, the
+ *   earliest one, so backfills know where recorded history begins.
  * @returns {Promise<{ recorded: boolean, unique: boolean }>}
  */
 async function recordEventView(EventAnalytics, eventId, view = {}) {
@@ -84,17 +90,24 @@ async function recordEventView(EventAnalytics, eventId, view = {}) {
     ? (visitorKey ? { isAnonymous: true, anonymousId: visitorKey } : null)
     : { isAnonymous: false, userId };
 
+  const push = { viewHistory: { $each: [entry], $slice: -MAX_VIEW_HISTORY } };
+  const live = view.live !== false ? { $min: { firstLiveViewAt: entry.timestamp } } : {};
+  // firstLiveViewAt is not in the Events-Backend schema yet, so strict mode would drop it.
+  const options = { strict: false };
+
   if (identity) {
     const first = await EventAnalytics.updateOne(
       { ...base, viewHistory: { $not: { $elemMatch: identity } } },
-      { $inc: { [totalField]: 1, [uniqueField]: 1 }, $push: { viewHistory: entry } },
+      { $inc: { [totalField]: 1, [uniqueField]: 1 }, $push: push, ...live },
+      options,
     );
     if (first.matchedCount > 0) return { recorded: true, unique: true };
   }
 
   const repeat = await EventAnalytics.updateOne(
     base,
-    { $inc: { [totalField]: 1 }, $push: { viewHistory: entry } },
+    { $inc: { [totalField]: 1 }, $push: push, ...live },
+    options,
   );
   return { recorded: repeat.matchedCount > 0, unique: false };
 }
@@ -147,11 +160,27 @@ function publicViewHistoryEntry(entry) {
   };
 }
 
+/**
+ * An `EventAnalytics` document as returned to organizers and operators: every
+ * `viewHistory` entry reduced to `publicViewHistoryEntry`. Documents written
+ * before the identifier migration can still hold raw IPs and user agents.
+ */
+function organizerEventAnalytics(doc) {
+  if (!doc) return doc;
+  const plain = typeof doc.toObject === 'function' ? doc.toObject() : { ...doc };
+  if (Array.isArray(plain.viewHistory)) {
+    plain.viewHistory = plain.viewHistory.map(publicViewHistoryEntry);
+  }
+  return plain;
+}
+
 module.exports = {
+  MAX_VIEW_HISTORY,
   isLikelyBot,
   anonymousVisitorKey,
   recordEventView,
   recordEventPageView,
   recordJustGoListingView,
   publicViewHistoryEntry,
+  organizerEventAnalytics,
 };

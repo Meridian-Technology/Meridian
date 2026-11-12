@@ -6,8 +6,10 @@ const {
 const eventAnalyticsSchema = require('../../events/schemas/eventAnalytics');
 const userSchema = require('../../schemas/user');
 const {
+  MAX_VIEW_HISTORY,
   anonymousVisitorKey,
   isLikelyBot,
+  organizerEventAnalytics,
   publicViewHistoryEntry,
   recordEventPageView,
   recordEventView,
@@ -177,8 +179,72 @@ describe('eventViewService', () => {
 
   it('recognises common link unfurlers and crawlers', () => {
     expect(isLikelyBot('Slackbot-LinkExpanding 1.0')).toBe(true);
-    expect(isLikelyBot('WhatsApp/2.23')).toBe(true);
+    expect(isLikelyBot('Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)')).toBe(true);
+    expect(isLikelyBot('TelegramBot (like TwitterBot)')).toBe(true);
+    expect(isLikelyBot('facebookexternalhit/1.1')).toBe(true);
     expect(isLikelyBot('Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X)')).toBe(false);
+  });
+
+  it('does not mistake phones or in-app browsers for bots', () => {
+    expect(isLikelyBot('Mozilla/5.0 (Linux; Android 13; CUBOT KINGKONG 9) AppleWebKit/537.36 Chrome/120 Mobile')).toBe(false);
+    expect(isLikelyBot('Mozilla/5.0 (Linux; Android 14; Pixel 8) Chrome/120 Mobile Telegram-Android/10.8.1')).toBe(false);
+    expect(isLikelyBot('Mozilla/5.0 (iPhone) Mobile/15E148 WhatsApp/2.24')).toBe(false);
+  });
+
+  it('keeps only the newest view history entries', async () => {
+    const eventId = new mongoose.Types.ObjectId();
+    const old = Array.from({ length: MAX_VIEW_HISTORY }, (_, index) => ({
+      _id: new mongoose.Types.ObjectId(),
+      isAnonymous: true,
+      anonymousId: `k1:old-${index}`,
+      timestamp: new Date('2026-01-01T00:00:00Z'),
+    }));
+    await EventAnalytics.collection.insertOne({ eventId, anonymousViews: old.length, viewHistory: old });
+
+    await recordEventView(EventAnalytics, eventId, { visitorKey: 'k1:new' });
+
+    const doc = await EventAnalytics.findOne({ eventId }).lean();
+    expect(doc.viewHistory).toHaveLength(MAX_VIEW_HISTORY);
+    expect(doc.viewHistory[doc.viewHistory.length - 1].anonymousId).toBe('k1:new');
+    expect(doc.anonymousViews).toBe(MAX_VIEW_HISTORY + 1);
+  });
+
+  it('marks the first live view but not replayed ones', async () => {
+    const eventId = new mongoose.Types.ObjectId();
+    const replayedAt = new Date('2026-08-01T00:00:00Z');
+    const liveAt = new Date('2026-09-01T00:00:00Z');
+
+    await recordEventView(EventAnalytics, eventId, { visitorKey: 'k1:a', timestamp: replayedAt, live: false });
+    expect((await EventAnalytics.findOne({ eventId }).lean()).firstLiveViewAt).toBeUndefined();
+
+    await recordEventView(EventAnalytics, eventId, { visitorKey: 'k1:b', timestamp: liveAt });
+    await recordEventView(EventAnalytics, eventId, { visitorKey: 'k1:c', timestamp: new Date('2026-09-02T00:00:00Z') });
+    expect((await EventAnalytics.findOne({ eventId }).lean()).firstLiveViewAt).toEqual(liveAt);
+  });
+
+  it('strips raw IPs, user agents and visitor hashes from documents shown to organizers', async () => {
+    const eventId = new mongoose.Types.ObjectId();
+    await EventAnalytics.collection.insertOne({
+      eventId,
+      views: 1,
+      viewHistory: [{
+        _id: new mongoose.Types.ObjectId(),
+        isAnonymous: true,
+        anonymousId: '203.0.113.7-Mozilla/5.0',
+        ipAddress: '203.0.113.7',
+        userAgent: 'Mozilla/5.0',
+        timestamp: new Date('2026-01-01T00:00:00Z'),
+      }],
+    });
+
+    const shown = organizerEventAnalytics(await EventAnalytics.findOne({ eventId }));
+
+    expect(shown.views).toBe(1);
+    expect(shown.viewHistory).toEqual([
+      { userId: null, isAnonymous: true, timestamp: new Date('2026-01-01T00:00:00Z') },
+    ]);
+    expect(JSON.stringify(shown)).not.toMatch(/203\.0\.113\.7|Mozilla/);
+    expect(organizerEventAnalytics(null)).toBeNull();
   });
 
   it('returns history to organizers without the visitor hash', () => {
