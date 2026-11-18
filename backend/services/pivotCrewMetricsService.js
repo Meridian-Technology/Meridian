@@ -125,9 +125,10 @@ async function aggregateTenantCrewMetrics(req, tenant, batchWeek) {
       invitedAt: { $gte: start, $lt: end },
       $or: [{ status: 'invited' }, { $expr: { $gt: ['$joinedAt', '$invitedAt'] } }],
     }),
+    // Same cohort as invitesSent (invited this week), so the rate cannot pass 100%.
     PivotCrewMembership.countDocuments({
       status: 'active',
-      joinedAt: { $gte: start, $lt: end },
+      invitedAt: { $gte: start, $lt: end },
       $expr: { $gt: ['$joinedAt', '$invitedAt'] },
     }),
     PivotCrew.countDocuments({ tenantKey, archivedAt: null }),

@@ -72,7 +72,9 @@
     "backfill:pivot-organizers": "node migrations/backfillPivotOrganizers.js",
     "backfill:pivot-rich-locations": "node migrations/backfillPivotRichLocations.js",
     "migrate:pivot-source-keys": "node migrations/migratePivotSourceKeys.js",
-    "migrate:mobile-analytics": "node migrations/migrateMobileAnalyticsToTenants.js"
+    "migrate:mobile-analytics": "node migrations/migrateMobileAnalyticsToTenants.js",
+    "migrate:analytics-identifiers": "node migrations/scrubAnalyticsIdentifiers.js",
+    "migrate:justgo-listing-views": "node migrations/backfillJustGoListingViews.js"
   },
   "devDependencies": {
     "jest": "^30.3.0",

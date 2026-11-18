@@ -15,12 +15,14 @@ const getGlobalModels = require('./services/getGlobalModelService');
 const { isAllowedCorsOrigin, isJustGoPublicHost } = require('./utilities/corsOrigins');
 const { registerMobileAssociationRoutes } = require('./utilities/mobileAssociationFiles');
 const { tenantForHost, canOverrideTenant } = require('./utilities/tenantHostRouting');
+const { checkAnalyticsHashKey } = require('./utilities/analyticsHash');
 
 const s3 = require('./aws-config');
 
 function createApp() {
   // Eager-load before route modules so circular requires never cache a partial export.
   require('./services/getModelService');
+  checkAnalyticsHashKey();
 
   const app = express();
   const server = createServer(app);

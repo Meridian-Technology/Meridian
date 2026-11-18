@@ -247,7 +247,8 @@ async function getJourneyOverview(req, options = {}) {
       conversionRates: {
         interestRate: rateOrNull(interestedSurvivors, overview.swipeCount),
         ticketOpenRate: rateOrNull(overview.externalOpenUsers, interestedSurvivors),
-        registerRate: rateOrNull(overview.registeredCount, overview.externalOpenUsers),
+        // Off interested, not ticket openers: in-app registrations never open the link.
+        registerRate: rateOrNull(overview.registeredCount, interestedSurvivors),
       },
       funnel,
     },
@@ -387,9 +388,14 @@ async function getJourneyPath(req, options = {}) {
           $match: {
             ...baseMatch,
             session_id: { $in: startSessions },
-            $or: [
-              { event: { $in: PIVOT_ANALYTICS_EVENTS } },
-              { event: 'screen_view', 'context.screen': 'PivotWeek' },
+            // $and keeps baseMatch's batchWeek $or; a second $or key would replace it.
+            $and: [
+              {
+                $or: [
+                  { event: { $in: PIVOT_ANALYTICS_EVENTS } },
+                  { event: 'screen_view', 'context.screen': 'PivotWeek' },
+                ],
+              },
             ],
           },
         },

@@ -95,18 +95,18 @@ describe('WorkspaceInsightsTab — funnel', () => {
     expect(within(rows[3]).getByText('10')).toBeInTheDocument();
   });
 
-  it('labels conversions off the previous step and not the first one', () => {
+  it('labels each conversion with the step it is measured against, and not the first one', () => {
     renderTab('published', LIVE_STATS);
 
     const rows = screen.getAllByText(
       (_content, element) => element?.className === 'jg-funnel__row',
     );
 
-    // 100 views → 40 interested → 20 tapped → 10 got a ticket.
-    expect(within(rows[0]).queryByText(new RegExp(copy.ofPrevious))).not.toBeInTheDocument();
-    expect(within(rows[1]).getByText(`40% ${copy.ofPrevious}`)).toBeInTheDocument();
-    expect(within(rows[2]).getByText(`50% ${copy.ofPrevious}`)).toBeInTheDocument();
-    expect(within(rows[3]).getByText(`50% ${copy.ofPrevious}`)).toBeInTheDocument();
+    // 100 views → 40 interested → 20 tapped → 10 got a ticket (of the 40 interested).
+    expect(within(rows[0]).queryByText(/%/)).not.toBeInTheDocument();
+    expect(within(rows[1]).getByText(`40% ${copy.conversionOf.views}`)).toBeInTheDocument();
+    expect(within(rows[2]).getByText(`50% ${copy.conversionOf.interested}`)).toBeInTheDocument();
+    expect(within(rows[3]).getByText(`25% ${copy.conversionOf.interested}`)).toBeInTheDocument();
   });
 
   it('says plainly that views and interest are not the same crowd', () => {

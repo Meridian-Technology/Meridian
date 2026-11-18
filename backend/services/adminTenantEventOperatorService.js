@@ -5,6 +5,7 @@
 
 const getModels = require('./getModelService');
 const { projectEventRichLocation } = require('./justGoRichLocationProjectionService');
+const { organizerEventAnalytics } = require('./eventViewService');
 
 function defaultAnalytics() {
     return {
@@ -49,7 +50,7 @@ async function getAdminTenantEventDashboard(req, eventId) {
     }
 
     const analyticsDoc = await EventAnalytics.findOne({ eventId });
-    const analytics = analyticsDoc ? analyticsDoc.toObject() : defaultAnalytics();
+    const analytics = analyticsDoc ? organizerEventAnalytics(analyticsDoc) : defaultAnalytics();
     if (analytics.engagementRate == null) analytics.engagementRate = 0;
 
     const agenda = await EventAgenda.findOne({ eventId });

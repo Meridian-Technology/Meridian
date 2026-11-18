@@ -9,6 +9,7 @@ const {
   renderJustGoPublicEventShareImage,
 } = require('../services/justGoPublicEventShareImageService');
 const { publicEventRateLimit } = require('../middlewares/publicEventRateLimit');
+const { isLikelyBot, recordJustGoListingView } = require('../services/eventViewService');
 
 const router = express.Router();
 const UNAVAILABLE = Object.freeze({
@@ -118,6 +119,34 @@ async function getPublicEventLanguageRoute(req, res) {
   }
 }
 
+/**
+ * Counts a view of the listing's public page for the creator Insights tab.
+ * The page calls this once it has rendered the event, so link unfurlers that
+ * only fetch the HTML or the JSON are not counted.
+ */
+async function recordPublicEventView(req, res) {
+  const eventId = req.params.eventId;
+  res.set('Cache-Control', 'no-store');
+  if (!isCanonicalPublicEventId(eventId)) return res.status(404).json(UNAVAILABLE);
+  if (isLikelyBot(req.headers['user-agent'])) return res.status(204).end();
+
+  try {
+    const result = await loadPublicEvent(req, eventId);
+    if (!result.available || !result.tenantKey) return res.status(404).json(UNAVAILABLE);
+    await recordJustGoListingView(req, {
+      tenantKey: result.tenantKey,
+      eventId,
+      visitorId: req.body?.visitorId,
+    });
+    return res.status(204).end();
+  } catch (error) {
+    console.error('[public-event] view route failed', { errorName: error?.name || 'Error' });
+    return res.status(503).json({
+      contractVersion: '1', error: { code: 'SERVICE_UNAVAILABLE' },
+    });
+  }
+}
+
 router.get(
   '/api/public/events/:eventId/opengraph.png',
   publicEventRateLimit,
@@ -129,11 +158,13 @@ router.get(
   publicEventRateLimit,
   getPublicEventLanguageRoute,
 );
+router.post('/api/public/events/:eventId/view', publicEventRateLimit, recordPublicEventView);
 
 module.exports = router;
 module.exports.getPublicEvent = getPublicEvent;
 module.exports.getPublicEventOpenGraphImage = getPublicEventOpenGraphImage;
 module.exports.getPublicEventLanguageRoute = getPublicEventLanguageRoute;
+module.exports.recordPublicEventView = recordPublicEventView;
 module.exports.responseEtag = responseEtag;
 module.exports.openGraphImageEtag = openGraphImageEtag;
 module.exports.UNAVAILABLE = UNAVAILABLE;

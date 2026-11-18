@@ -35,7 +35,7 @@ const groups = {
     ],
     'platform-core': [
       /\/integration\//,
-      /\/unit\/(?:adminTenant|analyticsIngestionAcknowledgement|appVersion|atlasPolicy|budgetService|cookieUtils|copyProductionToStaging|corsOrigins|googleLocation|mobileAnalyticsMigration|mobileAssociation|orgPermission|pivotConfig|pivotIsoWeek|pivotLaunchDate|pivotLogger|pivotMobileConfig|platformAdmin|requireMinAppVersion|requirePivotCreator|reservationMetrics|resourceReservation|richLocationMigration|rootOperator|semesterHelpers|tenantHostRouting|testServerLoopback|tenantKeyRename|tenantLandingMode|timeBlockHelper|workflowUtilities|wwwPathAllowlist)/,
+      /\/unit\/(?:adminTenant|analytics|appVersion|atlasPolicy|budgetService|cookieUtils|copyProductionToStaging|corsOrigins|eventView|googleLocation|mobileAnalyticsMigration|mobileAssociation|orgPermission|pivotConfig|pivotIsoWeek|pivotLaunchDate|pivotLogger|pivotMobileConfig|platformAdmin|requireMinAppVersion|requirePivotCreator|reservationMetrics|resourceReservation|richLocationMigration|rootOperator|semesterHelpers|tenantHostRouting|testServerLoopback|tenantKeyRename|tenantLandingMode|timeBlockHelper|workflowUtilities|wwwPathAllowlist)/,
       /\/route-outcomes\/(?:adminPlatformAdmins|analyticsDashboardRoutes|authRoutes|orgBudgetRoutes|orgRoleRoutes|userRoutes)/,
     ],
   },

@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { verifyToken } = require('../middlewares/verifyToken');
 const getModels  = require('../services/getModelService');
+const { organizerEventAnalytics } = require('../services/eventViewService');
 const { requireEventManagement, requireOrgPermission } = require('../middlewares/orgPermissions');
 const StudySessionService = require('../services/studySessionService');
 const ResourceReservationService = require('../services/resourceReservationService');
@@ -520,7 +521,7 @@ router.get('/:orgId/events/:eventId', verifyToken, requireEventManagement('orgId
             });
         }
 
-        const analytics = await EventAnalytics.findOne({ eventId });
+        const analytics = organizerEventAnalytics(await EventAnalytics.findOne({ eventId }));
 
         console.log(`GET: /org-event-management/${orgId}/events/${eventId}`);
         res.status(200).json({
@@ -578,7 +579,7 @@ router.get('/:orgId/events/:eventId/dashboard', verifyToken, requireEventManagem
         }
 
         // Get analytics
-        const analytics = await EventAnalytics.findOne({ eventId });
+        const analytics = organizerEventAnalytics(await EventAnalytics.findOne({ eventId }));
 
         // Get agenda
         const agenda = await EventAgenda.findOne({ eventId });
@@ -3313,7 +3314,7 @@ router.get('/:orgId/events/:eventId/analytics', verifyToken, requireEventManagem
             return res.status(404).json({ success: false, message: 'Event not found' });
         }
 
-        const analytics = await EventAnalytics.findOne({ eventId });
+        const analytics = organizerEventAnalytics(await EventAnalytics.findOne({ eventId }));
 
         // Get volunteer stats
         const roles = await EventJob.find({ eventId });
@@ -3375,7 +3376,7 @@ router.post('/:orgId/events/:eventId/export', verifyToken, requireEventManagemen
             });
         }
 
-        const analytics = await EventAnalytics.findOne({ eventId });
+        const analytics = organizerEventAnalytics(await EventAnalytics.findOne({ eventId }));
         const agenda = await EventAgenda.findOne({ eventId });
         const roles = await EventJob.find({ eventId }).populate('assignments.memberId', 'name email');
         const signups = await VolunteerSignup.find({ eventId }).populate('memberId', 'name email');

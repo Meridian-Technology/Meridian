@@ -89,6 +89,7 @@ describe('pivotCrewMetricsService (Task 6.2)', () => {
     const userA = await User.create({ name: 'A', email: 'a@test.com', username: 'user_a' });
     const userB = await User.create({ name: 'B', email: 'b@test.com', username: 'user_b' });
     const userC = await User.create({ name: 'C', email: 'c@test.com', username: 'user_c' });
+    const userD = await User.create({ name: 'D', email: 'd@test.com', username: 'user_d' });
     const crew = await PivotCrew.create({
       name: 'Friday crew',
       createdBy: userA._id,
@@ -135,6 +136,16 @@ describe('pivotCrewMetricsService (Task 6.2)', () => {
         role: 'member',
         invitedAt: new Date('2026-07-21T12:00:00.000Z'),
         joinedAt: new Date('2026-07-22T12:00:00.000Z'),
+      },
+      {
+        // Invited the week before, joined this week: belongs to last week's invite cohort.
+        crewId: crew._id,
+        userId: userD._id,
+        inviteToken: 'token-d',
+        status: 'active',
+        role: 'member',
+        invitedAt: new Date('2026-07-10T12:00:00.000Z'),
+        joinedAt: new Date('2026-07-21T12:00:00.000Z'),
       },
       {
         crewId: crew._id,
