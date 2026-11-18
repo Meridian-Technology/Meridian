@@ -143,6 +143,60 @@ describe('eventViewService', () => {
     expect(await EventAnalytics.countDocuments({ eventId })).toBe(0);
   });
 
+  it("does not count the event's staff", async () => {
+    const { ObjectId } = mongoose.Types;
+    const [host, collaborator, otherOrg] = [new ObjectId(), new ObjectId(), new ObjectId()];
+    const [owner, officer, collaboratorOfficer, otherOrgOfficer, member, approver, userHost, guest] =
+      Array.from({ length: 8 }, () => new ObjectId());
+    const positions = [
+      { name: 'officer', permissions: ['manage_events'] },
+      { name: 'member', permissions: ['view_events'] },
+    ];
+    const db = mongo.connection;
+    await db.collection('orgs').insertMany([
+      { _id: host, org_name: 'Host', owner, positions },
+      { _id: collaborator, org_name: 'Collaborator', owner: new ObjectId(), positions },
+      { _id: otherOrg, org_name: 'Pending', owner: new ObjectId(), positions },
+    ]);
+    await db.collection('members').insertMany([
+      { org_id: host, user_id: officer, role: 'officer', roles: ['officer'], status: 'active' },
+      { org_id: host, user_id: member, role: 'member', roles: ['member'], status: 'active' },
+      { org_id: collaborator, user_id: collaboratorOfficer, role: 'officer', roles: ['officer'], status: 'active' },
+      { org_id: otherOrg, user_id: otherOrgOfficer, role: 'officer', roles: ['officer'], status: 'active' },
+    ]);
+    await User.create({
+      _id: approver, name: 'Approver', email: 'approver@test.com', username: 'approver', approvalRoles: ['oie'],
+    });
+    const orgEvent = new ObjectId();
+    const userEvent = new ObjectId();
+    await db.collection('events').insertMany([
+      {
+        _id: orgEvent,
+        hostingType: 'Org',
+        hostingId: host,
+        collaboratorOrgs: [
+          { orgId: collaborator, status: 'active' },
+          { orgId: otherOrg, status: 'pending' },
+        ],
+      },
+      { _id: userEvent, hostingType: 'User', hostingId: userHost },
+    ]);
+    const view = (userId, eventId = orgEvent) => recordEventPageView(request({ user: { userId } }), eventId);
+
+    for (const staff of [owner, officer, collaboratorOfficer, approver]) {
+      expect(await view(staff)).toMatchObject({ recorded: false, excluded: 'staff' });
+    }
+    expect(await view(userHost, userEvent)).toMatchObject({ recorded: false, excluded: 'staff' });
+
+    expect(await view(member)).toMatchObject({ recorded: true });
+    expect(await view(otherOrgOfficer)).toMatchObject({ recorded: true });
+    expect(await view(guest, userEvent)).toMatchObject({ recorded: true });
+    const doc = await EventAnalytics.findOne({ eventId: orgEvent }).lean();
+    expect(doc.views).toBe(2);
+    expect(doc.viewHistory.map((entry) => String(entry.userId)).sort())
+      .toEqual([String(member), String(otherOrgOfficer)].sort());
+  });
+
   it('writes Just Go listing views to the city database as anonymous', async () => {
     const eventId = new mongoose.Types.ObjectId();
     const connectToDatabase = jest.fn().mockResolvedValue(mongo.connection);

@@ -113,8 +113,45 @@ async function recordEventView(EventAnalytics, eventId, view = {}) {
 }
 
 /**
- * View from a request on a campus event page. Admins and obvious bots are not
- * counted. Never throws: a view is not worth failing the page over.
+ * Whether a signed-in viewer is staff on this event: an approver, the user
+ * hosting it, or the owner of, or a member who can manage events in, the
+ * hosting org or an active collaborator org. Org event managers are also who
+ * runs check-in. Mirrors Events-Backend's `canUserManageEvent`, plus approvers.
+ */
+async function isEventStaff(req, eventId, userId, user) {
+  if (user?.approvalRoles?.length) return true;
+
+  const { Event, Org, OrgMember } = getModels(req, 'Event', 'Org', 'OrgMember');
+  const event = await Event.findById(eventId).select('hostingId hostingType collaboratorOrgs').lean();
+  if (!event) return false;
+
+  if (event.hostingType === 'User') return String(event.hostingId) === String(userId);
+  if (event.hostingType !== 'Org') return false;
+
+  const orgIds = [
+    event.hostingId,
+    ...(event.collaboratorOrgs || [])
+      .filter((entry) => entry?.status === 'active' && entry.orgId)
+      .map((entry) => entry.orgId),
+  ].filter(Boolean);
+  const [orgs, members] = await Promise.all([
+    Org.find({ _id: { $in: orgIds } }).select('owner positions'),
+    OrgMember.find({ org_id: { $in: orgIds }, user_id: userId, status: 'active' }),
+  ]);
+  if (orgs.some((org) => String(org.owner) === String(userId))) return true;
+
+  const orgsById = new Map(orgs.map((org) => [String(org._id), org]));
+  for (const member of members) {
+    const org = orgsById.get(String(member.org_id));
+    if (org && await member.canManageEvents(org)) return true;
+  }
+  return false;
+}
+
+/**
+ * View from a request on a campus event page. Admins, the event's staff and
+ * obvious bots are not counted. Never throws: a view is not worth failing the
+ * page over.
  */
 async function recordEventPageView(req, eventId, options = {}) {
   try {
@@ -122,8 +159,11 @@ async function recordEventPageView(req, eventId, options = {}) {
     const { EventAnalytics, User } = getModels(req, 'EventAnalytics', 'User');
     const userId = req.user?.userId || null;
     if (userId) {
-      const user = await User.findById(userId).select('roles').lean();
+      const user = await User.findById(userId).select('roles approvalRoles').lean();
       if (user?.roles?.includes('admin')) return { recorded: false, unique: false, excluded: 'admin' };
+      if (await isEventStaff(req, eventId, userId, user)) {
+        return { recorded: false, unique: false, excluded: 'staff' };
+      }
     }
     return await recordEventView(EventAnalytics, eventId, {
       userId,
