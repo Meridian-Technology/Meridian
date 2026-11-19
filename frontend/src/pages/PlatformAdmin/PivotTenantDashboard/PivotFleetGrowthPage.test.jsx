@@ -76,7 +76,7 @@ function funnelPayload(overrides = {}) {
       stages: [
         { key: 'landing', label: 'Landing page', unique: 100, events: 140 },
         { key: 'store_click', label: 'Store click', unique: 40, events: 55, conversionFromPrev: 0.4 },
-        { key: 'install', label: 'App activity', unique: 25, events: 80, conversionFromPrev: 0.625 },
+        { key: 'joined', label: 'Joined city', unique: 25, events: 80, conversionFromPrev: 0.625 },
         { key: 'onboarding', label: 'Onboarding', unique: 18, events: 18, conversionFromPrev: 0.72 },
         { key: 'deck', label: 'First deck decision', unique: 12, events: 12, conversionFromPrev: 0.667 },
       ],

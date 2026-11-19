@@ -76,8 +76,11 @@ describe('pivotWeeklySnapshotService', () => {
             const names = filter?.event?.$in || [];
             if (names.includes('pivot_calendar_add')) return Promise.resolve(5);
             if (names.includes('pivot_invite_share')) return Promise.resolve(2);
-            return Promise.resolve(4);
+            return Promise.resolve(0);
           }),
+        },
+        User: {
+          countDocuments: jest.fn().mockResolvedValue(4),
         },
         UniversalFeedback: {
           find: jest.fn().mockReturnValue({

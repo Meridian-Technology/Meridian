@@ -6,7 +6,7 @@ const { resolvePivotTenant } = require('./pivotIngestPublishService');
 const { isPivotTenant } = require('./pivotReferralCodeService');
 
 const VOLUME_FUNNEL_DISCLAIMER =
-  'Monthly volume funnel (UTC). Landing visitors are not joined to app users, so counts can rise or fall between steps. App activity is not an install count. First deck decision counts each person once, in the month of their first pass or interested action.';
+  'Monthly volume funnel (UTC). Landing visitors are not joined to app users, so counts can rise or fall between steps. Joined city is not an install count. First deck decision counts each person once per city, in the month of their first interested, going or pass there. The fleet total adds the cities together.';
 
 const ACQUISITION_STAGES = Object.freeze([
   {
@@ -22,26 +22,24 @@ const ACQUISITION_STAGES = Object.freeze([
     source: 'justgo_landing_events.store_click',
   },
   {
-    key: 'install',
-    label: 'App activity',
-    hint: 'Unique people with a Just Go app event; not verified installs',
-    source: 'analytics_events.app=justgo,env=prod',
+    key: 'joined',
+    label: 'Joined city',
+    hint: 'People who joined the city this month; not verified installs',
+    source: 'tenant_memberships.createdAt (status=active)',
   },
   {
     key: 'onboarding',
     label: 'Onboarding',
-    hint: 'People who finished Just Go onboarding',
-    source: 'pivot_onboarding_completed',
+    hint: 'People who confirmed they are 18+ this month',
+    source: 'users.pivotAgeVerifiedAt',
   },
   {
     key: 'deck',
     label: 'First deck decision',
-    hint: 'People whose first pass or interested action was this month',
-    source: 'pivot_card_pass|pivot_card_interested',
+    hint: 'People whose first interested, going or pass was this month',
+    source: 'pivotEventIntents (first createdAt per user)',
   },
 ]);
-
-const DECK_EVENTS = ['pivot_card_pass', 'pivot_card_interested'];
 const MONTH_PATTERN = /^(\d{4})-(0[1-9]|1[0-2])$/;
 
 function utcMonthString(date = new Date()) {
@@ -119,89 +117,53 @@ async function aggregateLandingStage(JustGoLandingEvent, type, scope) {
   return facetCounts(rows);
 }
 
-function actorIdsFromFacet(rows) {
-  const ids = new Set();
-  for (const row of rows?.[0]?.uniqueIds || []) {
-    if (row?._id != null && row._id !== '') ids.add(String(row._id));
-  }
-  return ids;
+function counted(count) {
+  return { unique: count, events: count };
 }
 
-async function loadCityAnalyticsModels(tenantKeys) {
+async function loadCityModels(tenantKeys) {
   const models = [];
   for (const tenantKey of tenantKeys) {
     const db = await connectToDatabase(tenantKey);
-    models.push(getModels({ db, school: tenantKey }, 'AnalyticsEvent').AnalyticsEvent);
+    models.push(getModels({ db, school: tenantKey }, 'User', 'PivotEventIntent'));
   }
   return models;
 }
 
-/**
- * Unique people and raw event counts. Fleet passes one model per city and
- * counts a person once across cities.
- */
-async function aggregateAnalyticsStage(models, eventNames, { start, end }) {
-  const ids = new Set();
-  let events = 0;
-  await Promise.all(
-    (models || []).map(async (AnalyticsEvent) => {
-      const rows = await AnalyticsEvent.aggregate([
-        {
-          $match: {
-            ...(eventNames ? { event: { $in: eventNames } } : {}),
-            ts: { $gte: start, $lt: end },
-            app: 'justgo',
-            env: 'prod',
-          },
-        },
-        {
-          $facet: {
-            uniqueIds: [
-              { $group: { _id: { $ifNull: ['$user_id', '$anonymous_id'] } } },
-              { $match: { _id: { $ne: null } } },
-            ],
-            events: [{ $count: 'count' }],
-          },
-        },
-      ]);
-      actorIdsFromFacet(rows).forEach((id) => ids.add(id));
-      events += facetCounts(rows).events;
+/** Active memberships created in the month; a person who joins two cities counts in each. */
+async function countJoinedCity(TenantMembership, tenantKeys, { start, end }) {
+  return counted(
+    await TenantMembership.countDocuments({
+      tenantKey: { $in: tenantKeys },
+      status: 'active',
+      createdAt: { $gte: start, $lt: end },
     }),
   );
-  return { unique: ids.size, events };
 }
 
-/** First-ever deck decision per actor, counted in the month it occurred. */
-async function aggregateFirstDeckSwipe(models, { start, end }) {
-  const first = new Map();
-  await Promise.all(
-    (models || []).map(async (AnalyticsEvent) => {
-      const rows = await AnalyticsEvent.aggregate([
-        { $match: { event: { $in: DECK_EVENTS }, app: 'justgo', env: 'prod' } },
-        {
-          $group: {
-            _id: { $ifNull: ['$user_id', '$anonymous_id'] },
-            firstTs: { $min: '$ts' },
-          },
-        },
+/** City users who passed the 18+ onboarding gate in the month, summed across cities. */
+async function countAgeVerified(cities, { start, end }) {
+  const counts = await Promise.all(
+    cities.map(({ User }) =>
+      User.countDocuments({ pivotAgeVerifiedAt: { $gte: start, $lt: end } }),
+    ),
+  );
+  return counted(counts.reduce((sum, count) => sum + count, 0));
+}
+
+/** City users whose first-ever intent in that city was created in the month. */
+async function countFirstIntent(cities, { start, end }) {
+  const counts = await Promise.all(
+    cities.map(async ({ PivotEventIntent }) => {
+      const rows = await PivotEventIntent.aggregate([
+        { $group: { _id: '$userId', firstAt: { $min: '$createdAt' } } },
+        { $match: { firstAt: { $gte: start, $lt: end } } },
+        { $count: 'count' },
       ]);
-      for (const row of rows) {
-        if (row?._id == null || row._id === '') continue;
-        const ts = new Date(row.firstTs).getTime();
-        if (!Number.isFinite(ts)) continue;
-        const key = String(row._id);
-        const prev = first.get(key);
-        if (prev == null || ts < prev) first.set(key, ts);
-      }
+      return Number(rows?.[0]?.count) || 0;
     }),
   );
-  const startMs = start.getTime();
-  const endMs = end.getTime();
-  let unique = 0;
-  for (const ts of first.values()) {
-    if (ts >= startMs && ts < endMs) unique += 1;
-  }
-  return { unique, events: unique };
+  return counted(counts.reduce((sum, count) => sum + count, 0));
 }
 
 function attachRates(countsByKey) {
@@ -264,19 +226,21 @@ async function loadLandingAndApp(req, { tenantKey, tenantKeys, range }) {
     );
   }
 
-  let install = zeros();
+  let joined = zeros();
   let onboarding = zeros();
   let deck = zeros();
   try {
-    const models = await loadCityAnalyticsModels(tenantKey ? [tenantKey] : tenantKeys);
-    [install, onboarding, deck] = await Promise.all([
-      aggregateAnalyticsStage(models, null, { start, end }),
-      aggregateAnalyticsStage(models, ['pivot_onboarding_completed'], { start, end }),
-      aggregateFirstDeckSwipe(models, { start, end }),
+    const cityKeys = tenantKey ? [tenantKey] : tenantKeys || [];
+    const { TenantMembership } = getGlobalModels(req, 'TenantMembership');
+    const cities = await loadCityModels(cityKeys);
+    [joined, onboarding, deck] = await Promise.all([
+      countJoinedCity(TenantMembership, cityKeys, { start, end }),
+      countAgeVerified(cities, { start, end }),
+      countFirstIntent(cities, { start, end }),
     ]);
   } catch (error) {
     console.error(
-      `[pivotAcquisitionFunnel] analytics aggregate failed tenant=${tenantKey || 'fleet'}:`,
+      `[pivotAcquisitionFunnel] app stage aggregate failed tenant=${tenantKey || 'fleet'}:`,
       error,
     );
   }
@@ -284,15 +248,16 @@ async function loadLandingAndApp(req, { tenantKey, tenantKeys, range }) {
   return attachRates({
     landing,
     store_click: storeClick,
-    install,
+    joined,
     onboarding,
     deck,
   });
 }
 
 /**
- * Monthly volume funnel: landing → store click → app activity → onboarding → first deck decision.
- * Deck is first-ever swipe per person, attributed to that UTC month.
+ * Monthly volume funnel: landing → store click → joined city → onboarding (18+) → first deck decision.
+ * App stages come from memberships, users and intents; deck is each city user's first intent,
+ * attributed to that UTC month.
  */
 async function getAcquisitionFunnel(req, options = {}) {
   const range = parseAcquisitionMonth(options.month, options.now);
@@ -338,5 +303,4 @@ module.exports = {
   ACQUISITION_STAGES,
   VOLUME_FUNNEL_DISCLAIMER,
   rateOrNull,
-  DECK_EVENTS,
 };
