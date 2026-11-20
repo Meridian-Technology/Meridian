@@ -78,7 +78,7 @@ function PivotCurationMonitorPanel({
                     ? '—'
                     : <PivotOpsAnimateNumber value={medianCardsSeen} />
               }
-              hint="Median pivot_card_view count per user"
+              hint="Median distinct deck cards shown per user"
             />
             <PivotOpsMetric
               label="Ticket opens"

@@ -9,42 +9,17 @@ const {
 } = require('./pivotAdminOverviewService');
 const { isoWeekToUtcRange } = require('../utilities/pivotIsoWeek');
 const { logPivot, pivotRequestContext } = require('../utilities/pivotLogger');
+const {
+  FUNNEL_STEP_ALIASES,
+  DEFAULT_FUNNEL_STEPS,
+  PIVOT_ANALYTICS_EVENTS,
+} = require('../utilities/pivotJourneyAnalyticsEvents');
 
 const WIPE_CONFIRM_TOKEN = 'WIPE';
 const SEARCH_RESULT_LIMIT = 20;
 const MIN_QUERY_LENGTH = 2;
 const HISTORY_ANALYTICS_LIMIT = 100;
 const PATH_NEXT_LIMIT = 5;
-
-/** Plan aliases → real mobile analytics event names (MVP Task 4.2). */
-const FUNNEL_STEP_ALIASES = {
-  deck_open: 'pivot_card_view',
-  card_view: 'pivot_card_view',
-  card_interested: 'pivot_card_interested',
-  interested: 'pivot_card_interested',
-  external_open: 'pivot_external_open',
-  registered: 'pivot_confirm_registered',
-  confirm_registered: 'pivot_confirm_registered',
-};
-
-const DEFAULT_FUNNEL_STEPS = [
-  'deck_open',
-  'card_interested',
-  'external_open',
-  'registered',
-];
-
-const PIVOT_ANALYTICS_EVENTS = [
-  'pivot_card_view',
-  'pivot_card_pass',
-  'pivot_card_interested',
-  'pivot_external_open',
-  'pivot_confirm_registered',
-  'pivot_feedback_submit',
-  'pivot_calendar_add',
-  'pivot_invite_share',
-  'pivot_invite_copy',
-];
 
 function openTenantDb(tenantKey) {
   return connectToDatabase(tenantKey).then((db) => ({ db, school: tenantKey }));
@@ -176,23 +151,23 @@ async function aggregateAnalyticsClosedFunnel(AnalyticsEvent, batchWeek, stepEve
   return closedCounts;
 }
 
-async function aggregateMedianCardsSeen(AnalyticsEvent, batchWeek) {
+/**
+ * Median, across users, of distinct events each user had a deck impression for
+ * in the batch week. Repeat impressions of one card count once.
+ */
+async function aggregateMedianCardsSeen(PivotInteraction, batchWeek) {
   try {
-    const { start, end } = isoWeekToUtcRange(batchWeek);
-    const rows = await AnalyticsEvent.aggregate([
+    const rows = await PivotInteraction.aggregate([
       {
         $match: {
-          event: 'pivot_card_view',
-          ts: { $gte: start, $lt: end },
-          user_id: { $ne: null },
-          $or: [
-            { 'properties.batchWeek': batchWeek },
-            { 'properties.batchWeek': { $exists: false } },
-            { 'properties.batchWeek': null },
-          ],
+          batchWeek,
+          surface: 'deck',
+          type: 'impression',
+          eventId: { $ne: null },
         },
       },
-      { $group: { _id: '$user_id', cardsSeen: { $sum: 1 } } },
+      { $group: { _id: '$userId', eventIds: { $addToSet: '$eventId' } } },
+      { $project: { cardsSeen: { $size: '$eventIds' } } },
     ]);
     return median(rows.map((row) => row.cardsSeen));
   } catch (error) {
@@ -206,7 +181,7 @@ async function aggregateMedianCardsSeen(AnalyticsEvent, batchWeek) {
 
 /**
  * Compact journey KPIs for a city week.
- * Intent metrics are source of truth; medianCardsSeen is best-effort from analytics.
+ * Intent metrics are source of truth; medianCardsSeen comes from deck impressions.
  */
 async function getJourneyOverview(req, options = {}) {
   const normalized = normalizeBatchWeek(options.batchWeek, options.now);
@@ -228,8 +203,8 @@ async function getJourneyOverview(req, options = {}) {
   const interestedSurvivors = overview.interestedCount + overview.registeredCount;
 
   const tenantReq = await openTenantDb(tenantKey);
-  const { AnalyticsEvent } = getModels(tenantReq, 'AnalyticsEvent');
-  const medianCardsSeen = await aggregateMedianCardsSeen(AnalyticsEvent, batchWeek);
+  const { PivotInteraction } = getModels(tenantReq, 'PivotInteraction');
+  const medianCardsSeen = await aggregateMedianCardsSeen(PivotInteraction, batchWeek);
 
   return {
     data: {
@@ -774,4 +749,5 @@ module.exports = {
   wipeUserWeekIntents,
   rateOrNull,
   median,
+  aggregateMedianCardsSeen,
 };

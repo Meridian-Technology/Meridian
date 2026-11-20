@@ -171,6 +171,7 @@ async function updatePivotProfileInterests(req, body = {}) {
   }
 
   user.pivotInterestTags = validation.tags;
+  user.pivotInterestsUpdatedAt = new Date();
   await user.save();
 
   return {

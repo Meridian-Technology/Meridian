@@ -79,10 +79,12 @@ describe('pivotProfileService', () => {
     });
 
     const save = jest.fn().mockResolvedValue(undefined);
-    User.findById.mockResolvedValue({
+    const user = {
       pivotInterestTags: [],
+      pivotInterestsUpdatedAt: null,
       save,
-    });
+    };
+    User.findById.mockResolvedValue(user);
 
     const result = await updatePivotProfileInterests(req, {
       interestTags: ['live-music', 'social'],
@@ -90,6 +92,7 @@ describe('pivotProfileService', () => {
 
     expect(validatePivotInterestTags).toHaveBeenCalledWith(req, ['live-music', 'social']);
     expect(save).toHaveBeenCalled();
+    expect(user.pivotInterestsUpdatedAt).toBeInstanceOf(Date);
     expect(result.data.interestTags).toEqual(['live-music', 'social']);
   });
 

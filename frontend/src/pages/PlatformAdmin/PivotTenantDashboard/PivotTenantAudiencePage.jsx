@@ -315,7 +315,7 @@ function PivotTenantAudiencePage({
               <PivotOpsMetric
                 label="Median cards seen"
                 value={kpis?.medianCardsSeen ?? '—'}
-                hint="pivot_card_view"
+                hint="distinct deck cards per user"
               />
               <PivotOpsMetric
                 label="Swipes"

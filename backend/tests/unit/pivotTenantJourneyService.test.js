@@ -104,7 +104,7 @@ describe('getJourneyOverview', () => {
       externalOpenUsers: 6,
     });
     getModels.mockReturnValue({
-      AnalyticsEvent: {
+      PivotInteraction: {
         aggregate: jest.fn().mockResolvedValue([
           { _id: USER_A, cardsSeen: 2 },
           { _id: USER_B, cardsSeen: 8 },
