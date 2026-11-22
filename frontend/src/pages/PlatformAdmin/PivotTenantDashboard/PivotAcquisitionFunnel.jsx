@@ -23,8 +23,10 @@ const NO_FETCH_CACHE = { enabled: false };
 /** Counting notes — shown from the info affordance, not a page banner. */
 export const FUNNEL_COUNTING_NOTES = `UTC month [start, end).
 Uniques per stage. Not a closed identity funnel: landing visitors are not joined to app users, so a later step can be larger than the one before it.
-deck = first-ever pass or interested decision per actor, attributed to that month.
-app activity = unique actors with a production Just Go app event in-window. It is not a verified install count.`;
+joined city = active city memberships created in-window. It is not a verified install count.
+onboarding = users who confirmed they are 18+ in-window.
+deck = each city user's first interested, going or pass, attributed to that month.
+Fleet adds the cities together; someone in two cities counts in each.`;
 
 function FunnelNotesButton() {
   const [open, setOpen] = useState(false);

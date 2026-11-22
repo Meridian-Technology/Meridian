@@ -250,6 +250,11 @@ const userSchema = new mongoose.Schema({
         type: [String],
         default: [],
     },
+    /** Last time the user saved pivotInterestTags (Lab "interests saved" weekly count). */
+    pivotInterestsUpdatedAt: {
+        type: Date,
+        default: null,
+    },
     /** Pilot attestation year for 18+ gate during pivot onboarding. */
     pivotBirthYear: {
         type: Number,

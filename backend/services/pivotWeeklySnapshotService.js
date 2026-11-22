@@ -12,27 +12,30 @@ const { PIVOT_FEED_INGEST_STATUS } = require('../utilities/pivotIngestStatus');
 const ENGAGEMENT_EVENTS = {
   calendarAdds: ['pivot_calendar_add'],
   inviteShares: ['pivot_invite_share', 'pivot_invite_copy'],
-  interestsSaved: ['pivot_interests_onboarding_completed', 'pivot_interests_updated'],
 };
 
 /**
- * Client-only loop counts (calendar adds, invite shares, interests saved) from the
- * tenant analytics_events collection, bounded to the ISO week's UTC range.
- * Best-effort: analytics ingestion must never fail a snapshot, so errors return zeros.
+ * Lab engagement counts for the ISO week's UTC range. Calendar adds and invite
+ * shares happen only on the client, so they come from the tenant analytics_events
+ * collection; interests saved counts users whose pivotInterestsUpdatedAt falls in the week.
+ * Best-effort: these must never fail a snapshot, so errors return zeros.
  */
 async function aggregateEngagementMetrics(tenantReq, batchWeek) {
   const zeros = { calendarAdds: 0, inviteShares: 0, interestsSaved: 0 };
   try {
-    const { AnalyticsEvent } = getModels(tenantReq, 'AnalyticsEvent');
+    const { AnalyticsEvent, User } = getModels(tenantReq, 'AnalyticsEvent', 'User');
     const { start, end } = isoWeekToUtcRange(batchWeek);
     const tsFilter = { ts: { $gte: start, $lt: end } };
 
-    const entries = await Promise.all(
-      Object.entries(ENGAGEMENT_EVENTS).map(async ([key, eventNames]) => [
+    const entries = await Promise.all([
+      ...Object.entries(ENGAGEMENT_EVENTS).map(async ([key, eventNames]) => [
         key,
         await AnalyticsEvent.countDocuments({ event: { $in: eventNames }, ...tsFilter }),
       ]),
-    );
+      User.countDocuments({ pivotInterestsUpdatedAt: { $gte: start, $lt: end } }).then(
+        (count) => ['interestsSaved', count],
+      ),
+    ]);
     return Object.fromEntries(entries);
   } catch (error) {
     console.error(`[pivotWeeklySnapshot] engagement aggregate failed batchWeek=${batchWeek}:`, error);
